@@ -41,23 +41,29 @@ __all__ = [
 
 
 class ProductType(StrEnum):
-    """Which list of release dates: upstream's path word for exports or imports.
+    """Upstream's code for a Census release-date list: ``X`` exports, ``M`` imports.
 
-    The members are the path segments of ``census/data/{exports|imports}/dataReleaseDates``
-    (``GATSData_GetCensusExportDataReleaseInfo``, ``GATSData_GetCensusImportDataReleaseInfo``)
-    and of ``UNTrade/data/{exports|imports}/dataReleaseDates``
-    (``GATSData_GetUNTradeExportDataReleaseInfo``, ``GATSData_GetUNTradeImportDataReleaseInfo``),
-    values exactly as the snapshot's paths spell them. Re-exports have no release-date
-    operation in the snapshot, so there is no member for them.
+    The members are the codes of ``productType``, the field of the release records that
+    tells the two lists apart, so a member equals ``DataReleaseInfo.product_type`` of the
+    records it names (ADR-0008: upstream enumerations become ``StrEnum`` with upstream's
+    values). Established by the recorded lists, not by the snapshot, which documents no
+    record shape: every record of
+    ``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json`` carries ``"X"``,
+    every record of ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``
+    ``"M"`` (716 each, recorded 2026-10-25). ``X`` selects
+    ``GATSData_GetCensusExportDataReleaseInfo``
+    (``census/data/exports/dataReleaseDates``), ``M``
+    ``GATSData_GetCensusImportDataReleaseInfo`` (``census/data/imports/dataReleaseDates``).
+    Re-exports have no release-date operation in the snapshot, so there is no member for
+    them. The UN Trade release lists are not recorded; whether they carry the same codes
+    is not established.
 
-    Named after ``productType``, the field of the release records that tells the two lists
-    apart. That field carries a code, ``"X"`` in the exports list and ``"M"`` in the
-    imports list (``DataReleaseInfo.product_type``), which no member equals: the members
-    are path words, not those codes.
+    The enum names the known codes only: ``DataReleaseInfo.product_type`` stays ``str``,
+    so a code upstream adds later parses instead of failing the answer.
     """
 
-    EXPORTS = "exports"
-    IMPORTS = "imports"
+    X = "X"
+    M = "M"
 
 
 class Country(UpstreamModel):
@@ -113,7 +119,8 @@ class DataReleaseInfo(UpstreamModel):
         statistical_year_month: ``statisticalYearMonth``, a year and month as six digits,
             e.g. ``"202608"``; the same form as ``CensusExport.date``.
         product_type: ``productType``, ``"X"`` in every exports record and ``"M"`` in
-            every imports record.
+            every imports record, the codes ``ProductType`` names; text, so that an
+            unknown code does not fail the answer.
         reporter_code: ``reporterCode``, e.g. ``"US"``.
         release_time_stamp: ``releaseTimeStamp``, e.g. ``2026-10-06T08:00:00``: a date
             and a time without a time zone, kept naive as upstream sends it.

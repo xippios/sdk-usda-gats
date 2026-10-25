@@ -248,14 +248,42 @@ async def test_classify_leaves_every_census_probe_to_core(fixtures_dir: Path) ->
         assert classify(response) is None, case
 
 
-async def test_product_type_members_are_the_snapshots_path_words() -> None:
-    """The members spell the path segments of the four release-date operations; the
-    snapshot has no release-date operation for re-exports."""
+async def test_product_type_members_are_the_release_records_codes(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The members are upstream's ``productType`` codes, equal to the records' own: ``X``
+    throughout the exports list, ``M`` throughout the imports list."""
+    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
+    exports = await api.GATSData_GetCensusExportDataReleaseInfo()
+    imports = await api.GATSData_GetCensusImportDataReleaseInfo()
+    assert [m.value for m in ProductType] == ["X", "M"]
+    assert {r.product_type for r in exports} == {ProductType.X}
+    assert {r.product_type for r in imports} == {ProductType.M}
+    assert ProductType("X") is ProductType.X, "a plain code is a member"
+
+
+async def test_an_unknown_product_type_code_still_parses() -> None:
+    """``product_type`` stays text: a code the enum does not name never fails an answer."""
+    record = DataReleaseInfo.model_validate(
+        {
+            "statisticalYearMonth": "202608",
+            "productType": "R",
+            "reporterCode": "US",
+            "releaseTimeStamp": "2026-10-06T08:00:00",
+        }
+    )
+    assert record.product_type == "R"
+    assert record.product_type not in {m.value for m in ProductType}
+
+
+async def test_the_snapshot_has_two_release_date_operations_per_program() -> None:
+    """Exports and imports have release-date operations, Census and UN Trade alike;
+    re-exports have none, so ``ProductType`` has no member for them."""
     paths = json.loads(SNAPSHOT.read_text(encoding="utf-8"))["paths"]
-    assert [m.value for m in ProductType] == ["exports", "imports"]
-    for member in ProductType:
-        assert f"/api/gats/census/data/{member}/dataReleaseDates" in paths
-        assert f"/api/gats/UNTrade/data/{member}/dataReleaseDates" in paths
+    for flow in ("exports", "imports"):
+        assert f"/api/gats/census/data/{flow}/dataReleaseDates" in paths
+        assert f"/api/gats/UNTrade/data/{flow}/dataReleaseDates" in paths
     release_paths = {p for p in paths if p.endswith("/dataReleaseDates")}
     assert len(release_paths) == 4
     assert not any("reexport" in p.lower() for p in release_paths)

@@ -16,9 +16,10 @@ and fetch the flow's release list, which the client caches for an hour
 (``_client.CACHED_PATHS``): GATS answers a month it has not released with ``[]``, the
 same as a partner without trade (``future_month.json`` and ``no_data_valid_partner.json``
 under ``tests/fixtures/GATSData_GetCensusExports/``), so a month the list lacks is
-refused as ``NotFoundError`` naming the months it holds. An empty list for a listed partner in a
-released month is a successful empty result. ``hs10_code`` keeps the records whose code
-starts with it, after the one data call; nothing else is selected, ordered or changed.
+refused as ``NotFoundError`` naming the months it holds. An empty list for a listed
+partner in a released month is a successful empty result. ``hs10_code`` keeps the
+records whose code starts with it, after the one data call; nothing else is selected,
+ordered or changed.
 
 Release metadata. ``meta.vintage`` of a data task is the statistical month as the
 records name it in ``date``, six digits (``"202608"``); every recorded record carries the

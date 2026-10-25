@@ -5,6 +5,7 @@ never a request kept from ``route.calls``.
 """
 
 import json
+from collections.abc import Iterator
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
@@ -15,7 +16,7 @@ from xippios.core import NotFoundError
 from xippios.core.testing import ReplayFixture, load_fixture, sent_urls
 
 from xippios.usda.gats import api
-from xippios.usda.gats._client import BASE_URL, classify
+from xippios.usda.gats._client import BASE_URL, cache, classify
 from xippios.usda.gats.models import (
     CensusExport,
     CensusImport,
@@ -28,6 +29,16 @@ pytestmark = pytest.mark.anyio
 
 SNAPSHOT = Path(__file__).parents[1] / "docs" / "upstream" / "openapi" / "portal-document.json"
 EXPORTS = "GATSData_GetCensusExports"
+
+
+@pytest.fixture(autouse=True)
+def empty_cache() -> Iterator[None]:
+    """The client caches the release-date lists for an hour (``_client.cache``): each
+    test starts and ends without an entry, so a list one test fetched never answers the
+    route the next test mounted."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 async def test_get_countries(replay_fixture: ReplayFixture) -> None:
@@ -73,7 +84,8 @@ async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> Non
 
 async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    releases = await api.GATSData_GetCensusExportDataReleaseInfo()
+    releases, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert stored is None, "from the wire, not from the cache"
     assert len(releases) == 716
     assert releases[0] == DataReleaseInfo(
         statistical_year_month="202608",
@@ -97,8 +109,8 @@ async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) ->
 async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
     replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    imports = await api.GATSData_GetCensusImportDataReleaseInfo()
-    exports = await api.GATSData_GetCensusExportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetCensusImportDataReleaseInfo()
+    exports, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
     assert len(imports) == 716
     assert imports[0] == DataReleaseInfo(
         statistical_year_month="202608",
@@ -255,8 +267,8 @@ async def test_product_type_members_are_the_release_records_codes(
     throughout the exports list, ``M`` throughout the imports list."""
     replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
     replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    exports = await api.GATSData_GetCensusExportDataReleaseInfo()
-    imports = await api.GATSData_GetCensusImportDataReleaseInfo()
+    exports, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetCensusImportDataReleaseInfo()
     assert [m.value for m in ProductType] == ["X", "M"]
     assert {r.product_type for r in exports} == {ProductType.X}
     assert {r.product_type for r in imports} == {ProductType.M}

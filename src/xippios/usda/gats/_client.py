@@ -9,6 +9,11 @@ one, waiting within ``RetryPolicy.backoff_max`` or refusing without sending (ADR
 ADR-0015); and ``classify`` maps the gateway's ``API_KEY_*`` answers to ``AuthError``,
 its 429 to ``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``.
 
+Core's response cache keeps the Census release-date lists, and nothing else, for an hour
+(``cache``, ``cache_filter``, ``CACHED_PATHS``): every Census data task fetches its
+flow's list before the data, so without it each task call would cost two requests
+against the hourly quota.
+
 The gateway handling here (``HeaderKeyAuth("X-Api-Key", ...)``, the ``QuotaPolicy`` on
 ``x-ratelimit-*``, the ``API_KEY_*``, ``OVER_RATE_LIMIT`` and ``NOT_FOUND`` mappings with
 host-free messages) is copied from sdk-usda-psd's adopted client, the shape sdk-usda-esr
@@ -20,6 +25,7 @@ or a month without data are not mapped here: what they are is recorded under
 """
 
 import re
+from datetime import UTC, datetime
 
 import httpx
 from xippios.core import (
@@ -27,6 +33,7 @@ from xippios.core import (
     AuthError,
     ClientConfig,
     HeaderKeyAuth,
+    MemoryCache,
     NotFoundError,
     QuotaPolicy,
     RateLimit,
@@ -68,6 +75,65 @@ quota comes back after a 429's ``Retry-After``, else after ``window``, one hour,
 developer manual: "The block will automatically be lifted by waiting an hour".
 ``policy.snapshot()`` reads the quota as the last answer reported it.
 """
+
+CACHED_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/gats/census/data/exports/dataReleaseDates",
+        "/api/gats/census/data/imports/dataReleaseDates",
+    }
+)
+"""The only paths the client caches: the Census release-date lists.
+
+Each Census data task (``tasks.get_census_exports``, ``tasks.get_census_imports``) first
+fetches its flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
+``GATSData_GetCensusImportDataReleaseInfo``, to check that the month is released, so
+every task call would cost one extra request against api.data.gov's 1,000 per hour; from
+the cache it costs one per flow per ``RELEASE_DATES_TTL``. A list is one record per
+statistical month and changes only when a month is released or revised: as recorded
+(``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), 2026-08 was
+released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released
+2023-01 to 2025-12 on 2026-06-24. The data answers, the countries list and every other
+path are never cached. The UN Trade release-date lists join this set when their wrappers
+do.
+"""
+
+RELEASE_DATES_TTL = 3600.0
+"""Seconds a cached release-date list answers: one hour.
+
+Within that hour after a release the cached list can lag upstream: a task can refuse a
+month Census has just released, as not released yet, until the entry expires. Its
+``NotFoundError`` then says when the list was fetched.
+"""
+
+cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)
+"""Core's in-memory response cache, shared by every caller of ``client`` in the process.
+
+Only HTTP 200 answers are stored, and only for ``CACHED_PATHS`` (``cache_filter``); the
+two lists are about 81 KB of JSON each, so eight entries are plenty. A hit sends nothing,
+so the rate limiter and the quota policy never see it (ADR-0015).
+"""
+
+
+def cache_filter(request: httpx.Request) -> bool:
+    """Whether the client caches ``request``: only a GET of one of ``CACHED_PATHS``.
+
+    ``ClientConfig.cache_filter`` (ADR-0015) lets one client cache a few paths and
+    nothing else; core asks it with the request as built, before credentials apply, and
+    caches GETs only.
+    """
+    return request.url.path in CACHED_PATHS
+
+
+def stored_at(response: httpx.Response) -> datetime | None:
+    """When the cache stored ``response``, as UTC; ``None`` for an answer from the wire.
+
+    Core marks a hit with ``extensions["xippios_cache_stored_at"]``, epoch seconds; on a
+    hit a task's ``meta.retrieved_at`` is that time, not the time of the call
+    (conventions §4).
+    """
+    stamp = response.extensions.get("xippios_cache_stored_at")
+    return None if stamp is None else datetime.fromtimestamp(stamp, UTC)
+
 
 _URL = re.compile(r"https?://[^/\s]+")
 
@@ -177,6 +243,8 @@ config = policy.install(
         version=__version__,
         base_url=BASE_URL,
         rate_limit=RATE_LIMIT,
+        cache=cache,
+        cache_filter=cache_filter,
         headers={"Accept": "application/json"},
         classify=classify,
     )
@@ -189,11 +257,16 @@ client = AsyncClient(config, auth=auth)
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
+    "CACHED_PATHS",
     "RATE_LIMIT",
+    "RELEASE_DATES_TTL",
     "SOURCE",
     "auth",
+    "cache",
+    "cache_filter",
     "classify",
     "client",
     "config",
     "policy",
+    "stored_at",
 ]

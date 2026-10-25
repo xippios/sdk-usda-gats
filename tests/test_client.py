@@ -12,7 +12,8 @@ reads a 429, and that ``classify`` shapes core's retries of a 429.
 
 import dataclasses
 import json
-from datetime import timedelta
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -25,8 +26,12 @@ from xippios.usda.gats import api
 from xippios.usda.gats._client import (
     API_KEY_ENV,
     BASE_URL,
+    CACHED_PATHS,
     RATE_LIMIT,
+    RELEASE_DATES_TTL,
     auth,
+    cache,
+    cache_filter,
     classify,
     client,
     config,
@@ -35,6 +40,18 @@ from xippios.usda.gats._client import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REGIONS = "/api/gats/regions"
+EXPORT_RELEASES = "/api/gats/census/data/exports/dataReleaseDates"
+IMPORT_RELEASES = "/api/gats/census/data/imports/dataReleaseDates"
+
+
+@pytest.fixture(autouse=True)
+def empty_cache() -> Iterator[None]:
+    """The client caches the release-date lists for an hour (``_client.cache``): each
+    test starts and ends without an entry, so a list one test fetched never answers the
+    route the next test mounted, nor the refusal a quota test expects."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 def recorded(endpoint: str, case: str) -> httpx.Response:
@@ -302,3 +319,79 @@ async def test_core_retries_a_429_only_within_its_backoff(
         assert info.value.retry_after == float(retry_after or 3600)
     else:
         assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
+
+
+def test_the_client_caches_the_census_release_date_lists_and_nothing_else() -> None:
+    """Core's cache, for one hour, on the two release-date paths only (ADR-0015's
+    ``cache_filter``): the data, the countries and every other path go to the wire."""
+    assert config.cache is cache
+    assert config.cache_filter is cache_filter
+    assert cache.ttl == RELEASE_DATES_TTL == 3600.0
+    assert {EXPORT_RELEASES, IMPORT_RELEASES} == CACHED_PATHS
+    for path, cached in [
+        (EXPORT_RELEASES, True),
+        (IMPORT_RELEASES, True),
+        ("/api/gats/censusExports/partnerCode/CH/year/2026/month/8", False),
+        ("/api/gats/censusImports/partnerCode/CH/year/2026/month/8", False),
+        ("/api/gats/countries", False),
+        ("/api/gats/UNTrade/data/exports/dataReleaseDates", False),
+        (REGIONS, False),
+    ]:
+        assert cache_filter(httpx.Request("GET", f"{BASE_URL}{path}")) is cached, path
+
+
+@pytest.mark.anyio
+async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The second call sends nothing and says when the entry was stored, for
+    ``meta.retrieved_at`` (conventions §4); each flow's list is an entry of its own."""
+    exports = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    imports = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
+    before = datetime.now(UTC)
+    first, first_stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    after = datetime.now(UTC)
+    again, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert first_stored is None, "the first answer came from the wire"
+    assert stored is not None
+    assert before <= stored <= after, "when the first answer was stored, as UTC"
+    assert again == first
+    assert exports.call_count == 1
+    assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]
+    _, imports_stored = await api.GATSData_GetCensusImportDataReleaseInfo()
+    assert imports_stored is None, "the imports list is not the exports list's entry"
+    assert imports.call_count == 1
+
+
+@pytest.mark.anyio
+async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("GATSData_GetCensusExports", "CH_2026_8")
+    await api.GATSData_GetCensusExports("CH", 2026, 8)
+    await api.GATSData_GetCensusExports("CH", 2026, 8)
+    assert route.call_count == 2
+    assert len(cache) == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.rate_limited
+async def test_a_cached_release_list_answers_while_the_quota_is_spent(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path spends the quota; the
+    release list cached before it still answers, since a cache hit returns before the
+    quota policy's check (ADR-0015), while the uncached countries list is refused unsent.
+    Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
+    releases = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    first, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    spent = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
+        return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
+    )
+    with pytest.raises(RateLimitError):
+        await client.get_json(REGIONS)
+    cached, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert (cached, stored is not None) == (first, True)
+    assert releases.call_count == 1
+    countries = respx_mock.get(f"{BASE_URL}/api/gats/countries")
+    with pytest.raises(RateLimitError, match="nothing was sent"):
+        await api.GATSData_GetCountries()
+    assert (spent.call_count, countries.call_count) == (1, 0)

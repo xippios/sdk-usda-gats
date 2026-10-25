@@ -87,7 +87,7 @@ GATS_APP_NOTE = (
 )
 REFUSED_NOTE = "403 Access Denied at the CDN edge"
 MAX_SHELL_BYTES = 16_384
-"""A page recorded without a file must stay this small; a larger one needs a look by hand."""
+"""A page recorded as a shell must stay this small; a larger one needs a look by hand."""
 
 USER_AGENT = "xippios-usda-gats refresh_upstream (+https://github.com/xippios)"
 TIMEOUT = 60.0
@@ -409,7 +409,7 @@ def document_row(path: str, response: Response) -> tuple[Row, GatsPart]:
         f"Kept {gats.kept} `{KEEP_PREFIX}` paths; dropped {dropped} (out of scope here); "
         f"kept {gats.definitions_kept} of {gats.definitions_total} definitions"
     )
-    _log(f"  {path}: {len(content)} bytes written from {len(response.body)} fetched")
+    _log(f"  {path}: {len(content)} bytes to write from {len(response.body)} fetched")
     return Row(response, note, path, content), gats
 
 

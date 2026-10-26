@@ -375,18 +375,23 @@ def _entry(stored_at: float) -> CachedResponse:
 def test_each_path_keeps_its_own_ttl() -> None:
     """``PathCaches`` with clocks of its own: two hours on, the release list's entry has
     expired and the commodities entry still answers; past a day, it has expired too. A
-    key of no path named is neither stored nor looked up."""
+    key of no path named, or of a named path with a query, is neither stored nor looked
+    up, and ``by_path`` cannot be changed under the routing."""
     now = [1_000_000.0]
     hourly = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8, clock=lambda: now[0])
     daily = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1, clock=lambda: now[0])
     caches = PathCaches({EXPORT_RELEASES: hourly, COMMODITIES_PATH: daily})
+    with pytest.raises(TypeError):
+        caches.by_path[REGIONS] = hourly  # type: ignore[index]
     releases = cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}"))
     commodities = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
     other = cache_key("GET", httpx.URL(f"{BASE_URL}{REGIONS}"))
-    for key in (releases, commodities, other):
+    queried = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}", params={"a": "1"}))
+    for key in (releases, commodities, other, queried):
         caches.set(key, _entry(now[0]))
-    assert (len(hourly), len(daily), len(caches)) == (1, 1, 2), "the other key is dropped"
+    assert (len(hourly), len(daily), len(caches)) == (1, 1, 2), "the other keys are dropped"
     assert caches.get(other) is None
+    assert caches.get(queried) is None
     now[0] += 2 * 3600
     assert caches.get(releases) is None, "an hour has passed"
     assert caches.get(commodities) is not None, "a day has not"

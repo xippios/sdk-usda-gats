@@ -29,6 +29,7 @@ or a month without data are not mapped here: what they are is recorded under
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
 
 import httpx
 from xippios.core import (
@@ -137,9 +138,10 @@ class PathCaches:
     (``ClientConfig.cache``); this backend routes each entry to the ``MemoryCache`` of its
     path. The client keys an entry by ``cache_key("GET", url)`` of the request as built
     from ``BASE_URL`` and the path (``CacheBackend``'s contract), so the keys of the
-    paths named here are known in advance; an entry under any other key is neither
-    looked up nor stored. ``cache_filter`` already lets only ``CACHED_PATHS`` through,
-    so that never happens; it keeps the backend from caching anything it was not given.
+    paths named here are known in advance. A key of no path named here finds nothing and
+    is dropped: ``cache_filter`` lets only ``CACHED_PATHS`` through, but a request to one
+    of them with a query has a key of its own (``cache_key`` takes the query in), so it
+    goes to the wire every time and is never stored.
 
     Args:
         caches: Path, as ``CACHED_PATHS`` names it, to the cache that keeps its answer,
@@ -147,11 +149,21 @@ class PathCaches:
     """
 
     def __init__(self, caches: Mapping[str, MemoryCache]) -> None:
-        self.by_path: dict[str, MemoryCache] = dict(caches)
+        self._by_path = dict(caches)
         self._by_key = {
             cache_key("GET", httpx.URL(f"{BASE_URL}{path}")): store
-            for path, store in caches.items()
+            for path, store in self._by_path.items()
         }
+        self._stores = tuple({id(store): store for store in self._by_key.values()}.values())
+
+    @property
+    def by_path(self) -> Mapping[str, MemoryCache]:
+        """Path to the cache that keeps its answer, as given, as a read-only view.
+
+        ``get``, ``set``, ``clear`` and ``len`` go by what was built from it once, so the
+        view cannot change under them.
+        """
+        return MappingProxyType(self._by_path)
 
     def get(self, key: str) -> CachedResponse | None:
         """The live entry for ``key`` from its path's cache, or ``None``."""
@@ -166,12 +178,11 @@ class PathCaches:
 
     def clear(self) -> None:
         """Drop every entry of every cache."""
-        for store in {id(store): store for store in self.by_path.values()}.values():
+        for store in self._stores:
             store.clear()
 
     def __len__(self) -> int:
-        stores = {id(store): store for store in self.by_path.values()}.values()
-        return sum(len(store) for store in stores)
+        return sum(len(store) for store in self._stores)
 
 
 release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)

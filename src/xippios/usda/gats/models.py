@@ -15,12 +15,14 @@ not echo one in ``meta.request``, and fixtures never carry their values (ADR-001
 The snapshot types every GATS response as ``object`` and defines no schemas
 (``definitions`` is empty in ``docs/upstream/openapi/portal-document.json``). The record
 shapes below therefore come from the recorded answers, each named in its model's
-docstring; every field is an assumption from that fixture, recorded 2026-10-25. No GATS
-record carries a personal identifier. Upstream's camelCase names are snake_cased as they
-read: ``hS10Code`` is ``hs10_code``, ``isO3Code`` is ``iso3_code``, ``censusUOMId1`` is
-``census_uom_id1``. Year-month codes (``"202608"``) stay text: upstream sends them as
-digit strings without a day, and nothing is combined into a date here. Quantities and
-values arrive as JSON numbers and become ``Decimal`` (ADR-0008); unit-of-measure ids stay
+docstring; every field is an assumption from that fixture, recorded 2026-10-25 or
+2026-10-26. No GATS record carries a personal identifier. Upstream's camelCase names are
+snake_cased as they read: ``hS10Code`` is ``hs10_code``, ``hS6Code`` ``hs6_code``,
+``isO3Code`` ``iso3_code``, ``censusUOMId1`` ``census_uom_id1``, ``isAgCommodity``
+``is_ag_commodity``; upstream's ``endDtate`` is ``end_dtate``, its spelling kept.
+Year-month codes (``"202608"``) stay text: upstream sends them as digit strings without a
+day, and nothing is combined into a date here. Quantities and values arrive as JSON
+numbers and become ``Decimal`` (ADR-0008); unit-of-measure and customs-district ids stay
 plain ``int``.
 """
 
@@ -34,9 +36,16 @@ from xippios.core import UpstreamModel
 __all__ = [
     "CensusExport",
     "CensusImport",
+    "Commodity",
     "Country",
+    "CustomsDistrict",
+    "CustomsDistrictExport",
+    "CustomsDistrictImport",
     "DataReleaseInfo",
+    "HS6Commodity",
     "ProductType",
+    "Region",
+    "UnitOfMeasure",
 ]
 
 
@@ -103,6 +112,161 @@ class Country(UpstreamModel):
     genc_code: str | None = Field(validation_alias="gencCode")
 
 
+class Region(UpstreamModel):
+    """One record of ``GATSData_GetRegions`` (``GET /api/gats/regions``).
+
+    Shape from ``tests/fixtures/GATSData_GetRegions/all.json`` (15 records, every one with
+    both fields, no code twice, ``"R05"`` to ``"R99"`` in order). Upstream: "Use it to
+    associate Region Name with Country records obtained by querying Country end point";
+    every ``Country.region_code`` recorded is one of the 15.
+
+    Attributes:
+        region_code: ``regionCode``, e.g. ``"R40"``; the ``regionCode`` of
+            ``GATSData_GetCountries``.
+        region_name: ``regionName``, e.g. ``"East Asia"``.
+    """
+
+    region_code: str = Field(validation_alias="regionCode")
+    region_name: str = Field(validation_alias="regionName")
+
+
+class Commodity(UpstreamModel):
+    """One record of ``GATSData_GetCommodities`` (``GET /api/gats/commodities``).
+
+    Shape from the answer recorded 2026-10-26: 24,936 records, 7,592,916 bytes of JSON
+    (8,383,278 as a fixture file), every one with all eleven fields. That file is not
+    committed under ``tests/fixtures/`` for its size, so no replay test parses it yet.
+    Upstream: "Commodity record contains HS10 Code and Census and FAS Unit Of Measure
+    IDS". A record names a code, the month it starts, a product type, a short name, a
+    description, an agricultural flag and four unit-of-measure ids; it carries no FAS
+    product group and no other grouping. A code is not unique: 20,702 distinct codes in
+    24,397 distinct code and product type pairs, and a pair repeats with a later
+    ``startDate`` (``"0207410000"`` under ``"M"`` is chicken cuts from ``"198901"`` and
+    ducks from ``"201201"``); code, product type and start month are unique together. In
+    code order.
+
+    Attributes:
+        hs10_code: ``hS10Code``, ten characters as upstream sends them, e.g.
+            ``"0103910000"``; the 4,548 records of product types ``"T"`` and ``"B"``
+            carry seven digits and three spaces (``"0011010   "``), kept as sent.
+        start_date: ``startDate``, a year and month as six digits, e.g. ``"198901"``.
+        end_dtate: ``endDtate``, upstream's spelling; ``null`` in every recorded record,
+            typed as text or ``None`` by assumption.
+        product_type: ``productType``, ``"X"`` (5,919 records), ``"M"`` (14,469), ``"T"``
+            (2,704) or ``"B"`` (1,844); the snapshot does not say what they stand for.
+            Every HS10 code of the recorded export and re-export answers is listed under
+            ``"X"``, every one of the recorded import answers under ``"M"``. Text, like
+            ``DataReleaseInfo.product_type``.
+        commodity_name: ``commodityName``, at most 16 characters as recorded, e.g.
+            ``"SWINE,<50KG EACH"``.
+        commodity_description: ``commodityDescription``, e.g. ``"SWINE, LIVE, NESOI,
+            WEIGHING LESS THAN 50 KG EACH  (NO)"``; ``None`` where upstream sends
+            ``null`` (every ``"T"`` and ``"B"`` record and seven others).
+        is_ag_commodity: ``isAgCommodity``, ``True`` in 13,870 records, ``False`` in
+            11,066.
+        census_uom_id1: ``censusUOMId1``, a unit-of-measure id, e.g. ``78``; ``0`` occurs.
+        census_uom_id2: ``censusUOMId2``, e.g. ``78``.
+        fas_converted_uom_id: ``fasConvertedUOMId``, e.g. ``78``.
+        fas_non_converted_uom_id: ``fasNonConvertedUOMId``, e.g. ``78``.
+    """
+
+    hs10_code: str = Field(validation_alias="hS10Code")
+    start_date: str = Field(validation_alias="startDate")
+    end_dtate: str | None = Field(validation_alias="endDtate")
+    product_type: str = Field(validation_alias="productType")
+    commodity_name: str = Field(validation_alias="commodityName")
+    commodity_description: str | None = Field(validation_alias="commodityDescription")
+    is_ag_commodity: bool = Field(validation_alias="isAgCommodity")
+    census_uom_id1: int = Field(validation_alias="censusUOMId1")
+    census_uom_id2: int = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
+    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+
+
+class HS6Commodity(UpstreamModel):
+    """One record of ``GATSData_GetHS6Commodities`` (``GET /api/gats/HS6Commodities``).
+
+    Shape from ``tests/fixtures/GATSData_GetHS6Commodities/all.json``: 2,909 records,
+    661,146 bytes of JSON, every one with all seven fields and none ``null``, one per HS6
+    code, no code twice, in code order. Upstream: "a list of Commodities classified at a
+    broader level of classification, at the HS6 Level, as opposed to HS10 Level. Use this
+    to correlate the Import, Export and Re-export data records obtained by querying UN
+    Trade Data." A record names the code, a name, a description and four unit-of-measure
+    ids: no product type, start month or agricultural flag, no grouping field. The first
+    six digits of every HS10 code in the recorded Census answers are a listed code.
+
+    Attributes:
+        hs6_code: ``hS6Code``, six digits as text, e.g. ``"010110"``.
+        commodity_name: ``commodityName``, e.g. ``"Purebred Breeding Animal"``.
+        commodity_description: ``commodityDescription``, e.g.
+            ``"Purebred Breeding Animal"``; equal to the name in 1,376 records.
+        census_uom_id1: ``censusUOMId1``, a unit-of-measure id, e.g. ``78``; ``0`` occurs.
+        census_uom_id2: ``censusUOMId2``, e.g. ``78``.
+        fas_converted_uom_id: ``fasConvertedUOMId``, e.g. ``78``.
+        fas_non_converted_uom_id: ``fasNonConvertedUOMId``, e.g. ``78``.
+    """
+
+    hs6_code: str = Field(validation_alias="hS6Code")
+    commodity_name: str = Field(validation_alias="commodityName")
+    commodity_description: str = Field(validation_alias="commodityDescription")
+    census_uom_id1: int = Field(validation_alias="censusUOMId1")
+    census_uom_id2: int = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
+    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+
+
+class UnitOfMeasure(UpstreamModel):
+    """One record of ``GATSData_GetUnitsOfMeasure`` (``GET /api/gats/unitsOfMeasure``).
+
+    Shape from ``tests/fixtures/GATSData_GetUnitsOfMeasure/all.json``: 108 records, every
+    one with all four fields, ids ``0`` to ``107`` in order without a gap. Upstream: "Use
+    this to match against Units Of Measure IDs in the Import and Export records to get
+    the name of the Unit of Measure"; every unit-of-measure id in the recorded data and
+    commodity answers is listed. An id is unique, a code is not: ``"CRT"``
+    (``"Crates"``) is id ``33`` and id ``105``.
+
+    Attributes:
+        unit_of_measure_id: ``unitOfMeasureId``, e.g. ``47``; the id the
+            ``census_uom_id1`` and other unit fields hold.
+        unit_of_measure_code: ``unitOfMeasureCode``, e.g. ``"KG"``.
+        unit_of_measure_name: ``unitOfMeasureName``, e.g. ``"Kilograms"``.
+        unit_of_measure_description: ``unitOfMeasureDescription``, e.g.
+            ``"Kilograms"``; equal to the name in every recorded record.
+    """
+
+    unit_of_measure_id: int = Field(validation_alias="unitOfMeasureId")
+    unit_of_measure_code: str = Field(validation_alias="unitOfMeasureCode")
+    unit_of_measure_name: str = Field(validation_alias="unitOfMeasureName")
+    unit_of_measure_description: str = Field(validation_alias="unitOfMeasureDescription")
+
+
+class CustomsDistrict(UpstreamModel):
+    """One record of ``GATSData_GetCustomsDistricts`` (``GET /api/gats/customsDistricts``).
+
+    Shape from ``tests/fixtures/GATSData_GetCustomsDistricts/all.json``: 53 records, every
+    one with all four fields, ids from ``0`` to ``99`` in order, with gaps. Upstream: "US
+    Customs Districts, the point of Entry and Exit for the Commodity Imports and
+    Exports." A record names an id, a name and the district's region, one of five; no
+    code besides the id, no port. Id ``0`` is ``"Z UNKNOW CDIST CODES"``; ids ``60``,
+    ``70``, ``80`` and ``99`` are ``"VESSELS-POWER/AFLOAT"``, ``"SHIPMENTS UNDER $251"``,
+    ``"MAIL SHIPMENTS"`` and ``"MILITARY SHIPMENTS"``.
+
+    Attributes:
+        customs_district_id: ``customsDistrictId``, e.g. ``10``; the id the
+            customs-district data records carry.
+        customs_district_name: ``customsDistrictName``, e.g. ``"NEW YORK, N.Y."``.
+        customs_district_region_code: ``customsDistrictRegionCode``, ``"EC"``, ``"GL"``,
+            ``"GP"``, ``"WC"`` or ``"OP"``.
+        customs_district_region_name: ``customsDistrictRegionName``, e.g.
+            ``"EAST COAST DISTRICTS"``; one name per region code.
+    """
+
+    customs_district_id: int = Field(validation_alias="customsDistrictId")
+    customs_district_name: str = Field(validation_alias="customsDistrictName")
+    customs_district_region_code: str = Field(validation_alias="customsDistrictRegionCode")
+    customs_district_region_name: str = Field(validation_alias="customsDistrictRegionName")
+
+
 class DataReleaseInfo(UpstreamModel):
     """One record of the Census release-date lists.
 
@@ -141,7 +305,10 @@ class CensusExport(UpstreamModel):
     ten fields. The record names its partner, month and HS10 code and four
     unit-of-measure ids; it names no customs district and no FAS product group. The
     snapshot points to ``GATSData_GetUnitsOfMeasure`` for the units; which quantity is in
-    which unit is not documented.
+    which unit is not documented. ``GATSData_GetCensusReExports``
+    (``censusReExports/partnerCode/...``) answers the same record, the same ten fields in
+    the same order (``tests/fixtures/GATSData_GetCensusReExports/IC_2026_8.json``, 12
+    records for Iceland, August 2026).
 
     Attributes:
         date: ``date``, the year and month as six digits, e.g. ``"202608"``.
@@ -198,6 +365,96 @@ class CensusImport(UpstreamModel):
         value: ``value``, e.g. ``Decimal("1111254.0")``; the snapshot names no currency.
     """
 
+    consumption_quantity1: Decimal = Field(validation_alias="consumptionQuantity1")
+    consumption_quantity2: Decimal = Field(validation_alias="consumptionQuantity2")
+    consumption_value: Decimal = Field(validation_alias="consumptionValue")
+    consumption_cif_value: Decimal = Field(validation_alias="consumptionCIFValue")
+    cif_value: Decimal = Field(validation_alias="cifValue")
+    date: str = Field(validation_alias="date")
+    country_code: str = Field(validation_alias="countryCode")
+    hs10_code: str = Field(validation_alias="hS10Code")
+    census_uom_id1: int = Field(validation_alias="censusUOMId1")
+    census_uom_id2: int = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
+    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    quantity1: Decimal = Field(validation_alias="quantity1")
+    quantity2: Decimal = Field(validation_alias="quantity2")
+    value: Decimal = Field(validation_alias="value")
+
+
+class CustomsDistrictExport(UpstreamModel):
+    """One record of the customs-district exports and re-exports.
+
+    ``GATSData_GetCustomsDistrictsExports`` (``customsDistrictExports/partnerCode/...``)
+    and ``GATSData_GetCustomsDistrictsReExports``
+    (``customsDistrictReExports/partnerCode/...``) answer the same record. Shape from
+    ``tests/fixtures/GATSData_GetCustomsDistrictsExports/IC_2026_8.json`` (107 records,
+    Iceland, August 2026), ``.../CH_2026_8.json`` (1,697 records, China) and
+    ``tests/fixtures/GATSData_GetCustomsDistrictsReExports/IC_2026_8.json`` (13 records):
+    every record with all eleven fields, ``customsDistrictId`` first, then the ten fields
+    of ``CensusExport`` in its order. One record per district and HS10 code, no pair
+    twice; the district is named by its id alone, an id of ``GATSData_GetCustomsDistricts``.
+    As recorded for China and for Iceland's re-exports, the records of one HS10 code add
+    up, over the districts, to that code's record in ``GATSData_GetCensusExports`` or
+    ``GATSData_GetCensusReExports`` (value and both quantities, the same unit ids).
+
+    Attributes:
+        customs_district_id: ``customsDistrictId``, e.g. ``1`` (``"PORTLAND,MAINE"``).
+        date: ``date``, the year and month as six digits, e.g. ``"202608"``.
+        country_code: ``countryCode``, the partner, e.g. ``"IC"``.
+        hs10_code: ``hS10Code``, ten digits as text, e.g. ``"0713202000"``.
+        census_uom_id1: ``censusUOMId1``, a unit-of-measure id, e.g. ``47``; ``0`` occurs.
+        census_uom_id2: ``censusUOMId2``, e.g. ``47``.
+        fas_converted_uom_id: ``fasConvertedUOMId``, e.g. ``70``.
+        fas_non_converted_uom_id: ``fasNonConvertedUOMId``, e.g. ``70``.
+        quantity1: ``quantity1``, e.g. ``Decimal("1162.0")``.
+        quantity2: ``quantity2``, e.g. ``Decimal("0.0")``.
+        value: ``value``, e.g. ``Decimal("6905.0")``; the snapshot names no currency.
+    """
+
+    customs_district_id: int = Field(validation_alias="customsDistrictId")
+    date: str = Field(validation_alias="date")
+    country_code: str = Field(validation_alias="countryCode")
+    hs10_code: str = Field(validation_alias="hS10Code")
+    census_uom_id1: int = Field(validation_alias="censusUOMId1")
+    census_uom_id2: int = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
+    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    quantity1: Decimal = Field(validation_alias="quantity1")
+    quantity2: Decimal = Field(validation_alias="quantity2")
+    value: Decimal = Field(validation_alias="value")
+
+
+class CustomsDistrictImport(UpstreamModel):
+    """One record of ``GATSData_GetCustomsDistrictsImports``.
+
+    Path ``customsDistrictImports/partnerCode/...``. Shape from
+    ``tests/fixtures/GATSData_GetCustomsDistrictsImports/IC_2026_8.json``: 123 records for
+    Iceland (``"IC"``), August 2026, every record with all sixteen fields,
+    ``customsDistrictId`` first, then the fifteen fields of ``CensusImport`` in its order.
+    One record per district and HS10 code, no pair twice, 21 districts and 74 codes; the
+    district is named by its id alone, an id of ``GATSData_GetCustomsDistricts``.
+
+    Attributes:
+        customs_district_id: ``customsDistrictId``, e.g. ``1`` (``"PORTLAND,MAINE"``).
+        consumption_quantity1: ``consumptionQuantity1``, e.g. ``Decimal("571053.0")``.
+        consumption_quantity2: ``consumptionQuantity2``, e.g. ``Decimal("0.0")``.
+        consumption_value: ``consumptionValue``, e.g. ``Decimal("4814084.0")``.
+        consumption_cif_value: ``consumptionCIFValue``, e.g. ``Decimal("4985562.0")``.
+        cif_value: ``cifValue``, e.g. ``Decimal("171478.0")``.
+        date: ``date``, the year and month as six digits, e.g. ``"202608"``.
+        country_code: ``countryCode``, the partner, e.g. ``"IC"``.
+        hs10_code: ``hS10Code``, ten digits as text, e.g. ``"0302140003"``.
+        census_uom_id1: ``censusUOMId1``, a unit-of-measure id, e.g. ``47``; ``0`` occurs.
+        census_uom_id2: ``censusUOMId2``, e.g. ``47``.
+        fas_converted_uom_id: ``fasConvertedUOMId``, e.g. ``70``.
+        fas_non_converted_uom_id: ``fasNonConvertedUOMId``, e.g. ``70``.
+        quantity1: ``quantity1``, e.g. ``Decimal("571053.0")``.
+        quantity2: ``quantity2``, e.g. ``Decimal("0.0")``.
+        value: ``value``, e.g. ``Decimal("4814084.0")``; the snapshot names no currency.
+    """
+
+    customs_district_id: int = Field(validation_alias="customsDistrictId")
     consumption_quantity1: Decimal = Field(validation_alias="consumptionQuantity1")
     consumption_quantity2: Decimal = Field(validation_alias="consumptionQuantity2")
     consumption_value: Decimal = Field(validation_alias="consumptionValue")

@@ -1425,10 +1425,10 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
         "end_month": 8,
     }
     refusal = (
-        "2024-08 to 2026-08 is 25 months, one request each; a series spans at most 24 months "
-        "on this MCP server, the ceiling it was started with (--series-months raises it, up to "
-        "60). Ask for a shorter range, or for consecutive ranges of at most 24 months one "
-        "after another."
+        "2024-08 to 2026-08 is 25 months, one request each; a series spans at most 24 months, "
+        "the ceiling set for this process (the MCP server starts with 24 by default; "
+        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
+        "ranges of at most 24 months one after another."
     )
     for tool in SERIES_TOOLS:
         with pytest.raises(AssertionError) as info:
@@ -1446,6 +1446,26 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
     )
     assert payload["data"] == []
     assert (releases.call_count, sent_urls(months)) == (1, urls)
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_a_ceiling_set_from_python_is_refused_in_the_same_words(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A Python caller that calls ``set_series_ceiling(12)``, with no MCP server in the
+    process, meets the refusal the MCP server gives: the ceiling set for this process, the
+    MCP server's default and ``--series-months``, each true for that caller too. Refused
+    before any request (respx is active with no route mounted)."""
+    tasks.set_series_ceiling(12)
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_census_import_series("IC", 2025, 8, 2026, 8)
+    assert info.value.message == (
+        "2025-08 to 2026-08 is 13 months, one request each; a series spans at most 12 months, "
+        "the ceiling set for this process (the MCP server starts with 24 by default; "
+        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
+        "ranges of at most 12 months one after another."
+    )
+    assert respx_mock.calls.call_count == 0, "refused before any request"
 
 
 @pytest.mark.usefixtures("restore_series_ceiling")

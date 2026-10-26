@@ -55,9 +55,12 @@ same wrappers as the month tasks, one data call per month (sdk-usda-psd's
 period). A call spans at most ``series_ceiling()`` months: ``SERIES_MAX_MONTHS`` (60) in
 Python and over HTTP; the MCP server starts with ``MCP_SERIES_MAX_MONTHS`` (24), and its
 ``--series-months`` sets another ceiling from 1 to 60 through core's option hooks
-(``mcp_add_options``, ``mcp_apply_options``; ADR-0014). The ceiling is process-wide: one
-MCP server per process. Every argument is checked first, the partner code for the start
-and for the end month, so a code discontinued inside the range is refused.
+(``mcp_add_options``, ``mcp_apply_options``; ADR-0014). The entry point
+``xippios-usda-gats-mcp`` sets the MCP ceiling, since core's ``main`` applies the option, so
+a host that imports ``xippios.usda.gats.mcp.server`` and serves it another way keeps 60.
+The ceiling is process-wide: a Python or HTTP call made in the MCP server's process meets
+the MCP ceiling too. Every argument is checked first, the partner code for the start and
+for the end month, so a code discontinued inside the range is refused.
 The flow's release list is fetched once, the imports list for imports and the exports
 list for exports and, by the same assumption, re-exports; a range with a month the list
 lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
@@ -199,9 +202,10 @@ second, so the longest series takes about a minute and spends 60 of api.data.gov
 requests per hour for the key. No ceiling goes above it (``set_series_ceiling``)."""
 
 MCP_SERIES_MAX_MONTHS = 24
-"""The ceiling the MCP server starts with, two years: 24 requests, about 24 seconds at the
-client's pace, for one tool call. Its ``--series-months`` sets another, from 1 to
-``SERIES_MAX_MONTHS`` (``mcp_add_options``, ``mcp_apply_options``)."""
+"""The ceiling the entry point ``xippios-usda-gats-mcp`` starts the MCP server with, two
+years: 24 requests, about 24 seconds at the client's pace, for one tool call. Its
+``--series-months`` sets another, from 1 to ``SERIES_MAX_MONTHS`` (``mcp_add_options``,
+``mcp_apply_options``)."""
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
@@ -308,11 +312,11 @@ _series_ceiling = SERIES_MAX_MONTHS
 def series_ceiling() -> int:
     """The most months one Census series call spans in this process, e.g. ``60``.
 
-    ``SERIES_MAX_MONTHS`` (60) unless ``set_series_ceiling`` set another, as the MCP
-    server does when it starts: ``MCP_SERIES_MAX_MONTHS`` (24), or its
-    ``--series-months``. The setting is process-wide, so every series call in the
-    process meets the same ceiling, from Python, over HTTP or over MCP: one MCP server
-    per process.
+    ``SERIES_MAX_MONTHS`` (60) unless ``set_series_ceiling`` set another, as the entry
+    point ``xippios-usda-gats-mcp`` does when it starts the MCP server:
+    ``MCP_SERIES_MAX_MONTHS`` (24), or its ``--series-months``. The setting is
+    process-wide, so every series call in the process meets the same ceiling, from
+    Python, over HTTP or over MCP: one MCP server per process.
     """
     return _series_ceiling
 
@@ -321,11 +325,13 @@ def set_series_ceiling(months: int) -> None:
     """Set the most months one Census series call spans, for every call in this process.
 
     A range longer than the ceiling is refused before any request, naming the ceiling;
-    below ``SERIES_MAX_MONTHS`` the refusal says it is the MCP server's and that
-    ``--series-months`` raises it, up to 60. No ceiling goes above ``SERIES_MAX_MONTHS``.
-    The MCP server calls this once when it starts (``mcp_apply_options``); the setting is
-    process-wide, so it holds for the Python API and an HTTP router in the same process
-    too: one MCP server per process.
+    below ``SERIES_MAX_MONTHS`` the refusal calls it the ceiling set for this process and
+    says that the MCP server starts with 24 by default and that ``--series-months`` raises
+    it, up to 60. No ceiling goes above ``SERIES_MAX_MONTHS``. The entry point
+    ``xippios-usda-gats-mcp`` calls this once when it starts the MCP server
+    (``mcp_apply_options``, which core's ``main`` applies); the setting is process-wide,
+    so it holds for the Python API and an HTTP router in the same process too: one MCP
+    server per process.
 
     Args:
         months: A whole number of months from 1 to 60 (``SERIES_MAX_MONTHS``), e.g.
@@ -896,8 +902,8 @@ def _series_months(
     the end month, naming its ``discontinuedOn``. Then the start must not be after the
     end, the span must be at most ``series_ceiling()`` months, and ``hs10_code`` must
     pass ``validate_hs10_code``. A refusal of the span names the ceiling in force and,
-    below ``SERIES_MAX_MONTHS``, that it is the MCP server's and that ``--series-months``
-    raises it, up to 60.
+    below ``SERIES_MAX_MONTHS``, that it is the ceiling set for this process, that the MCP
+    server starts with 24 by default and that ``--series-months`` raises it, up to 60.
 
     Returns:
         ``(year, month)`` of every month from the start to the end, both included, oldest
@@ -929,8 +935,9 @@ def _series_months(
         bound = f"a series spans at most {ceiling} months"
         if ceiling < SERIES_MAX_MONTHS:
             bound += (
-                " on this MCP server, the ceiling it was started with (--series-months "
-                f"raises it, up to {SERIES_MAX_MONTHS})"
+                ", the ceiling set for this process (the MCP server starts with "
+                f"{MCP_SERIES_MAX_MONTHS} by default; --series-months raises it, up to "
+                f"{SERIES_MAX_MONTHS})"
             )
         raise InvalidRequestError(
             f"{start} to {end} is {span} months, one request each; {bound}. Ask for a "

@@ -196,17 +196,18 @@ async def get_census_exports_async(
     (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour) to check
     that the month is released, then the month (``GATSData_GetCensusExports``). The
     arguments are checked before either: an unknown partner code raises
-    ``InvalidRequestError`` naming the closest codes. A month not released yet, or before
-    January 1967, raises ``NotFoundError`` naming the months released; a listed partner
-    without exports that month gives an empty list. ``meta.vintage`` is the month's
-    release time from that list, as upstream states it (``"2026-10-06T08:00:00"`` for
-    August 2026): the release that last revised the figures, since Census applies
-    corrections once a year. For up to an hour after a release (``RELEASE_DATES_TTL``)
-    the cached list may still give the previous release's time, an accepted lag. The
-    month itself is in ``meta.request`` and in every record's ``date`` (``"202608"``).
-    ``meta.published_at`` stays empty: FAS states no time zone, and ``ResultMeta`` takes
-    only a zone-aware time. The MCP server returns at most 200 rows or 64 KB, so pass
-    ``hs10_code`` there to see a chapter or one product.
+    ``InvalidRequestError`` naming up to three close codes with their names, or two
+    example codes when none is close. A month not released yet, or before January 1967,
+    raises ``NotFoundError`` naming the months released; a listed partner without exports
+    that month gives an empty list. ``meta.vintage`` is the month's release time from
+    that list, as upstream states it (``"2026-10-06T08:00:00"`` for August 2026): the
+    release that last revised the figures, since Census applies corrections once a year.
+    For up to an hour after a release the cached list may still give the previous
+    release's time, an accepted lag. The month itself is in ``meta.request`` and in every
+    record's ``date`` (``"202608"``). ``meta.published_at`` stays empty: FAS states no
+    time zone, and ``ResultMeta`` takes only a zone-aware time. The MCP server returns
+    at most 200 rows or 64 KB, so pass ``hs10_code`` there to see a chapter or one
+    product.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as
@@ -240,24 +241,25 @@ async def get_census_imports_async(
 
     One record per HS10 code imported that month, as upstream sends it: every field of
     an export record (``value``, ``quantity1``, ``quantity2``, four unit-of-measure ids)
-    and five more the snapshot does not document, ``consumption_quantity1``,
-    ``consumption_quantity2``, ``consumption_value``, ``consumption_cif_value`` and
-    ``cif_value``; 3,294 records for China in August 2026. Two requests: the imports
-    release list (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an
-    hour) to check that the month is released, then the month
-    (``GATSData_GetCensusImport``). The arguments are checked before either: an unknown
-    partner code raises ``InvalidRequestError`` naming the closest codes. A month not
-    released yet, or before January 1967, raises ``NotFoundError`` naming the months
-    released; a listed partner without imports that month gives an empty list.
-    ``meta.vintage`` is the month's release time from that list, as upstream states it
-    (``"2026-10-06T08:00:00"`` for August 2026): the release that last revised the
-    figures, since Census applies corrections once a year. For up to an hour after a
-    release (``RELEASE_DATES_TTL``) the cached list may still give the previous
-    release's time, an accepted lag. The month itself is in ``meta.request`` and in
-    every record's ``date`` (``"202608"``). ``meta.published_at`` stays empty: FAS
-    states no time zone, and ``ResultMeta`` takes only a zone-aware time. The MCP server
-    returns at most 200 rows or 64 KB, so pass ``hs10_code`` there to see a chapter or
-    one product.
+    and five more, ``consumption_quantity1``, ``consumption_quantity2``,
+    ``consumption_value``, ``consumption_cif_value`` and ``cif_value``; 3,294 records for
+    China in August 2026. Upstream's documentation describes no field of either record:
+    every field is as the recorded answers show it. Two requests: the imports release
+    list (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an hour) to
+    check that the month is released, then the month (``GATSData_GetCensusImport``). The
+    arguments are checked before either: an unknown partner code raises
+    ``InvalidRequestError`` naming up to three close codes with their names, or two
+    example codes when none is close. A month not released yet, or before January 1967,
+    raises ``NotFoundError`` naming the months released; a listed partner without imports
+    that month gives an empty list. ``meta.vintage`` is the month's release time from
+    that list, as upstream states it (``"2026-10-06T08:00:00"`` for August 2026): the
+    release that last revised the figures, since Census applies corrections once a year.
+    For up to an hour after a release the cached list may still give the previous
+    release's time, an accepted lag. The month itself is in ``meta.request`` and in every
+    record's ``date`` (``"202608"``). ``meta.published_at`` stays empty: FAS states no
+    time zone, and ``ResultMeta`` takes only a zone-aware time. The MCP server returns
+    at most 200 rows or 64 KB, so pass ``hs10_code`` there to see a chapter or one
+    product.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as

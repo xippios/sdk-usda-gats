@@ -37,11 +37,12 @@ releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-
 
 `partner_code` is GATS's own two-character code, not ISO (`"CH"` China, `"MX"` Mexico,
 `"JA"` Japan), checked against the countries list packaged in `reference/` before any
-call; an unknown code is refused with the closest codes, since GATS answers it with an
-empty list. `month` is 1 to 12 and `year` four digits; `hs10_code` keeps the products
-whose code starts with it, a full ten-digit code for one product or a prefix such as a
-chapter, applied after the one data request. `get_census_imports` takes the same
-arguments and adds five consumption and CIF fields per record.
+call; an unknown code is refused, naming close codes where the list has any and example
+codes otherwise, since GATS answers it with an empty list. `month` is 1 to 12 and `year`
+four digits; `hs10_code` keeps the products whose code starts with it, a full ten-digit
+code for one product or a prefix such as a chapter, applied after the one data request.
+`get_census_imports` takes the same arguments and adds five consumption and CIF fields
+per record.
 
 Each data task makes two requests, its flow's release list and the month, or only the
 second while the client's cache holds the list, for an hour. A month the list lacks (not

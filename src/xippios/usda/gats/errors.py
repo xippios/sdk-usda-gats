@@ -15,7 +15,8 @@ class UnknownCode(InvalidRequestError):
     answer as a listed partner without trade in that month (``no_data_valid_partner.json``,
     ``BV``, Bouvet Island): nothing in the answer tells the two apart. The package
     therefore checks a partner code against the packaged ``countries`` list before calling
-    upstream and refuses an unknown one, naming the closest known codes.
+    upstream and refuses an unknown one, naming the closest known codes, or example codes
+    when none is close.
 
     Attributes:
         param: The parameter, as the package names it, e.g. ``"partner_code"``.

@@ -40,26 +40,27 @@ __all__ = [
 ]
 
 
+# The docstring below lands in the release-dates MCP tool's input schema
+# (``$defs.ProductType.description``), so it speaks to agents and the provenance lives
+# here. The members are the codes of ``productType``, the field of the release records
+# that tells the two lists apart, so a member equals ``DataReleaseInfo.product_type`` of
+# the records it names (ADR-0008: upstream enumerations become ``StrEnum`` with upstream's
+# values). Established by the recorded lists, not by the snapshot, which documents no
+# record shape: every record of
+# ``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json`` carries ``"X"``,
+# every record of ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``
+# ``"M"`` (716 each, recorded 2026-10-25). ``X`` selects
+# ``GATSData_GetCensusExportDataReleaseInfo`` (``census/data/exports/dataReleaseDates``),
+# ``M`` ``GATSData_GetCensusImportDataReleaseInfo``
+# (``census/data/imports/dataReleaseDates``). Re-exports have no release-date operation in
+# the snapshot, so there is no member for them. The UN Trade release lists are not
+# recorded; whether they carry the same codes is not established. The enum names the known
+# codes only: ``DataReleaseInfo.product_type`` stays ``str``, so a code upstream adds
+# later parses instead of failing the answer.
 class ProductType(StrEnum):
-    """Upstream's code for a Census release-date list: ``X`` exports, ``M`` imports.
+    """Which US Census release-date list: ``X`` the exports list, ``M`` the imports list.
 
-    The members are the codes of ``productType``, the field of the release records that
-    tells the two lists apart, so a member equals ``DataReleaseInfo.product_type`` of the
-    records it names (ADR-0008: upstream enumerations become ``StrEnum`` with upstream's
-    values). Established by the recorded lists, not by the snapshot, which documents no
-    record shape: every record of
-    ``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json`` carries ``"X"``,
-    every record of ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``
-    ``"M"`` (716 each, recorded 2026-10-25). ``X`` selects
-    ``GATSData_GetCensusExportDataReleaseInfo``
-    (``census/data/exports/dataReleaseDates``), ``M``
-    ``GATSData_GetCensusImportDataReleaseInfo`` (``census/data/imports/dataReleaseDates``).
-    Re-exports have no release-date operation in the snapshot, so there is no member for
-    them. The UN Trade release lists are not recorded; whether they carry the same codes
-    is not established.
-
-    The enum names the known codes only: ``DataReleaseInfo.product_type`` stays ``str``,
-    so a code upstream adds later parses instead of failing the answer.
+    These are upstream's ``productType`` codes. Re-exports have no release-date list.
     """
 
     X = "X"
@@ -175,8 +176,9 @@ class CensusImport(UpstreamModel):
     fifteen fields. It carries every field of ``CensusExport`` and five more, sent first:
     ``consumptionQuantity1``, ``consumptionQuantity2``, ``consumptionValue``,
     ``consumptionCIFValue`` and ``cifValue``. No customs district, no FAS product group.
-    The snapshot documents none of the five; they are kept as upstream sends them and
-    nothing is derived from them.
+    Like every field of every record here, the five come from the fixture, since the
+    snapshot documents no record field; they are kept as upstream sends them and nothing
+    is derived from them.
 
     Attributes:
         consumption_quantity1: ``consumptionQuantity1``, e.g. ``Decimal("9640.0")``.

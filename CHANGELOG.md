@@ -54,7 +54,8 @@ All notable changes to this project are documented here. The format follows
 - The GATS countries list packaged as `reference/countries.json` (322 records, fetched
   2026-10-25) by `scripts/refresh_reference.py`, and `params.validate_partner_code`,
   which refuses a code the list lacks as `errors.UnknownCode`, an `InvalidRequestError`
-  naming the closest codes: GATS answers an unknown partner with an empty list.
+  naming close codes, or example codes when none is close: GATS answers an unknown
+  partner with an empty list.
   `params.validate_year`, `validate_month` and `validate_hs10_code` check the other
   arguments.
 - `scripts/check-siblings.sh` and `.github/workflows/siblings.yml`: the ADR-0006 sibling

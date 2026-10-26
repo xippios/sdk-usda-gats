@@ -148,6 +148,9 @@ def test_the_client_asks_for_json() -> None:
         ("GATSData_GetCensusExports", "unknown_partner", "965"),
         ("GATSData_GetCensusExports", "month_13", "964"),
         ("GATSData_GetCensusImport", "CH_2026_8", "965"),
+        ("GATSData_GetUNTradeExportDataReleaseInfo", "all", "992"),
+        ("GATSData_GetUNTradeExports", "IC_2019", "991"),
+        ("GATSData_GetUNTradeExports", "year_text", "985"),
     ],
 )
 def test_keyed_gats_answers_carry_the_hourly_quota(
@@ -461,6 +464,44 @@ async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> Non
     route = replay_fixture("GATSData_GetCensusExports", "CH_2026_8")
     await api.GATSData_GetCensusExports("CH", 2026, 8)
     await api.GATSData_GetCensusExports("CH", 2026, 8)
+    assert route.call_count == 2
+    assert len(cache) == 0
+
+
+@pytest.mark.anyio
+async def test_the_un_release_lists_land_in_the_release_dates_store(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Through the real client: each UN Trade list is an entry of the hour's store, beside
+    the Census lists, never the day's; the second call sends nothing and says when the
+    entry was stored."""
+    exports = replay_fixture("GATSData_GetUNTradeExportDataReleaseInfo", "all")
+    imports = replay_fixture("GATSData_GetUNTradeImportDataReleaseInfo", "all")
+    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    first, first_stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    _, imports_stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert (first_stored, imports_stored) == (None, None), "both from the wire"
+    assert (len(release_dates_cache), len(commodities_cache)) == (3, 0)
+    for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
+        key = cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
+        assert release_dates_cache.get(key) is not None, path
+        assert commodities_cache.get(key) is None, path
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
+    assert entry is not None
+    again, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert again == first
+    assert (exports.call_count, imports.call_count) == (1, 1)
+    assert sent_urls(exports) == [f"{BASE_URL}{UN_EXPORT_RELEASES}"]
+    assert sent_urls(imports) == [f"{BASE_URL}{UN_IMPORT_RELEASES}"]
+
+
+@pytest.mark.anyio
+async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("GATSData_GetUNTradeReExports", "MC_2019")
+    await api.GATSData_GetUNTradeReExports("MC", "2019")
+    await api.GATSData_GetUNTradeReExports("MC", "2019")
     assert route.call_count == 2
     assert len(cache) == 0
 

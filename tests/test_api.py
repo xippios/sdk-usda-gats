@@ -32,6 +32,8 @@ from xippios.usda.gats.models import (
     ProductType,
     Region,
     UnitOfMeasure,
+    UNTradeDataReleaseInfo,
+    UNTradeRecord,
 )
 
 pytestmark = pytest.mark.anyio
@@ -42,6 +44,11 @@ RE_EXPORTS = "GATSData_GetCensusReExports"
 DISTRICT_EXPORTS = "GATSData_GetCustomsDistrictsExports"
 DISTRICT_IMPORTS = "GATSData_GetCustomsDistrictsImports"
 DISTRICT_RE_EXPORTS = "GATSData_GetCustomsDistrictsReExports"
+UN_EXPORTS = "GATSData_GetUNTradeExports"
+UN_IMPORTS = "GATSData_GetUNTradeImports"
+UN_RE_EXPORTS = "GATSData_GetUNTradeReExports"
+UN_EXPORT_RELEASES = "GATSData_GetUNTradeExportDataReleaseInfo"
+UN_IMPORT_RELEASES = "GATSData_GetUNTradeImportDataReleaseInfo"
 
 
 def recorded_keys(fixtures_dir: Path, endpoint: str, case: str) -> set[tuple[str, ...]]:
@@ -738,3 +745,367 @@ async def test_the_snapshot_has_two_release_date_operations_per_program() -> Non
     release_paths = {p for p in paths if p.endswith("/dataReleaseDates")}
     assert len(release_paths) == 4
     assert not any("reexport" in p.lower() for p in release_paths)
+
+
+async def test_get_un_trade_export_release_dates(replay_fixture: ReplayFixture) -> None:
+    """One record per reporter and statistical year, 1989 to 2019, the newest released
+    on 2021-01-18: 3,796 records, 464,555 bytes as a fixture file."""
+    route = replay_fixture(UN_EXPORT_RELEASES, "all")
+    releases, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    assert stored is None, "from the wire, not from the cache"
+    assert len(releases) == 3796
+    assert releases[0] == UNTradeDataReleaseInfo(
+        statistical_year="2019",
+        product_type="X",
+        reporter_code="AC",
+        release_time_stamp=datetime(2020, 10, 11, 1, 15, 48),
+    )
+    assert releases[0].release_time_stamp.tzinfo is None, "upstream sends no time zone"
+    assert releases[-1].statistical_year == "1989"
+    order = [(-int(r.statistical_year), r.reporter_code) for r in releases]
+    assert order == sorted(order), "newest year first, reporters in code order"
+    pairs = {(r.reporter_code, r.statistical_year) for r in releases}
+    assert len(pairs) == 3796, "one record per reporter and year"
+    assert {r.statistical_year for r in releases} == {str(y) for y in range(1989, 2020)}
+    assert {r.product_type for r in releases} == {"X"}
+    assert len({r.reporter_code for r in releases}) == 206
+    assert max(r.release_time_stamp for r in releases) == datetime(2021, 1, 18, 1, 25, 58)
+    assert sum(r.statistical_year == "2019" for r in releases) == 32
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTrade/data/exports/dataReleaseDates"]
+
+
+async def test_get_un_trade_import_release_dates(replay_fixture: ReplayFixture) -> None:
+    """The imports list answers the same record; its reporter-years are not the exports
+    list's: 32 pairs are only in the exports list, 68 only in this one."""
+    route = replay_fixture(UN_IMPORT_RELEASES, "all")
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    imports, stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    assert stored is None
+    assert len(imports) == 3832
+    assert imports[0] == UNTradeDataReleaseInfo(
+        statistical_year="2019",
+        product_type="M",
+        reporter_code="AC",
+        release_time_stamp=datetime(2020, 10, 11, 1, 15, 44),
+    )
+    assert {r.product_type for r in imports} == {"M"}
+    assert len({r.reporter_code for r in imports}) == 207
+    assert max(r.release_time_stamp for r in imports) == datetime(2021, 1, 18, 1, 27, 44)
+    in_imports = {(r.reporter_code, r.statistical_year) for r in imports}
+    in_exports = {(r.reporter_code, r.statistical_year) for r in exports}
+    assert len(in_imports) == 3832, "one record per reporter and year"
+    assert (len(in_exports - in_imports), len(in_imports - in_exports)) == (32, 68)
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTrade/data/imports/dataReleaseDates"]
+
+
+async def test_each_recorded_reporter_year_has_its_flows_release_record(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """A reporter-year's release record is the one with its reporter code and year in
+    its flow's list: Iceland, Sao Tome and Principe and Macau have one for 2019 in both
+    lists, India's latest is 2016, and no reporter has one after 2019."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_IMPORT_RELEASES, "all")
+    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    x = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in exports}
+    m = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in imports}
+    assert x[("IC", "2019")] == datetime(2020, 6, 3, 5, 50, 46)
+    assert m[("IC", "2019")] == datetime(2020, 6, 5, 1, 22, 30)
+    assert m[("TP", "2019")] == datetime(2020, 7, 16, 1, 15, 37)
+    assert ("MC", "2019") in x
+    assert ("MC", "2019") in m
+    for listed in (x, m):
+        assert max(year for code, year in listed if code == "IN") == "2016"
+        assert ("IC", "2020") not in listed, "the unreleased_year probe's reporter-year"
+        assert max(year for _, year in listed) == "2019"
+
+
+async def test_the_un_release_lists_name_reporters_by_gats_country_code(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Every reporter is a code of the countries list, GATS's own vocabulary. Nine codes
+    the list marks discontinued are listed for years after their ``discontinuedOn``
+    (Norway's ``NO``, discontinued 198712, has 2018), and their same-name successors
+    (``N3``) never: the codes are not the countries list's current ones."""
+    replay_fixture("GATSData_GetCountries", "all")
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_IMPORT_RELEASES, "all")
+    countries = {c.country_code: c for c in await api.GATSData_GetCountries()}
+    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    releases = [*exports, *imports]
+    reporters = {r.reporter_code for r in releases}
+    assert reporters <= set(countries)
+    discontinued = {code for code in reporters if countries[code].discontinued_on}
+    assert discontinued == {"AS", "BE", "DA", "GE", "IS", "IT", "NO", "NT", "NZ", "RB", "SU"}
+    after = {
+        r.reporter_code
+        for r in releases
+        if r.reporter_code in discontinued
+        and r.statistical_year > str(countries[r.reporter_code].discontinued_on)[:4]
+    }
+    assert after == discontinued - {"GE", "SU"}
+    assert countries["NO"].discontinued_on == "198712"
+    assert ("NO", "2018") in {(r.reporter_code, r.statistical_year) for r in exports}
+    assert not {"A2", "D1", "9U", "I1", "I2", "N1", "N3"} & reporters, "no successor"
+
+
+async def test_get_un_trade_exports(replay_fixture: ReplayFixture) -> None:
+    """One reporter-year across all partners and HS6 codes, whole: 3,980 records,
+    1,005,809 bytes as a fixture file, for Iceland in 2019."""
+    route = replay_fixture(UN_EXPORTS, "IC_2019")
+    records = await api.GATSData_GetUNTradeExports("IC", "2019")
+    assert len(records) == 3980
+    assert records[0] == UNTradeRecord(
+        year="2019",
+        reporter_country_code="IC",
+        partner_country_code="15",
+        hs6_code="070700",
+        census_uom_id1=0,
+        census_uom_id2=0,
+        fas_converted_uom_id=47,
+        fas_non_converted_uom_id=47,
+        quantity1=Decimal("29051.0"),
+        quantity2=Decimal("29051.0"),
+        value=Decimal("73524.0"),
+    )
+    assert {(r.year, r.reporter_country_code) for r in records} == {("2019", "IC")}
+    pairs = [(r.partner_country_code, r.hs6_code) for r in records]
+    assert pairs == sorted(set(pairs)), "one record per partner and HS6 code, in that order"
+    assert len({r.partner_country_code for r in records}) == 115
+    assert len({r.hs6_code for r in records}) == 646
+    assert all(len(r.hs6_code) == 6 and r.hs6_code.isdigit() for r in records)
+    assert {(r.census_uom_id1, r.census_uom_id2, r.fas_converted_uom_id) for r in records} == {
+        (0, 0, 47)
+    }
+    assert Decimal("582.3") in {r.quantity1 for r in records}, "fractions occur"
+    assert sum(r.value for r in records) == Decimal("2582465259.0")
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/IC/year/2019"]
+
+
+async def test_get_un_trade_imports(replay_fixture: ReplayFixture) -> None:
+    """Sao Tome and Principe in 2019: 2,377 records, 597,815 bytes as a fixture file.
+    Iceland's 2019 imports, 23,396 records and 5,180,537 bytes of JSON, are not kept."""
+    route = replay_fixture(UN_IMPORTS, "TP_2019")
+    records = await api.GATSData_GetUNTradeImports("TP", "2019")
+    assert len(records) == 2377
+    assert records[0] == UNTradeRecord(
+        year="2019",
+        reporter_country_code="TP",
+        partner_country_code="15",
+        hs6_code="100630",
+        census_uom_id1=0,
+        census_uom_id2=0,
+        fas_converted_uom_id=47,
+        fas_non_converted_uom_id=47,
+        quantity1=Decimal("15.0"),
+        quantity2=Decimal("15.0"),
+        value=Decimal("31.0"),
+    )
+    assert {(r.year, r.reporter_country_code) for r in records} == {("2019", "TP")}
+    pairs = [(r.partner_country_code, r.hs6_code) for r in records]
+    assert pairs == sorted(set(pairs)), "one record per partner and HS6 code, in that order"
+    assert len({r.partner_country_code for r in records}) == 58
+    assert len({r.hs6_code for r in records}) == 1026
+    assert sum(r.value for r in records) == Decimal("56394979.0")
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeImports/reporterCode/TP/year/2019"]
+
+
+async def test_get_un_trade_re_exports(replay_fixture: ReplayFixture) -> None:
+    """Macau in 2019: 421 records, 106,083 bytes as a fixture file, every quantity 0."""
+    route = replay_fixture(UN_RE_EXPORTS, "MC_2019")
+    records = await api.GATSData_GetUNTradeReExports("MC", "2019")
+    assert len(records) == 421
+    assert records[0] == UNTradeRecord(
+        year="2019",
+        reporter_country_code="MC",
+        partner_country_code="AS",
+        hs6_code="220421",
+        census_uom_id1=0,
+        census_uom_id2=0,
+        fas_converted_uom_id=47,
+        fas_non_converted_uom_id=95,
+        quantity1=Decimal("0.0"),
+        quantity2=Decimal("0.0"),
+        value=Decimal("114863.0"),
+    )
+    assert {(r.year, r.reporter_country_code) for r in records} == {("2019", "MC")}
+    assert len({(r.partner_country_code, r.hs6_code) for r in records}) == 421
+    assert {(r.quantity1, r.quantity2) for r in records} == {(Decimal("0.0"), Decimal("0.0"))}
+    assert sum(r.value for r in records) == Decimal("134297794.0")
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/MC/year/2019"]
+
+
+async def test_iceland_has_no_un_re_exports_for_2019(replay_fixture: ReplayFixture) -> None:
+    """As recorded: a reporter with 2019 exports and imports answers HTTP 200 with ``[]``
+    for its 2019 re-exports; re-exports have no release list to tell."""
+    route = replay_fixture(UN_RE_EXPORTS, "IC_2019")
+    assert await api.GATSData_GetUNTradeReExports("IC", "2019") == []
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
+
+
+async def test_the_un_trade_answers_carry_one_shape(fixtures_dir: Path) -> None:
+    """Why one model serves all three: exports, imports and re-exports answer the same
+    eleven fields in the same order."""
+    shape = aliases(UNTradeRecord)
+    assert len(shape) == 11
+    for endpoint, case in [
+        (UN_EXPORTS, "IC_2019"),
+        (UN_IMPORTS, "TP_2019"),
+        (UN_RE_EXPORTS, "MC_2019"),
+    ]:
+        assert recorded_keys(fixtures_dir, endpoint, case) == {shape}, endpoint
+    for endpoint in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
+        assert recorded_keys(fixtures_dir, endpoint, "all") == {aliases(UNTradeDataReleaseInfo)}
+    assert aliases(UNTradeDataReleaseInfo)[0] == "statisticalYear"
+    assert aliases(DataReleaseInfo)[0] == "statisticalYearMonth", "not the Census record"
+
+
+async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """GATS's vocabulary, not UN Comtrade's: every reporter and partner is a code of the
+    countries list, every HS6 code one of the HS6 list and every unit id one of the units
+    list. Partners include codes the countries list marks discontinued (``NO``, Norway,
+    198712) and never their same-name successors."""
+    replay_fixture("GATSData_GetCountries", "all")
+    replay_fixture("GATSData_GetHS6Commodities", "all")
+    replay_fixture("GATSData_GetUnitsOfMeasure", "all")
+    replay_fixture(UN_EXPORTS, "IC_2019")
+    replay_fixture(UN_IMPORTS, "TP_2019")
+    replay_fixture(UN_RE_EXPORTS, "MC_2019")
+    countries = {c.country_code: c for c in await api.GATSData_GetCountries()}
+    hs6_codes = {c.hs6_code for c in await api.GATSData_GetHS6Commodities()}
+    unit_ids = {u.unit_of_measure_id for u in await api.GATSData_GetUnitsOfMeasure()}
+    exports = await api.GATSData_GetUNTradeExports("IC", "2019")
+    records = [
+        *exports,
+        *await api.GATSData_GetUNTradeImports("TP", "2019"),
+        *await api.GATSData_GetUNTradeReExports("MC", "2019"),
+    ]
+    codes = {r.reporter_country_code for r in records} | {r.partner_country_code for r in records}
+    assert codes <= set(countries)
+    assert {r.hs6_code for r in records} <= hs6_codes
+    assert {
+        unit
+        for r in records
+        for unit in (
+            r.census_uom_id1,
+            r.census_uom_id2,
+            r.fas_converted_uom_id,
+            r.fas_non_converted_uom_id,
+        )
+    } <= unit_ids
+    partners = {r.partner_country_code for r in exports}
+    discontinued = {code for code in partners if countries[code].discontinued_on}
+    assert discontinued == {"AS", "DA", "IS", "IT", "NO", "NZ", "RB"}
+    assert countries["NO"].discontinued_on == "198712"
+    assert not {"A2", "D1", "9U", "I1", "I2", "N1", "N3"} & codes, "no successor"
+    assert "611011" in {r.hs6_code for r in exports}, "beyond HS chapters 01 to 24"
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "path"),
+    [
+        (api.GATSData_GetUNTradeExports, "UNTradeExports"),
+        (api.GATSData_GetUNTradeImports, "UNTradeImports"),
+        (api.GATSData_GetUNTradeReExports, "UNTradeReExports"),
+    ],
+    ids=["exports", "imports", "re_exports"],
+)
+async def test_the_reporter_code_and_year_are_quoted_into_the_path(
+    respx_mock: respx.MockRouter,
+    wrapper: Callable[[str, str], Awaitable[object]],
+    path: str,
+) -> None:
+    """A slash in the reporter code or in the year, both text, is sent as ``%2F``, so each
+    stays one path segment; the route answers ``[]`` and no fixture is needed. respx
+    matches the decoded path: ``sent_urls`` is what shows the quoting."""
+    url = f"{BASE_URL}/api/gats/{path}/reporterCode/I%2FC/year/20%2F19"
+    route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
+    assert await wrapper("I/C", "20/19") == []
+    assert sent_urls(route) == [url]
+
+
+@pytest.mark.parametrize(
+    ("case", "reporter_code", "year"),
+    [
+        ("unknown_reporter", "ZZ", "2019"),
+        ("future_year", "IC", "2035"),
+        ("unreleased_year", "IC", "2020"),
+    ],
+)
+async def test_unknown_reporter_future_and_unreleased_years_answer_an_empty_list(
+    replay_fixture: ReplayFixture, case: str, reporter_code: str, year: str
+) -> None:
+    """As recorded: a code the countries list lacks (``ZZ``), a year far ahead and the
+    year after the release lists' latest (Iceland, 2020, no release record) answer alike,
+    HTTP 200 with ``[]``, as Iceland's 2019 re-exports do; nothing in the answer tells them
+    apart."""
+    route = replay_fixture(UN_EXPORTS, case)
+    assert await api.GATSData_GetUNTradeExports(reporter_code, year) == []
+    assert sent_urls(route) == [
+        f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/{reporter_code}/year/{year}"
+    ]
+
+
+async def test_a_year_that_is_not_a_number_is_an_empty_404_and_a_not_found_error(
+    replay_fixture: ReplayFixture, fixtures_dir: Path
+) -> None:
+    """As recorded: the snapshot types ``year`` as a string, yet ``abc`` answers HTTP 404
+    with an empty ``text/plain`` body, like the Census data's month 13. ``classify``
+    leaves it to core's status mapping, a ``NotFoundError`` naming the method and path."""
+    raw = json.loads((fixtures_dir / UN_EXPORTS / "year_text.json").read_text(encoding="utf-8"))
+    headers = dict(raw["response"]["headers"])
+    assert (raw["response"]["status"], raw["response"]["body"]) == (404, "")
+    assert headers["content-type"] == "text/plain; charset=utf-8"
+    route = replay_fixture(UN_EXPORTS, "year_text")
+    path = "/api/gats/UNTradeExports/reporterCode/IC/year/abc"
+    with pytest.raises(NotFoundError) as info:
+        await api.GATSData_GetUNTradeExports("IC", "abc")
+    assert info.value.message == f"404 from GET {path}: Not Found"
+    assert "api.fas.usda.gov" not in info.value.message, "host-free (conventions §5)"
+    assert route.call_count == 1, "a 404 is never retried"
+    assert sent_urls(route) == [f"{BASE_URL}{path}"]
+
+
+async def test_classify_leaves_every_un_probe_to_core(fixtures_dir: Path) -> None:
+    """No GATS-specific mapping for the UN Trade answers either."""
+    for case in ("unknown_reporter", "future_year", "unreleased_year", "year_text"):
+        fixture = load_fixture(fixtures_dir / UN_EXPORTS / f"{case}.json")
+        response = httpx.Response(
+            fixture.response.status,
+            headers=fixture.response.headers,
+            content=fixture.response.content,
+            request=httpx.Request(fixture.request.method, fixture.request.url),
+        )
+        assert classify(response) is None, case
+
+
+async def test_the_un_release_lists_carry_the_product_type_codes_too(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The UN Trade lists use the Census lists' ``productType`` codes: ``X`` throughout
+    the exports list, ``M`` throughout the imports list."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_IMPORT_RELEASES, "all")
+    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    assert {r.product_type for r in exports} == {ProductType.X}
+    assert {r.product_type for r in imports} == {ProductType.M}
+
+
+async def test_an_unknown_un_product_type_code_still_parses() -> None:
+    """``UNTradeDataReleaseInfo.product_type`` stays text, as the Census record's does."""
+    record = UNTradeDataReleaseInfo.model_validate(
+        {
+            "statisticalYear": "2019",
+            "productType": "R",
+            "reporterCode": "IC",
+            "releaseTimeStamp": "2020-06-03T05:50:46",
+        }
+    )
+    assert record.product_type == "R"
+    assert record.release_time_stamp == datetime(2020, 6, 3, 5, 50, 46)

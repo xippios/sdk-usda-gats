@@ -11,7 +11,7 @@ import json
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,11 @@ from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
+CLOCK_SLACK = timedelta(seconds=5)
+"""The slack on a comparison of two wall-clock readings: the WSL2 host these tests run on
+steps its clock back about two seconds every half minute, so a later reading can be the
+earlier one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by:
+a recording's time or a release's is hours or days away."""
 
 
 def test_package_has_a_version() -> None:
@@ -246,7 +251,14 @@ def test_the_release_list_is_fetched_once_for_two_task_calls(
     assert releases.call_count == 1
     assert data.call_count == 2
     assert sent_urls(data) == [CH_EXPORTS_URL, CH_EXPORTS_URL]
-    assert second.meta.retrieved_at >= first.meta.retrieved_at, "the data is fetched anew"
+    assert second.meta.retrieved_at >= first.meta.retrieved_at - CLOCK_SLACK, (
+        "the data is fetched anew, so its time is a reading of this call"
+    )
+    entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
+    assert entry is not None
+    assert second.meta.retrieved_at != datetime.fromtimestamp(entry.stored_at, UTC), (
+        "the data's own time, not the time the cached release list was stored"
+    )
 
 
 def test_release_dates_from_the_cache_carry_the_time_they_were_stored(
@@ -680,6 +692,7 @@ def test_get_census_release_dates(
     route = replay_fixture(fixture, "all")
     before = datetime.now(UTC)
     result = tasks.get_census_release_dates(product_type)
+    after = datetime.now(UTC)
     assert len(result.data) == 716
     assert result.data[0].statistical_year_month == "202608"
     assert result.data[-1].statistical_year_month == "196701"
@@ -687,7 +700,9 @@ def test_get_census_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {"product_type": product_type.value}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
-    assert result.meta.retrieved_at >= before, "fetched now, from the wire"
+    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
+        "fetched now, from the wire: the time of this call, not the recording's"
+    )
     assert sent_urls(route) == [url]
 
 
@@ -1190,10 +1205,8 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     august = respx_mock.get(_ic_url("censusExports", 8)).mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
-    result: object = None
     with pytest.raises(RateLimitError) as info:
-        result = tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
-    assert result is None, "no partial result"
+        tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
     assert info.value.retry_after == 3151.0
     assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
     assert sent_urls(july) == [_ic_url("censusExports", 7)]

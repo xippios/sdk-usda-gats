@@ -1,21 +1,28 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
-One live smoke test per task function, thirteen tasks in all, fourteen keyed calls. Each
-data task spends one call for its month, and its release list once per flow: the tests
-share the client's cache, so ``get_census_exports`` fetches the exports list and
-``get_census_imports`` the imports list, and ``get_census_release_dates``, the re-export
-tasks and the customs-district tasks answer their check from the cache. The data tasks
-ask for Iceland (``"IC"``), a listed partner with modest trade, so the nightly run stays
-light, in August 2026, released on 2026-10-06; ``vintage`` is that month's release time
-as upstream writes it, a date and a time without a zone. The five packaged lists answer
-without a call, so their test fetches each list through its endpoint wrapper, one call
-each, and checks that the packaged records equal it: the freshness check
-``reference/README.md`` promises. A difference fails the test naming what is gone and
-what is new; ``/refresh-reference-data`` then refreshes the package. ``list_commodities``
-fetches the HS10 list live, one call of about 7.6 MB. The tests record what they answered
-as test properties (``--junitxml`` shows them), never a key. Next to them, the template's
-reachability check, ``test_upstream_answers``, sends no key: a plain request to
-``BASE_URL`` that spends no quota call.
+One live smoke test per task function, seventeen tasks in all, nineteen keyed calls. Each
+data task spends one call for its month or year, and its release list once per flow and
+program: the tests share the client's cache, so ``get_census_exports`` fetches the
+Census exports list and ``get_census_imports`` the imports list, and
+``get_census_release_dates``, the re-export tasks and the customs-district tasks answer
+their check from the cache; ``get_un_exports`` and ``get_un_imports`` fetch the two UN
+Trade lists, and ``get_un_reexports`` and ``get_un_release_dates`` answer from them. The
+Census data tasks ask for Iceland (``"IC"``), a listed partner with modest trade, so the
+nightly run stays light, in August 2026, released on 2026-10-06; ``vintage`` is that
+month's release time as upstream writes it, a date and a time without a zone. The UN
+Trade tasks ask for the reporter-years the fixtures hold, all of statistical year 2019:
+Iceland's exports of chapter 03, Sao Tome and Principe's imports, Macau's re-exports, and
+Iceland's years in the exports release list. The UN Trade feed is frozen, its newest
+release dated 2021-01-18 as recorded on 2026-10-26, so these tests assert what the
+answers show, codes from the packaged lists included, and never newer data. The five
+packaged lists answer without a call, so their test fetches each list through its
+endpoint wrapper, one call each, and checks that the packaged records equal it: the
+freshness check ``reference/README.md`` promises. A difference fails the test naming what
+is gone and what is new; ``/refresh-reference-data`` then refreshes the package.
+``list_commodities`` fetches the HS10 list live, one call of about 7.6 MB. The tests
+record what they answered as test properties (``--junitxml`` shows them), never a key.
+Next to them, the template's reachability check, ``test_upstream_answers``, sends no key:
+a plain request to ``BASE_URL`` that spends no quota call.
 """
 
 import json
@@ -183,3 +190,62 @@ async def test_packaged_list_equals_the_live_list(task: str, endpoint: str) -> N
     )
     assert ours == theirs, f"{task}: the same records in another order"
     assert packaged.meta.endpoint == endpoint
+
+
+UN_YEAR = 2019
+"""The UN Trade feed's latest statistical year, as both release lists end on 2026-10-26."""
+
+
+def _listed(name: str, field: str) -> set[str]:
+    packaged = packaged_values(name)
+    assert packaged is not None
+    return {str(record[field]) for record in packaged.records}
+
+
+def _in_gats_vocabulary(records: list[Any]) -> None:
+    """Every reporter, partner and HS6 code is a code of the packaged lists: GATS's own."""
+    countries = _listed("countries", "countryCode")
+    assert {r.reporter_country_code for r in records} <= countries
+    assert {r.partner_country_code for r in records} <= countries
+    assert {r.hs6_code for r in records} <= _listed("HS6Commodities", "hS6Code")
+
+
+@pytest.mark.parametrize(
+    ("task", "reporter_code", "hs6_code", "endpoint"),
+    [
+        ("get_un_exports", "IC", "03", "GATSData_GetUNTradeExports"),
+        ("get_un_imports", "TP", None, "GATSData_GetUNTradeImports"),
+        ("get_un_reexports", "MC", None, "GATSData_GetUNTradeReExports"),
+    ],
+    ids=["exports_IC_chapter_03", "imports_TP", "re_exports_MC"],
+)
+async def test_un_data_task_live(
+    task: str,
+    reporter_code: str,
+    hs6_code: str | None,
+    endpoint: str,
+    record_property: Callable[[str, object], None],
+) -> None:
+    result = await getattr(tasks, f"{task}_async")(reporter_code, UN_YEAR, hs6_code=hs6_code)
+    assert result.data
+    assert {(r.year, r.reporter_country_code) for r in result.data} == {("2019", reporter_code)}
+    if hs6_code is not None:
+        assert all(r.hs6_code.startswith(hs6_code) for r in result.data)
+    _in_gats_vocabulary(result.data)
+    _vintage_is_a_release_time(result.meta.vintage)
+    assert result.meta.endpoint == endpoint
+    assert result.meta.published_at is None
+    record_property("records", len(result.data))
+    record_property("vintage", result.meta.vintage)
+
+
+async def test_get_un_release_dates_live(record_property: Callable[[str, object], None]) -> None:
+    result = await tasks.get_un_release_dates_async(ProductType.X, reporter_code="IC")
+    years = [r.statistical_year for r in result.data]
+    assert str(UN_YEAR) in years
+    assert years == sorted(years, reverse=True), "newest first"
+    assert {(r.reporter_code, r.product_type) for r in result.data} == {("IC", ProductType.X)}
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    record_property("years", len(years))
+    record_property("latest", years[0])
+    record_property("released", result.data[0].release_time_stamp.isoformat())

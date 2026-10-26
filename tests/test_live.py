@@ -5,12 +5,14 @@ spends two, its flow's release list and the month, and ``get_census_release_date
 ``X`` runs after ``get_census_exports`` and answers from the client's cache, which the
 tests share, without a call. The data tasks ask for Iceland (``"IC"``), a listed partner
 with modest trade, so the nightly run stays light, in August 2026, released on
-2026-10-06; the tests record what they answered as test properties (``--junitxml`` shows
-them), never a key. Next to them, the template's reachability check,
+2026-10-06; ``vintage`` is that month's release time as upstream writes it, a date and a
+time without a zone. The tests record what they answered as test properties
+(``--junitxml`` shows them), never a key. Next to them, the template's reachability check,
 ``test_upstream_answers``, sends no key: a plain request to ``BASE_URL`` that spends no
 quota call.
 """
 
+import re
 from collections.abc import Callable
 
 import httpx
@@ -25,6 +27,7 @@ pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
 PARTNER = validate_partner_code("IC")  # Iceland, in the packaged countries list
 YEAR, MONTH = 2026, 8
+RELEASE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
 
 
 async def test_upstream_answers() -> None:
@@ -43,6 +46,11 @@ async def test_upstream_answers() -> None:
     assert response.status_code < 500
 
 
+def _vintage_is_a_release_time(vintage: str | None) -> None:
+    assert vintage is not None
+    assert RELEASE_TIME.match(vintage), vintage
+
+
 def _quota_is_the_gateways() -> None:
     snapshot = policy.snapshot()
     assert snapshot is not None
@@ -53,20 +61,22 @@ async def test_get_census_exports_live(record_property: Callable[[str, object], 
     result = await tasks.get_census_exports_async(PARTNER, YEAR, MONTH)
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
-    assert result.meta.vintage == "202608"
+    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.published_at is None
     _quota_is_the_gateways()
     record_property("records", len(result.data))
+    record_property("vintage", result.meta.vintage)
 
 
 async def test_get_census_imports_live(record_property: Callable[[str, object], None]) -> None:
     result = await tasks.get_census_imports_async(PARTNER, YEAR, MONTH)
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
-    assert result.meta.vintage == "202608"
+    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.published_at is None
     _quota_is_the_gateways()
     record_property("records", len(result.data))
+    record_property("vintage", result.meta.vintage)
 
 
 async def test_get_census_release_dates_live(

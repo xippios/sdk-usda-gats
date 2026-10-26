@@ -21,19 +21,25 @@ partner in a released month is a successful empty result. ``hs10_code`` keeps th
 records whose code starts with it, after the one data call; nothing else is selected,
 ordered or changed.
 
-Release metadata. ``meta.vintage`` of a data task is the statistical month as the
-records name it in ``date``, six digits (``"202608"``); every recorded record carries the
-requested month there, so it is set for an empty result too. The figures are the latest
-revision GATS holds for that month: upstream says "Census reports data on a monthly
-basis with corrections applied once a year", and the release list records only the
-latest release of each month. ``meta.published_at`` stays ``None`` on every task. The
-release record of the month carries a time, ``releaseTimeStamp``
-(``2026-10-06T08:00:00`` for 2026-08), but without a time zone, and the snapshot states
-none; ``ResultMeta`` takes only a timezone-aware time, and an invented zone could shift
-it by hours in an as-of store. sdk-usda-esr and sdk-usda-nass leave theirs empty for the
-same reason. ``get_census_release_dates`` returns the time as upstream states it.
-``meta.retrieved_at`` of ``get_census_release_dates`` is the time the client's cache
-stored the list when the cache answered (conventions §4), else the time of the call.
+Release metadata. ``meta.vintage`` of a data task is ``releaseTimeStamp`` of the
+month's record in the release list, as upstream states it (``"2026-10-06T08:00:00"`` for
+2026-08): upstream's identifier of the release that last revised the month's figures
+(conventions §4), set for an empty result too. Upstream says "Census reports data on a
+monthly basis with corrections applied once a year", and the list records only each
+month's latest release: the annual revision re-released 2023-01 to 2025-12 at
+``2026-06-24T08:00:00``. The model keeps the time naive, and ``isoformat()`` gives back
+upstream's text for every recorded time. The statistical month stays in
+``meta.request`` (``year``, ``month``) and on every record's ``date`` (``"202608"``).
+For up to ``_client.RELEASE_DATES_TTL``, an hour, after a release the cached list may
+still give a revised month the previous release's time, an accepted lag; a month
+released in that hour is refused, and the refusal says when the list was fetched.
+``meta.published_at`` stays ``None`` on every task: ``ResultMeta`` takes only a
+timezone-aware time, FAS states no zone for its time stamps, and an invented zone could
+shift them by hours in an as-of store. sdk-usda-esr and sdk-usda-nass leave theirs empty
+for the same reason. ``get_census_release_dates`` returns every month's time as upstream
+states it and leaves ``vintage`` empty; its ``meta.retrieved_at`` is the time the
+client's cache stored the list when the cache answered (conventions §4), else the time
+of the call.
 """
 
 from collections.abc import Mapping
@@ -86,14 +92,14 @@ def _check(partner_code: str, year: int, month: int, hs10_code: str | None) -> N
         validate_hs10_code(hs10_code)
 
 
-def _released(
+def _release_of(
     month_code: str,
     releases: list[DataReleaseInfo],
     stored: datetime | None,
     flow: str,
     operation: str,
-) -> None:
-    """Raise ``NotFoundError`` unless ``month_code`` is in the flow's release list.
+) -> DataReleaseInfo:
+    """The record of ``month_code`` in the flow's release list, else ``NotFoundError``.
 
     Args:
         month_code: The requested month as six digits, e.g. ``"203501"``.
@@ -101,10 +107,15 @@ def _released(
         stored: When the client's cache stored the list, or ``None`` if fetched now.
         flow: ``"exports"`` or ``"imports"``, for the message.
         operation: The release-date operation, for the message.
+
+    Raises:
+        NotFoundError: The list has no record for ``month_code``: not released yet, or
+            before the data starts.
     """
-    months = {release.statistical_year_month for release in releases}
-    if month_code in months:
-        return
+    release = next((r for r in releases if r.statistical_year_month == month_code), None)
+    if release is not None:
+        return release
+    months = {record.statistical_year_month for record in releases}
     when = (
         f" The release list was fetched at {stored:%Y-%m-%d %H:%M} UTC and is kept for an "
         "hour; a month released since then is refused until it is fetched again."
@@ -137,13 +148,24 @@ def _matching[R: (CensusExport, CensusImport)](records: list[R], hs10_code: str 
 
 
 def _data_meta(
-    endpoint: str, partner_code: str, year: int, month: int, hs10_code: str | None
+    endpoint: str,
+    release: DataReleaseInfo,
+    partner_code: str,
+    year: int,
+    month: int,
+    hs10_code: str | None,
 ) -> ResultMeta:
-    """``ResultMeta`` of a Census data task: ``vintage`` the month, ``published_at`` empty."""
+    """``ResultMeta`` of a Census data task: ``vintage`` the month's release time.
+
+    ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it: the
+    model keeps the time naive, and ``isoformat()`` gives back upstream's text,
+    ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` stays ``None``: ``ResultMeta``
+    takes only a zone-aware time, and FAS states no zone.
+    """
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
-        vintage=f"{year:04d}{month:02d}",
+        vintage=release.release_time_stamp.isoformat(),
         request={
             "partner_code": partner_code,
             "year": year,
@@ -166,12 +188,15 @@ async def get_census_exports_async(
     arguments are checked before either: an unknown partner code raises
     ``InvalidRequestError`` naming the closest codes. A month not released yet, or before
     January 1967, raises ``NotFoundError`` naming the months released; a listed partner
-    without exports that month gives an empty list. ``meta.vintage`` is the statistical
-    month as the records' ``date`` names it (``"202608"``), and the figures are the latest
-    revision GATS holds for it, since Census applies corrections once a year.
-    ``meta.published_at`` stays empty: upstream gives the month's release time without a
-    time zone; ``get_census_release_dates`` returns it as stated. The MCP server returns at
-    most 200 rows or 64 KB, so pass ``hs10_code`` there to see a chapter or one product.
+    without exports that month gives an empty list. ``meta.vintage`` is the month's
+    release time from that list, as upstream states it (``"2026-10-06T08:00:00"`` for
+    August 2026): the release that last revised the figures, since Census applies
+    corrections once a year. For up to an hour after a release (``RELEASE_DATES_TTL``)
+    the cached list may still give the previous release's time, an accepted lag. The
+    month itself is in ``meta.request`` and in every record's ``date`` (``"202608"``).
+    ``meta.published_at`` stays empty: FAS states no time zone, and ``ResultMeta`` takes
+    only a zone-aware time. The MCP server returns at most 200 rows or 64 KB, so pass
+    ``hs10_code`` there to see a chapter or one product.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as
@@ -186,7 +211,7 @@ async def get_census_exports_async(
     """
     _check(partner_code, year, month, hs10_code)
     releases, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    _released(
+    release = _release_of(
         f"{year:04d}{month:02d}",
         releases,
         stored,
@@ -194,7 +219,7 @@ async def get_census_exports_async(
         "GATSData_GetCensusExportDataReleaseInfo",
     )
     records = await api.GATSData_GetCensusExports(partner_code, year, month)
-    meta = _data_meta("GATSData_GetCensusExports", partner_code, year, month, hs10_code)
+    meta = _data_meta("GATSData_GetCensusExports", release, partner_code, year, month, hs10_code)
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
@@ -214,12 +239,15 @@ async def get_census_imports_async(
     partner code raises ``InvalidRequestError`` naming the closest codes. A month not
     released yet, or before January 1967, raises ``NotFoundError`` naming the months
     released; a listed partner without imports that month gives an empty list.
-    ``meta.vintage`` is the statistical month as the records' ``date`` names it
-    (``"202608"``), and the figures are the latest revision GATS holds for it, since
-    Census applies corrections once a year. ``meta.published_at`` stays empty: upstream
-    gives the month's release time without a time zone; ``get_census_release_dates``
-    returns it as stated. The MCP server returns at most 200 rows or 64 KB, so pass
-    ``hs10_code`` there to see a chapter or one product.
+    ``meta.vintage`` is the month's release time from that list, as upstream states it
+    (``"2026-10-06T08:00:00"`` for August 2026): the release that last revised the
+    figures, since Census applies corrections once a year. For up to an hour after a
+    release (``RELEASE_DATES_TTL``) the cached list may still give the previous
+    release's time, an accepted lag. The month itself is in ``meta.request`` and in
+    every record's ``date`` (``"202608"``). ``meta.published_at`` stays empty: FAS
+    states no time zone, and ``ResultMeta`` takes only a zone-aware time. The MCP server
+    returns at most 200 rows or 64 KB, so pass ``hs10_code`` there to see a chapter or
+    one product.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as
@@ -234,7 +262,7 @@ async def get_census_imports_async(
     """
     _check(partner_code, year, month, hs10_code)
     releases, stored = await api.GATSData_GetCensusImportDataReleaseInfo()
-    _released(
+    release = _release_of(
         f"{year:04d}{month:02d}",
         releases,
         stored,
@@ -242,7 +270,7 @@ async def get_census_imports_async(
         "GATSData_GetCensusImportDataReleaseInfo",
     )
     records = await api.GATSData_GetCensusImport(partner_code, year, month)
-    meta = _data_meta("GATSData_GetCensusImport", partner_code, year, month, hs10_code)
+    meta = _data_meta("GATSData_GetCensusImport", release, partner_code, year, month, hs10_code)
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
@@ -257,9 +285,10 @@ async def get_census_release_dates_async(
     without a time zone (``2026-10-06T08:00:00`` for 2026-08). A month the annual
     revision corrected carries the revision's time: 2023-01 to 2025-12 read
     ``2026-06-24T08:00:00``. Compare it with a stored one to fetch only the months that
-    changed. One request, kept by the client for an hour; ``meta.retrieved_at`` is when
-    it was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The MCP server
-    returns the newest 200 months.
+    changed; ``get_census_exports`` and ``get_census_imports`` give their month's time as
+    ``meta.vintage``. One request, kept by the client for an hour; ``meta.retrieved_at``
+    is when it was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The
+    MCP server returns the newest 200 months.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports

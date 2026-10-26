@@ -23,7 +23,7 @@ from xippios.usda.gats import __version__, tasks
 from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.errors import UnknownCode
 from xippios.usda.gats.mcp import server
-from xippios.usda.gats.models import ProductType
+from xippios.usda.gats.models import DataReleaseInfo, ProductType
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
 
@@ -53,6 +53,8 @@ IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/imports/dataReleaseDates
 CH_EXPORTS_URL = f"{BASE_URL}/api/gats/censusExports/partnerCode/CH/year/2026/month/8"
 CH_IMPORTS_URL = f"{BASE_URL}/api/gats/censusImports/partnerCode/CH/year/2026/month/8"
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
+RELEASED_2026_08 = "2026-10-06T08:00:00"
+"""``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +72,12 @@ def _recorded(endpoint: str, case: str) -> list[dict[str, object]]:
         load_fixture(FIXTURES / endpoint / f"{case}.json").response.body
     )
     return records
+
+
+def _release_time(endpoint: str, month_code: str) -> object:
+    """The month's ``releaseTimeStamp`` in the recorded release list, the text upstream sent."""
+    (record,) = [r for r in _recorded(endpoint, "all") if r["statisticalYearMonth"] == month_code]
+    return record["releaseTimeStamp"]
 
 
 def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
@@ -95,8 +103,9 @@ def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
         "month": 8,
         "hs10_code": None,
     }
-    assert result.meta.vintage == "202608"
-    assert {r.date for r in result.data} == {result.meta.vintage}, "the records' own month"
+    assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
+    assert result.meta.published_at is None
+    assert {r.date for r in result.data} == {"202608"}, "the month is the records' own"
     assert result.meta.total is None
     assert sent_urls(releases) == [EXPORT_RELEASES_URL]
     assert sent_urls(data) == [CH_EXPORTS_URL]
@@ -121,26 +130,41 @@ def test_get_census_imports(replay_fixture: ReplayFixture) -> None:
         "month": 8,
         "hs10_code": None,
     }
-    assert result.meta.vintage == "202608"
+    assert result.meta.vintage == RELEASED_2026_08 == _release_time(IMPORT_RELEASES, "202608")
+    assert result.meta.published_at is None
     assert {r.date for r in result.data} == {"202608"}
     assert sent_urls(releases) == [IMPORT_RELEASES_URL]
     assert sent_urls(data) == [CH_IMPORTS_URL]
 
 
-def test_published_at_stays_empty_and_the_release_list_has_the_time(
+def test_vintage_is_the_months_release_time_as_upstream_states_it(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """The month's release record carries ``2026-10-06T08:00:00`` without a time zone;
-    ``ResultMeta`` takes only an aware time, so ``published_at`` stays ``None`` and
-    ``get_census_release_dates`` gives the time as upstream states it."""
+    """The month's release record carries ``2026-10-06T08:00:00`` without a time zone:
+    ``vintage`` is that text, the naive time written back with ``isoformat()``, and
+    ``published_at`` stays ``None``, since ``ResultMeta`` takes only an aware time; the
+    month itself is in ``meta.request``."""
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(EXPORTS, "CH_2026_8")
     result = tasks.get_census_exports("CH", 2026, 8)
     assert result.meta.published_at is None
+    assert (result.meta.request["year"], result.meta.request["month"]) == (2026, 8)
     releases = tasks.get_census_release_dates(ProductType.X)
-    august = next(r for r in releases.data if r.statistical_year_month == result.meta.vintage)
+    august = next(r for r in releases.data if r.statistical_year_month == "202608")
     assert august.release_time_stamp == datetime(2026, 10, 6, 8, 0)
     assert august.release_time_stamp.tzinfo is None
+    assert result.meta.vintage == august.release_time_stamp.isoformat() == RELEASED_2026_08
+
+
+@pytest.mark.parametrize("endpoint", [EXPORT_RELEASES, IMPORT_RELEASES])
+def test_isoformat_gives_back_every_recorded_release_time(endpoint: str) -> None:
+    """``vintage`` claims upstream's own text: for each of the 716 records of both lists,
+    the parsed time written back with ``isoformat()`` is the text upstream sent."""
+    records = _recorded(endpoint, "all")
+    assert len(records) == 716
+    for record in records:
+        parsed = DataReleaseInfo.model_validate(record).release_time_stamp
+        assert parsed.isoformat() == record["releaseTimeStamp"]
 
 
 @pytest.mark.parametrize(
@@ -163,7 +187,7 @@ def test_hs10_code_keeps_the_products_it_starts(
     ]
     assert [r.hs10_code for r in result.data] == [r["hS10Code"] for r in recorded]
     assert result.meta.request["hs10_code"] == hs10_code
-    assert result.meta.vintage == "202608"
+    assert result.meta.vintage == RELEASED_2026_08
     assert sent_urls(data) == [CH_EXPORTS_URL], "the filter is not sent upstream"
 
 
@@ -215,7 +239,7 @@ def test_a_listed_partner_without_trade_is_an_empty_result(
     data = replay_fixture(EXPORTS, "no_data_valid_partner")
     result = tasks.get_census_exports("BV", 2026, 8)
     assert result.data == []
-    assert result.meta.vintage == "202608"
+    assert result.meta.vintage == RELEASED_2026_08, "the month's release, data or none"
     assert result.meta.published_at is None
     assert result.meta.request == {
         "partner_code": "BV",
@@ -357,7 +381,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
         "value": 20672.0,
     }, "Decimal values are JSON numbers (ADR-0008)"
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
-    assert payload["meta"]["vintage"] == "202608"
+    assert payload["meta"]["vintage"] == RELEASED_2026_08
     assert payload["meta"]["published_at"] is None
     chapter = await mcp_call(
         server, "usda_gats_get_census_exports", {**arguments, "hs10_code": "02"}

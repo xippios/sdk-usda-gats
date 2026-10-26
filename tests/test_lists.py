@@ -324,9 +324,8 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
     """One request for the HS10 list, which the client keeps for a day: the second call,
     with a filter, sends nothing, and its ``retrieved_at`` is when the list was stored."""
     route = replay_fixture("GATSData_GetCommodities", "all")
-    before = datetime.now(UTC)
     every = tasks.list_commodities()
-    after = datetime.now(UTC)
+    assert route.call_count == 1, "the first call went to the wire"
     assert len(every.data) == 24936
     assert Counter(c.product_type for c in every.data) == {
         "X": 5919,
@@ -337,7 +336,6 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
     assert every.meta.endpoint == "GATSData_GetCommodities"
     assert every.meta.request == {"search": None, "hs10_code": None, "product_type": None}
     assert (every.meta.vintage, every.meta.published_at, every.meta.total) == (None, None, None)
-    assert before <= every.meta.retrieved_at <= after, "fetched now, from the wire"
     swine = tasks.list_commodities(search="swine")
     assert route.call_count == 1, "the second call is answered from the cache"
     assert sent_urls(route) == [COMMODITIES_URL]

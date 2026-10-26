@@ -429,13 +429,15 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     ``meta.retrieved_at`` (conventions §4); each flow's list is an entry of its own."""
     exports = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
     imports = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    before = datetime.now(UTC)
     first, first_stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    after = datetime.now(UTC)
+    assert exports.call_count == 1, "the first answer came from the wire"
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
+    assert entry is not None
     again, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    assert first_stored is None, "the first answer came from the wire"
+    assert first_stored is None, "and the wrapper says so"
     assert stored is not None
-    assert before <= stored <= after, "when the first answer was stored, as UTC"
+    assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
+    assert stored.tzinfo is UTC
     assert again == first
     assert exports.call_count == 1
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]

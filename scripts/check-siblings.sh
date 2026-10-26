@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# Sibling proof for ADR-0006: xippios-usda-gats, xippios-usda-psd and xippios-usda-nass
-# install side by side in one clean environment as portions of the PEP 420 namespaces
-# xippios and xippios.usda.
+# Sibling proof for ADR-0006: xippios-usda-gats, xippios-usda-psd, xippios-usda-nass and
+# xippios-usda-esr install side by side in one clean environment as portions of the
+# PEP 420 namespaces xippios and xippios.usda.
 #
-# Builds this package's wheel, installs it with xippios-usda-psd and xippios-usda-nass
-# into a fresh virtual environment, imports all three, checks that this package's
-# reference data ships, runs `uv pip check`, and fails if either namespace level gained
-# an __init__.py in site-packages. Run from anywhere: scripts/check-siblings.sh
-#
-# xippios-usda-esr joins as a third sibling once its scaffold PR merges (its main holds
-# only the licence today): add
-#   esr="${ESR_REQUIREMENT:-xippios-usda-esr @ git+https://github.com/xippios/sdk-usda-esr@main}"
-# to the requirements below and `import xippios.usda.esr` to the check.
+# Builds this package's wheel, installs it with xippios-usda-psd, xippios-usda-nass and
+# xippios-usda-esr into a fresh virtual environment, imports all four, checks that this
+# package's reference data ships, runs `uv pip check`, and fails if either namespace level
+# gained an __init__.py in site-packages. Run from anywhere: scripts/check-siblings.sh
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,11 +14,13 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 unset VIRTUAL_ENV  # never install into whatever environment the shell has active
 
-# xippios-usda-psd is on PyPI; xippios-usda-nass is not yet, so it comes from git main.
-# Switch nass to "xippios-usda-nass" once it is tagged and published (/release-prep);
-# PSD_REQUIREMENT and NASS_REQUIREMENT override either.
+# xippios-usda-psd is on PyPI; xippios-usda-nass and xippios-usda-esr are not yet, so they
+# come from git main. Switch either to its bare name ("xippios-usda-nass",
+# "xippios-usda-esr") once it is tagged and published (/release-prep);
+# PSD_REQUIREMENT, NASS_REQUIREMENT and ESR_REQUIREMENT override each.
 psd="${PSD_REQUIREMENT:-xippios-usda-psd}"
 nass="${NASS_REQUIREMENT:-xippios-usda-nass @ git+https://github.com/xippios/sdk-usda-nass@main}"
+esr="${ESR_REQUIREMENT:-xippios-usda-esr @ git+https://github.com/xippios/sdk-usda-esr@main}"
 
 cd "$root"
 uv build --wheel --out-dir "$work/dist"
@@ -47,11 +44,12 @@ PY
 if [ -n "$core" ]; then
   echo "xippios-core from the git pin in pyproject.toml: $core"
 fi
-uv pip install --python "$python" "$work"/dist/*.whl "$psd" "$nass" ${core:+"$core"}
+uv pip install --python "$python" "$work"/dist/*.whl "$psd" "$nass" "$esr" ${core:+"$core"}
 
 "$python" - <<'PY'
 from importlib.metadata import version
 
+import xippios.usda.esr
 import xippios.usda.gats
 import xippios.usda.nass
 import xippios.usda.psd
@@ -63,8 +61,10 @@ print(
     xippios.usda.gats.__version__,
     "with xippios.usda.psd",
     version("xippios-usda-psd"),
-    "and xippios.usda.nass",
+    "xippios.usda.nass",
     version("xippios-usda-nass"),
+    "and xippios.usda.esr",
+    version("xippios-usda-esr"),
     "on xippios-core",
     version("xippios-core"),
 )

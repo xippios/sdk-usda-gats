@@ -34,7 +34,11 @@ Rules:
   code with an empty list, the same as a partner without trade, and refuses a code for a
   month after its `discontinuedOn`; `params.validate_customs_district_id` checks the
   `customs_district_id` filter of the three customs-district tasks against
-  `customsDistricts.json`.
+  `customsDistricts.json`. The four UN Trade tasks check `reporter_code`
+  (`params.validate_reporter_code`) and the `partner_code` filter against
+  `countries.json` for membership only, since the UN data keeps codes the list marks
+  discontinued in 1987 (`AS`, Australia) for later years, and a six-digit `hs6_code`
+  filter against `HS6Commodities.json` (`params.validate_hs6_code`).
 - Agents get a lookup task for every packaged list so they can form valid calls: one
   lookup task per list, `list_<thing>`, served as the MCP tool
   `usda_gats_list_<thing>`: `list_regions`, `list_countries`, `list_hs6_commodities`,

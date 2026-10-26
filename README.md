@@ -40,8 +40,8 @@ releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-
 `reference/` before any call, since GATS answers an unknown code with an empty list. An
 unknown code is refused, naming close codes (an ISO or GENC code leads to its partner
 code first: `"CHN"` names `CH` before `CN`) or pointing to `list_countries` when none is
-close. A code GATS discontinued (`discontinuedOn`, 26 of them) is refused for a month
-after its last, naming the listed codes of the same name: `"SZ"` (Switzerland) ended in
+close. A code GATS discontinued (`discontinuedOn`, 26 of them) is refused by the Census
+tasks for a month after its last, naming the listed codes of the same name: `"SZ"` (Switzerland) ended in
 198712, so 2026-08 is refused and `SR` named, while 1987-06 passes. `month` is 1 to 12
 and `year` four digits; `hs10_code` keeps the products whose code starts with it, a full
 ten-digit code for one product or a prefix such as a chapter, applied after the one data
@@ -74,6 +74,54 @@ a revised month the previous release's time, or refuse a month just released, an
 refusal says when the list was fetched: an accepted lag. `meta.published_at` stays
 `None`: core's `ResultMeta` takes only a timezone-aware time, and FAS states no zone for
 its release times, which `get_census_release_dates` returns as upstream states them.
+
+## UN Trade data
+
+> **The UN half of GATS is frozen.** As recorded on 2026-10-26, both UN Trade release
+> lists end with statistical year 2019, and their newest release is dated 2021-01-18: no
+> later year has appeared since. The package wraps this data faithfully, as GATS serves
+> it, so that a product-level comparison with UN Comtrade is possible elsewhere; it maps
+> no code. Reporter, partner and HS6 codes stay GATS's own (`list_countries`,
+> `list_hs6_commodities`), not UN Comtrade's and not ISO.
+
+GATS serves trade "as reported by UN COMTrade", one reporter and one statistical year per
+request, one record per partner and HS6 code:
+
+```python
+from xippios.usda.gats import get_un_exports, get_un_release_dates
+from xippios.usda.gats.models import ProductType
+
+fish = get_un_exports("IC", 2019, hs6_code="03")  # Iceland's 2019 exports, HS chapter 03
+len(fish.data)  # 1024 records, partner by partner, of 3,980 for the whole year
+row = fish.data[0]
+row.partner_country_code, row.hs6_code, row.value  # "AE", "030211", Decimal("10620.0")
+fish.meta.vintage  # "2020-06-03T05:50:46": Iceland 2019's release time in the exports list
+fish.meta.request  # {"reporter_code": "IC", "year": 2019, "partner_code": None, "hs6_code": "03"}
+
+coverage = get_un_release_dates(ProductType.X, reporter_code="IC")
+[r.statistical_year for r in coverage.data]  # ["2019", "2018", ..., "1989"]: 31 years
+```
+
+`get_un_exports`, `get_un_imports` and `get_un_reexports` take `reporter_code`, `year`
+and two filters applied after the one data request, `partner_code` (exact) and
+`hs6_code` (a full code from the packaged HS6 list, or a prefix of 1 to 5 digits). The
+records keep GATS's codes as the data carries them, older ones included: the countries
+list marks `AS` (Australia), `DA` (Denmark), `IT` (Italy), `NO` (Norway) and `NZ` (New
+Zealand) discontinued in 1987, yet the UN data uses them for later years and never their
+same-name successors (`A2`, `N3`, ...). So the UN tasks check both country codes for
+membership in the packaged list only; the Census tasks' discontinuation rule does not
+apply. Before the data request a task checks the reporter-year against the flow's UN
+release list: the imports task the imports list, the exports task and, by assumption,
+the re-exports task the exports list, since upstream publishes no re-export list. GATS
+answers an unknown reporter, a future year and an unreleased year alike with an empty
+list, so a reporter-year the list lacks raises `NotFoundError` naming the reporter's
+listed years and the latest year; a listed reporter-year without trade is an empty list
+(Iceland's 2019 re-exports). `meta.vintage` is the reporter-year's release time as
+upstream states it; `meta.published_at` stays `None`, as for the Census tasks. One
+reporter-year can be large: Iceland's 2019 imports are 23,396 records (about 5.2 MB),
+India's 2016 exports 75,919 (about 17 MB). `get_un_release_dates(product_type,
+reporter_code=None, year=None)` returns either list, one record per reporter and year,
+3,796 for exports and 3,832 for imports as recorded.
 
 ## Reference lists
 
@@ -125,10 +173,13 @@ that names the tool's filters: one partner-month is one row per HS10 product (77
 for exports to China in August 2026, 3,294 for imports, 1,697 by customs district), so
 the notes of the Census data tools name `hs10_code`, and those of the customs-district
 tools `customs_district_id` too; `usda_gats_list_hs6_commodities` names `search`,
-`usda_gats_list_commodities` its three filters. `usda_gats_list_countries` has a cap of
-its own, 400 rows or 100,000 bytes, so its 322 codes arrive whole.
-`usda_gats_get_census_release_dates`, which has no filter, returns the newest 200
-months, more than sixteen years, with a note that says so. `--http` serves streamable
+`usda_gats_list_commodities` its three filters. The UN Trade data tools name
+`partner_code` and `hs6_code` (one reporter-year is one row per partner and HS6 code,
+3,980 rows for Iceland's 2019 exports), and `usda_gats_get_un_release_dates` names
+`reporter_code` and `year` (3,796 reporter-years in the exports list).
+`usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
+codes arrive whole. `usda_gats_get_census_release_dates`, which has no filter, returns
+the newest 200 months, more than sixteen years, with a note that says so. `--http` serves streamable
 HTTP instead of stdio.
 
 ## Status
@@ -143,6 +194,11 @@ HTTP instead of stdio.
 | `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |
 | `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by the exports and re-exports tasks too | `usda_gats_get_census_release_dates` | alpha |
 | `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by the imports tasks too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetUNTradeExports` (`UNTradeExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_exports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_exports` | alpha |
+| `GATSData_GetUNTradeImports` (`UNTradeImports/reporterCode/{reporterCode}/year/{year}`) | `get_un_imports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_imports` | alpha |
+| `GATSData_GetUNTradeReExports` (`UNTradeReExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_reexports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_reexports` | alpha |
+| `GATSData_GetUNTradeExportDataReleaseInfo` (`UNTrade/data/exports/dataReleaseDates`) | `get_un_release_dates("X", reporter_code=None, year=None)`; read by the UN exports and re-exports tasks too | `usda_gats_get_un_release_dates` | alpha |
+| `GATSData_GetUNTradeImportDataReleaseInfo` (`UNTrade/data/imports/dataReleaseDates`) | `get_un_release_dates("M", reporter_code=None, year=None)`; read by the UN imports task too | `usda_gats_get_un_release_dates` | alpha |
 | `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
 | `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
 | `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks `partner_code` | `usda_gats_list_countries` | alpha |
@@ -150,8 +206,7 @@ HTTP instead of stdio.
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
-The five UN Trade operations of the snapshot (`docs/upstream/`), the data and their two
-release-date lists, are not wrapped yet.
+All nineteen operations of the snapshot (`docs/upstream/`) are wrapped.
 Alpha: the public surface may change in a minor version before 1.0 (conventions §12);
 `CHANGELOG.md` lists every change.
 

@@ -110,3 +110,38 @@ All notable changes to this project are documented here. The format follows
   `errors.UnknownCode` words its message over the parameter and the list, so it serves
   `customs_district_id` too. Nothing is released yet, so this is part of 0.1.0's Census
   tasks, not a change to them.
+- Endpoint wrappers for the five UN Trade operations, named after the snapshot's
+  operationIds: `GATSData_GetUNTradeExports`, `GATSData_GetUNTradeImports` and
+  `GATSData_GetUNTradeReExports` (path parameters `reporterCode` and `year`, both text as
+  the snapshot types them), and the release-date lists
+  `GATSData_GetUNTradeExportDataReleaseInfo` and
+  `GATSData_GetUNTradeImportDataReleaseInfo`, with models from the answers recorded on
+  2026-10-26: `UNTradeRecord` (eleven fields, one record per partner and HS6 code, the
+  same for all three flows) and `UNTradeDataReleaseInfo` (one record per reporter and
+  statistical year, `statisticalYear` text). The client caches the two UN release lists
+  for an hour with the Census ones.
+- Tasks `get_un_exports`, `get_un_imports` and `get_un_reexports(reporter_code, year,
+  partner_code=None, hs6_code=None)`, as MCP tools `usda_gats_get_un_*` and HTTP routes:
+  one reporter and one statistical year across every partner and HS6 code, in GATS's own
+  codes, nothing mapped onto another source's (ADR-0003). The UN Trade data is frozen
+  upstream: as recorded on 2026-10-26 both release lists end with 2019, their newest
+  release dated 2021-01-18. The arguments are checked first, the two country codes for
+  membership only; the flow's UN release list then refuses a reporter-year it lacks as
+  `NotFoundError` naming the reporter's listed years and the list's latest year. The
+  imports task checks the imports list, the exports task and, by assumption, the
+  re-exports task the exports list. `meta.vintage` is the reporter-year's
+  `releaseTimeStamp` as upstream states it; `meta.published_at` stays `None`.
+  `partner_code` (exact) and `hs6_code` (a prefix) apply after the one data request; over
+  MCP 200 rows or 64 KB with a note naming both.
+- Task `get_un_release_dates(product_type, reporter_code=None, year=None)`, as MCP tool
+  `usda_gats_get_un_release_dates` and HTTP route: the UN exports (`"X"`) or imports
+  (`"M"`) release list, filtered by reporter or year after the one request; a cache hit's
+  stored time is `meta.retrieved_at`. Over MCP 200 rows or 64 KB with a note naming both
+  filters. `ProductType`'s docstring now covers both programs' lists.
+- `params.validate_country_code(code, param, reason=...)`, the countries-list membership
+  check named by its parameter, which `validate_partner_code` (Census) and the new
+  `validate_reporter_code` (UN Trade) call; `params.validate_hs6_code`, 1 to 6 digits, a
+  full code from the packaged HS6 list, refused otherwise as `UnknownCode` naming the
+  listed codes that share its leading digits (`"020119"` names `020110`, `020120`,
+  `020130`). `UnknownCode` carries a reason per use (`errors.REPORTER_REASON`,
+  `UN_PARTNER_REASON`, `HS6_REASON`), and the year message names both data series.

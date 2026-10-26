@@ -4,9 +4,11 @@
 # PEP 420 namespaces xippios and xippios.usda.
 #
 # Builds this package's wheel, installs it with xippios-usda-psd, xippios-usda-nass and
-# xippios-usda-esr into a fresh virtual environment, imports all four, checks that this
-# package's reference data ships, runs `uv pip check`, and fails if either namespace level
-# gained an __init__.py in site-packages. Run from anywhere: scripts/check-siblings.sh
+# xippios-usda-esr, all three from PyPI, into a fresh virtual environment, imports all
+# four, checks that this package's reference data ships, runs `uv pip check`, and fails if
+# either namespace level gained an __init__.py in site-packages. A namespace proof: it
+# imports, it calls nothing upstream. Needs the network, no key. Run from anywhere:
+# scripts/check-siblings.sh
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,13 +16,13 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 unset VIRTUAL_ENV  # never install into whatever environment the shell has active
 
-# xippios-usda-psd is on PyPI; xippios-usda-nass and xippios-usda-esr are not yet, so they
-# come from git main. Switch either to its bare name ("xippios-usda-nass",
-# "xippios-usda-esr") once it is tagged and published (/release-prep);
+# All three siblings come from PyPI: uv installs the newest release of each that shares
+# one xippios-core with this wheel. xippios-usda-nass and xippios-usda-esr came from their
+# git main until their 0.1.0 was published; /release-prep 0.1.0 switched them to PyPI.
 # PSD_REQUIREMENT, NASS_REQUIREMENT and ESR_REQUIREMENT override each.
 psd="${PSD_REQUIREMENT:-xippios-usda-psd}"
-nass="${NASS_REQUIREMENT:-xippios-usda-nass @ git+https://github.com/xippios/sdk-usda-nass@main}"
-esr="${ESR_REQUIREMENT:-xippios-usda-esr @ git+https://github.com/xippios/sdk-usda-esr@main}"
+nass="${NASS_REQUIREMENT:-xippios-usda-nass}"
+esr="${ESR_REQUIREMENT:-xippios-usda-esr}"
 
 cd "$root"
 uv build --wheel --out-dir "$work/dist"

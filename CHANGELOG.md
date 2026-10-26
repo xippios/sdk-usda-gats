@@ -59,8 +59,10 @@ All notable changes to this project are documented here. The format follows
   `params.validate_year`, `validate_month` and `validate_hs10_code` check the other
   arguments.
 - `scripts/check-siblings.sh` and `.github/workflows/siblings.yml`: the ADR-0006 sibling
-  proof with xippios-usda-psd from PyPI and xippios-usda-nass and xippios-usda-esr from
-  git main.
+  proof, this wheel installed with xippios-usda-psd, xippios-usda-nass and
+  xippios-usda-esr, all three from PyPI, as portions of the `xippios.usda` namespace;
+  `PSD_REQUIREMENT`, `NASS_REQUIREMENT` and `ESR_REQUIREMENT` override each. nass and esr
+  came from git main until their 0.1.0 was published.
 - Endpoint wrappers for nine more GATS operations: the reference lists
   `GATSData_GetRegions`, `GATSData_GetCommodities`, `GATSData_GetHS6Commodities`,
   `GATSData_GetUnitsOfMeasure` and `GATSData_GetCustomsDistricts`, and the data

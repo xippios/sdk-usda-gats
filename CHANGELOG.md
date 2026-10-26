@@ -38,14 +38,19 @@ All notable changes to this project are documented here. The format follows
   partner and one month across every HS10 product. The arguments are checked before any
   call; the flow's release list (cached for an hour) refuses a month it lacks as
   `NotFoundError` naming the months released; `hs10_code` keeps the products whose code
-  starts with it. `meta.vintage` is the statistical month (`"202608"`);
-  `meta.published_at` stays `None`, since upstream's release time has no time zone. An
-  empty list for a listed partner in a released month is an empty result. Over MCP both
-  keep 200 rows or 64 KB with a note naming `hs10_code` (`tasks.MCP_CAPS`, ADR-0016).
+  starts with it. `meta.vintage` is the month's release time from that list, as
+  upstream states it (`"2026-10-06T08:00:00"` for 2026-08), the release that last
+  revised the figures; for up to an hour after a release the cached list may still give
+  the previous release's time. The month itself is in `meta.request`.
+  `meta.published_at` stays `None`, since `ResultMeta` takes only an aware time and FAS
+  states no zone. An empty list for a listed partner in a released month is an empty
+  result. Over MCP both keep 200 rows or 64 KB with a note naming `hs10_code`
+  (`tasks.MCP_CAPS`, ADR-0016).
 - Task `get_census_release_dates(product_type)`, as MCP tool
   `usda_gats_get_census_release_dates` and HTTP route: the exports (`"X"`) or imports
   (`"M"`) release list, one record per month with the time of its latest release as
-  upstream states it; a cache hit's stored time is `meta.retrieved_at`.
+  upstream states it; a cache hit's stored time is `meta.retrieved_at`. Over MCP it
+  keeps 200 rows or 64 KB, with a note that the rows shown are the newest months.
 - The GATS countries list packaged as `reference/countries.json` (322 records, fetched
   2026-10-25) by `scripts/refresh_reference.py`, and `params.validate_partner_code`,
   which refuses a code the list lacks as `errors.UnknownCode`, an `InvalidRequestError`

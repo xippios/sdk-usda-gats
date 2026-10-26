@@ -6,11 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
 ### Added
 
-- Scaffold from [sdk-template](https://github.com/xippios/sdk-template): configured
-  client for USDA FAS Global Agricultural Trade System, empty task layer, MCP server and FastAPI router
-  wired to it, test harness, CI, the nightly live tests and publishing.
+- Scaffold from [sdk-template](https://github.com/xippios/sdk-template) v0.2.0: configured
+  client for USDA FAS Global Agricultural Trade System, MCP server and FastAPI router wired
+  to the task layer, test harness, CI, the nightly live tests and publishing.
 - Upstream documentation snapshot in `docs/upstream/` (2026-10-25): the GATS part of
   the FAS Open Data Services Swagger 2.0 document as the portal loads it
   (`openapi/portal-document.json`) and as the API serves it itself

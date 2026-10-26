@@ -263,9 +263,11 @@ server, per process.
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
-All nineteen operations of the snapshot (`docs/upstream/`) are wrapped.
-Alpha: the public surface may change in a minor version before 1.0 (conventions §12);
-`CHANGELOG.md` lists every change.
+All nineteen operations of the snapshot (`docs/upstream/`) are wrapped. 0.1.0, the first
+release, covers them with twenty tasks: six Census data tasks, three month series, the
+Census release dates, four UN Trade tasks and six list tasks. Alpha: the public surface
+may change in a minor version before 1.0 (conventions §12); `CHANGELOG.md` lists every
+change.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and

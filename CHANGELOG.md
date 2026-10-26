@@ -145,3 +145,18 @@ All notable changes to this project are documented here. The format follows
   listed codes that share its leading digits (`"020119"` names `020110`, `020120`,
   `020130`). `UnknownCode` carries a reason per use (`errors.REPORTER_REASON`,
   `UN_PARTNER_REASON`, `HS6_REASON`), and the year message names both data series.
+- Tasks `get_census_export_series`, `get_census_import_series` and
+  `get_census_reexport_series(partner_code, start_year, start_month, end_year, end_month,
+  hs10_code=None)`, as MCP tools `usda_gats_get_census_*_series` and HTTP routes: one
+  partner over a range of at most 60 months (`tasks.SERIES_MAX_MONTHS`), one data request
+  per month, oldest first, one after another at the client's pace, never concurrently.
+  Every argument is checked before any call, the partner code through
+  `validate_partner_month` for the start and the end month, so a code discontinued inside
+  the range is refused; a start after the end or a longer range is `InvalidRequestError`.
+  The flow's release list is fetched once (exports for exports and, by assumption,
+  re-exports; imports for imports), and a range with a month the list lacks is refused
+  whole as `NotFoundError` naming the first such month and the latest released, never
+  trimmed. The records come back as one list in month order, `hs10_code` applied to every
+  month, a month without trade adding nothing. `meta.vintage` is the newest release time
+  among the range's months, as upstream states it; `meta.published_at` stays `None`.
+  Over MCP 200 rows or 64 KB with a note naming `hs10_code` and fewer months.

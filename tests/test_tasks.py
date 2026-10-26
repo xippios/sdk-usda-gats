@@ -7,10 +7,11 @@ the URLs the route received with credentials redacted, rather than keep a reques
 
 import inspect
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -52,6 +53,24 @@ EXPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/exports/dataReleaseDates
 IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/imports/dataReleaseDates"
 CH_EXPORTS_URL = f"{BASE_URL}/api/gats/censusExports/partnerCode/CH/year/2026/month/8"
 CH_IMPORTS_URL = f"{BASE_URL}/api/gats/censusImports/partnerCode/CH/year/2026/month/8"
+RE_EXPORTS = "GATSData_GetCensusReExports"
+DISTRICT_EXPORTS = "GATSData_GetCustomsDistrictsExports"
+DISTRICT_IMPORTS = "GATSData_GetCustomsDistrictsImports"
+DISTRICT_RE_EXPORTS = "GATSData_GetCustomsDistrictsReExports"
+IC_RE_EXPORTS_URL = f"{BASE_URL}/api/gats/censusReExports/partnerCode/IC/year/2026/month/8"
+IC_DISTRICT_EXPORTS_URL = (
+    f"{BASE_URL}/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8"
+)
+IC_DISTRICT_IMPORTS_URL = (
+    f"{BASE_URL}/api/gats/customsDistrictImports/partnerCode/IC/year/2026/month/8"
+)
+IC_DISTRICT_RE_EXPORTS_URL = (
+    f"{BASE_URL}/api/gats/customsDistrictReExports/partnerCode/IC/year/2026/month/8"
+)
+DISTRICT_NOTE = (
+    "filter by hs10_code, a full code or a prefix such as the chapter '02', or by "
+    "customs_district_id, e.g. 10 (NEW YORK, N.Y.), to see the rest"
+)
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
@@ -301,6 +320,7 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
         tasks.get_census_exports("ZZ", 2026, 8)
     assert unknown.value.closest == []
     assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
+    assert "list_countries lists every one" in unknown.value.message
     with pytest.raises(UnknownCode, match=r"Did you mean CH \(China\)") as close:
         tasks.get_census_imports("ch", 2026, 8)
     assert close.value.closest[0] == ("CH", "China")
@@ -317,7 +337,319 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
         tasks.get_census_imports("CH", 2026, 8, hs10_code="01039100001")
     with pytest.raises(InvalidRequestError, match='product_type must be "X" \\(exports\\)'):
         tasks.get_census_release_dates("Q")  # type: ignore[arg-type]
+    for task in DATA_TASKS[2:]:  # get_census_reexports and the three district tasks
+        with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code"):
+            task("ZZ", 2026, 8)
+        with pytest.raises(InvalidRequestError, match="month must be a whole number from 1"):
+            task("IC", 2026, 0)
+        with pytest.raises(InvalidRequestError, match="hs10_code must be 1 to 10 digits"):
+            task("IC", 2026, 8, hs10_code="03.04")
     assert respx_mock.calls.call_count == 0
+
+
+DATA_TASKS: list[Callable[..., Any]] = [
+    tasks.get_census_exports,
+    tasks.get_census_imports,
+    tasks.get_census_reexports,
+    tasks.get_customs_district_exports,
+    tasks.get_customs_district_imports,
+    tasks.get_customs_district_reexports,
+]
+DISTRICT_TASKS = DATA_TASKS[3:]
+
+
+@pytest.mark.parametrize("task", DATA_TASKS, ids=[t.__name__ for t in DATA_TASKS])
+def test_a_discontinued_code_is_refused_after_its_month_before_any_request(
+    respx_mock: respx.MockRouter, task: Callable[..., Any]
+) -> None:
+    """``SZ`` (Switzerland) was discontinued in 198712: 2026-08 is refused by every Census
+    task without a request, naming ``SR``, the current code of the same name."""
+    with pytest.raises(InvalidRequestError) as info:
+        task("SZ", 2026, 8)
+    assert not isinstance(info.value, UnknownCode)
+    assert info.value.message.startswith(
+        "partner_code 'SZ' (Switzerland) was discontinued in 198712"
+    )
+    assert info.value.message.endswith("Listed under the same name: SR.")
+    assert respx_mock.calls.call_count == 0
+
+
+def test_a_discontinued_code_passes_for_a_month_before_its_end(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """``SZ`` for 1987-06, before its 198712: the check passes, the recorded exports list
+    (from 196701) has the month, and the data request goes out. NOT RECORDED: no answer
+    for Switzerland in 1987 is recorded, so the data route answers ``[]`` and the test
+    checks what was sent and the month's release time."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    url = f"{BASE_URL}/api/gats/censusExports/partnerCode/SZ/year/1987/month/6"
+    data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
+    result = tasks.get_census_exports("SZ", 1987, 6)
+    assert result.data == []
+    assert result.meta.vintage == _release_time(EXPORT_RELEASES, "198706")
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL]
+    assert sent_urls(data) == [url]
+
+
+def test_an_iso_code_leads_to_the_partner_code_before_any_request(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """``CHN`` is China's ISO and GENC code: the refusal names ``CH`` first, before ``CN``
+    (Comoros), which difflib finds close by its letters."""
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_census_exports("CHN", 2026, 8)
+    assert info.value.closest[:2] == [("CH", "China"), ("CN", "Comoros")]
+    assert "Did you mean CH (China), CN (Comoros)?" in info.value.message
+    with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
+        tasks.get_customs_district_imports("ISL", 2026, 8)
+    assert respx_mock.calls.call_count == 0
+
+
+@pytest.mark.parametrize("task", DISTRICT_TASKS, ids=[t.__name__ for t in DISTRICT_TASKS])
+def test_an_unknown_customs_district_is_refused_before_any_request(
+    respx_mock: respx.MockRouter, task: Callable[..., Any]
+) -> None:
+    with pytest.raises(UnknownCode) as info:
+        task("IC", 2026, 8, customs_district_id=12)
+    assert info.value.closest == [
+        ("11", "PHILADELPHIA, PA."),
+        ("13", "BALTIMORE, MD."),
+        ("10", "NEW YORK, N.Y."),
+    ]
+    assert info.value.message.startswith(
+        "12 is not a customs_district_id in GATS's customsDistricts list"
+    )
+    with pytest.raises(InvalidRequestError, match="customs_district_id must be an integer"):
+        task("IC", 2026, 8, customs_district_id=True)
+    assert respx_mock.calls.call_count == 0
+
+
+def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
+    """Iceland in August 2026: 12 records. Only the exports release list is mounted: the
+    re-exports have none of their own, and a request for the imports list would fail."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(RE_EXPORTS, "IC_2026_8")
+    result = tasks.get_census_reexports("IC", 2026, 8)
+    assert len(result.data) == 12
+    first = result.data[0]
+    assert (first.hs10_code, first.value, first.census_uom_id1) == (
+        "0709202000",
+        Decimal("5439.0"),
+        47,
+    )
+    assert [r.hs10_code for r in result.data] == [
+        r["hS10Code"] for r in _recorded(RE_EXPORTS, "IC_2026_8")
+    ], "every record, in upstream order"
+    assert {(r.country_code, r.date) for r in result.data} == {("IC", "202608")}
+    assert result.meta.endpoint == "GATSData_GetCensusReExports"
+    assert result.meta.request == {
+        "partner_code": "IC",
+        "year": 2026,
+        "month": 8,
+        "hs10_code": None,
+    }
+    assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
+    assert result.meta.published_at is None
+    chapter = tasks.get_census_reexports("IC", 2026, 8, hs10_code="62")
+    assert [r.hs10_code for r in chapter.data] == [
+        "6201409000",
+        "6203493000",
+        "6208911000",
+        "6210401000",
+    ]
+    assert chapter.meta.request["hs10_code"] == "62"
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL], "the list once, from the cache after"
+    assert sent_urls(data) == [IC_RE_EXPORTS_URL, IC_RE_EXPORTS_URL]
+
+
+def test_a_re_export_month_not_released_says_which_list_was_checked(
+    replay_fixture: ReplayFixture,
+) -> None:
+    replay_fixture(EXPORT_RELEASES, "all")
+    with pytest.raises(NotFoundError) as info:
+        tasks.get_census_reexports("IC", 2035, 1)
+    message = info.value.message
+    assert message.startswith("GATS has no Census re-exports for 203501: it is not released yet")
+    assert "the latest exports month released is 202608" in message
+    assert "GATS publishes no release list for re-exports: the package checks the exports" in (
+        message
+    )
+
+
+@pytest.mark.parametrize(
+    ("task", "endpoint", "release_list", "release_url", "url", "count", "in_ny"),
+    [
+        (
+            tasks.get_customs_district_exports,
+            DISTRICT_EXPORTS,
+            EXPORT_RELEASES,
+            EXPORT_RELEASES_URL,
+            IC_DISTRICT_EXPORTS_URL,
+            107,
+            16,
+        ),
+        (
+            tasks.get_customs_district_imports,
+            DISTRICT_IMPORTS,
+            IMPORT_RELEASES,
+            IMPORT_RELEASES_URL,
+            IC_DISTRICT_IMPORTS_URL,
+            123,
+            28,
+        ),
+        (
+            tasks.get_customs_district_reexports,
+            DISTRICT_RE_EXPORTS,
+            EXPORT_RELEASES,
+            EXPORT_RELEASES_URL,
+            IC_DISTRICT_RE_EXPORTS_URL,
+            13,
+            5,
+        ),
+    ],
+    ids=["exports", "imports", "re_exports"],
+)
+def test_customs_district_tasks(
+    replay_fixture: ReplayFixture,
+    task: Callable[..., Any],
+    endpoint: str,
+    release_list: str,
+    release_url: str,
+    url: str,
+    count: int,
+    in_ny: int,
+) -> None:
+    """Iceland in August 2026, by customs district. Only the right release list is
+    mounted: the imports list for imports, the exports list for exports and, by
+    assumption, re-exports; a request for the other would fail. ``customs_district_id``
+    keeps one district after the one data request."""
+    releases = replay_fixture(release_list, "all")
+    data = replay_fixture(endpoint, "IC_2026_8")
+    result = task("IC", 2026, 8)
+    assert len(result.data) == count
+    assert [(r.customs_district_id, r.hs10_code) for r in result.data] == [
+        (r["customsDistrictId"], r["hS10Code"]) for r in _recorded(endpoint, "IC_2026_8")
+    ], "every record, in upstream order"
+    assert result.meta.endpoint == endpoint
+    assert result.meta.request == {
+        "partner_code": "IC",
+        "year": 2026,
+        "month": 8,
+        "hs10_code": None,
+        "customs_district_id": None,
+    }
+    assert result.meta.vintage == RELEASED_2026_08 == _release_time(release_list, "202608")
+    assert result.meta.published_at is None
+    new_york = task("IC", 2026, 8, customs_district_id=10)
+    assert len(new_york.data) == in_ny
+    assert {r.customs_district_id for r in new_york.data} == {10}
+    assert new_york.data == [r for r in result.data if r.customs_district_id == 10]
+    assert new_york.meta.request["customs_district_id"] == 10
+    assert sent_urls(releases) == [release_url]
+    assert sent_urls(data) == [url, url], "the filter is not sent upstream"
+
+
+def test_both_filters_narrow_the_district_imports(replay_fixture: ReplayFixture) -> None:
+    """Fish fillets (``0304``) from Iceland: 51 records over every district, 13 through
+    New York (district 10)."""
+    replay_fixture(IMPORT_RELEASES, "all")
+    replay_fixture(DISTRICT_IMPORTS, "IC_2026_8")
+    fillets = tasks.get_customs_district_imports("IC", 2026, 8, hs10_code="0304")
+    assert len(fillets.data) == 51
+    both = tasks.get_customs_district_imports(
+        "IC", 2026, 8, hs10_code="0304", customs_district_id=10
+    )
+    assert len(both.data) == 13
+    assert all(r.customs_district_id == 10 and r.hs10_code.startswith("0304") for r in both.data)
+    assert both.meta.request == {
+        "partner_code": "IC",
+        "year": 2026,
+        "month": 8,
+        "hs10_code": "0304",
+        "customs_district_id": 10,
+    }
+    assert isinstance(both.data[0].consumption_cif_value, Decimal)
+    empty = tasks.get_customs_district_imports("IC", 2026, 8, customs_district_id=99)
+    assert empty.data == [], "a listed district without imports from Iceland"
+    assert empty.meta.vintage == RELEASED_2026_08
+
+
+def test_a_district_month_not_released_is_not_found(replay_fixture: ReplayFixture) -> None:
+    replay_fixture(IMPORT_RELEASES, "all")
+    with pytest.raises(
+        NotFoundError, match="GATS has no Census customs-district imports for 203501"
+    ) as info:
+        tasks.get_customs_district_imports("IC", 2035, 1)
+    assert "the package checks the imports list" in info.value.message
+
+
+@pytest.mark.anyio
+async def test_the_district_tools_name_both_filters_when_cut(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Exports to China by district, 1,697 rows, over MCP: cut at the default cap with a
+    note naming ``hs10_code`` and ``customs_district_id``; one district of Iceland's
+    exports comes back whole."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(DISTRICT_EXPORTS, "CH_2026_8")
+    payload = await mcp_call(
+        server,
+        "usda_gats_get_customs_district_exports",
+        {"partner_code": "CH", "year": 2026, "month": 8},
+    )
+    shown = len(payload["data"])
+    assert 0 < shown <= 200
+    assert payload["note"] == (
+        f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
+    )
+    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert payload["meta"]["request"]["customs_district_id"] is None
+
+
+@pytest.mark.anyio
+async def test_the_district_and_re_export_tools_end_to_end(
+    replay_fixture: ReplayFixture,
+) -> None:
+    replay_fixture(EXPORT_RELEASES, "all")
+    district = replay_fixture(DISTRICT_RE_EXPORTS, "IC_2026_8")
+    re_exports = replay_fixture(RE_EXPORTS, "IC_2026_8")
+    arguments: dict[str, object] = {"partner_code": "IC", "year": 2026, "month": 8}
+    new_york = await mcp_call(
+        server,
+        "usda_gats_get_customs_district_reexports",
+        {**arguments, "customs_district_id": 10},
+    )
+    assert len(new_york["data"]) == 5
+    assert "note" not in new_york
+    assert new_york["data"][0] == {
+        "customs_district_id": 10,
+        "date": "202608",
+        "country_code": "IC",
+        "hs10_code": "0709202000",
+        "census_uom_id1": 47,
+        "census_uom_id2": 47,
+        "fas_converted_uom_id": 70,
+        "fas_non_converted_uom_id": 70,
+        "quantity1": 700.0,
+        "quantity2": 0.0,
+        "value": 5439.0,
+    }, "Decimal values are JSON numbers (ADR-0008)"
+    whole = await mcp_call(server, "usda_gats_get_census_reexports", arguments)
+    assert len(whole["data"]) == 12
+    assert whole["meta"]["endpoint"] == "GATSData_GetCensusReExports"
+    assert whole["meta"]["vintage"] == RELEASED_2026_08
+    assert sent_urls(district) == [IC_DISTRICT_RE_EXPORTS_URL]
+    assert sent_urls(re_exports) == [IC_RE_EXPORTS_URL]
+    with pytest.raises(AssertionError, match="error: UnknownCode: 12 is not a customs_district_id"):
+        await mcp_call(
+            server,
+            "usda_gats_get_customs_district_reexports",
+            {**arguments, "customs_district_id": 12},
+        )
+    with pytest.raises(AssertionError, match="error: InvalidRequestError: partner_code 'SZ'"):
+        await mcp_call(
+            server, "usda_gats_get_census_reexports", {**arguments, "partner_code": "SZ"}
+        )
 
 
 @pytest.mark.parametrize(
@@ -457,3 +789,24 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     releases = http.get("/usda-gats/get_census_release_dates", params={"product_type": "X"})
     assert releases.status_code == 200
     assert releases.json()["meta"]["request"] == {"product_type": "X"}
+    replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
+    district: dict[str, str | int] = {
+        "partner_code": "IC",
+        "year": 2026,
+        "month": 8,
+        "customs_district_id": 10,
+    }
+    new_york = http.get("/usda-gats/get_customs_district_exports", params=district)
+    assert new_york.status_code == 200, new_york.text
+    assert len(new_york.json()["data"]) == 16
+    assert {row["customs_district_id"] for row in new_york.json()["data"]} == {10}
+    unknown = http.get(
+        "/usda-gats/get_customs_district_exports", params={**district, "customs_district_id": 12}
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["title"] == "UnknownCode"
+    discontinued = http.get(
+        "/usda-gats/get_census_exports", params={**params, "partner_code": "SZ"}
+    )
+    assert discontinued.status_code == 422
+    assert discontinued.json()["title"] == "InvalidRequestError"

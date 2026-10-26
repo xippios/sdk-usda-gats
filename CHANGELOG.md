@@ -148,25 +148,27 @@ All notable changes to this project are documented here. The format follows
 - Tasks `get_census_export_series`, `get_census_import_series` and
   `get_census_reexport_series(partner_code, start_year, start_month, end_year, end_month,
   hs10_code=None)`, as MCP tools `usda_gats_get_census_*_series` and HTTP routes: one
-  partner over a range of at most 60 months (`tasks.SERIES_MAX_MONTHS`), one data request
-  per month, oldest first, one after another at the client's pace, never concurrently.
-  Every argument is checked before any call, the partner code through
+  partner over a range of months, one data request per month, oldest first, one after
+  another at the client's pace, never concurrently. A call spans at most
+  `tasks.series_ceiling()` months: 60 in Python and over HTTP (`tasks.SERIES_MAX_MONTHS`)
+  and 24 over MCP by default (`tasks.MCP_SERIES_MAX_MONTHS`), where the MCP server's
+  `--series-months MONTHS`, 1 to 60, sets another. The entry point `xippios-usda-gats-mcp`
+  sets the MCP ceiling: core's `main` applies the option through the hooks
+  `tasks.mcp_add_options` and `tasks.mcp_apply_options` (ADR-0014), which `mcp.py` passes
+  as it passes `MCP_CAPS`, so a host that imports `xippios.usda.gats.mcp.server` and
+  serves it another way keeps 60. The ceiling is process-wide, so a Python or HTTP call
+  made inside an MCP server's process meets the MCP ceiling too: `tasks.series_ceiling()`
+  reads it, `tasks.set_series_ceiling(months)` sets it and refuses anything but a whole
+  number from 1 to 60 as `InvalidRequestError`, which stops the server at start with exit
+  status 2. Every argument is checked before any call, the partner code through
   `validate_partner_month` for the start and the end month, so a code discontinued inside
-  the range is refused; a start after the end or a longer range is `InvalidRequestError`.
-  The flow's release list is fetched once (exports for exports and, by assumption,
-  re-exports; imports for imports), and a range with a month the list lacks is refused
-  whole as `NotFoundError` naming the first such month and the latest released, never
-  trimmed. The records come back as one list in month order, `hs10_code` applied to every
-  month, a month without trade adding nothing. `meta.vintage` is the newest release time
-  among the range's months, as upstream states it; `meta.published_at` stays `None`.
-  Over MCP 200 rows or 64 KB with a note naming `hs10_code` and fewer months.
-- The series ceiling over MCP: the MCP server starts with 24 months
-  (`tasks.MCP_SERIES_MAX_MONTHS`), and `--series-months MONTHS`, 1 to 60, sets another;
-  the Python API and the HTTP router keep 60 (`tasks.SERIES_MAX_MONTHS`). The option
-  reaches core's `main` through the hooks `tasks.mcp_add_options` and
-  `tasks.mcp_apply_options` (ADR-0014), which `mcp.py` passes as it passes `MCP_CAPS`.
-  The ceiling is process-wide, one MCP server per process: `tasks.series_ceiling()` reads
-  it, `tasks.set_series_ceiling(months)` sets it and refuses anything but a whole number
-  from 1 to 60 as `InvalidRequestError`, which stops the server at start with exit status
-  2. A longer range is refused before any request, naming the ceiling in force and, below
-  60, that `--series-months` raises it.
+  the range is refused; a start after the end, or a range longer than the ceiling, is
+  `InvalidRequestError`, the latter naming the ceiling in force and, below 60, that it is
+  the ceiling set for this process and that `--series-months` raises it. The flow's
+  release list is fetched once (exports for exports and, by assumption, re-exports;
+  imports for imports), and a range with a month the list lacks is refused whole as
+  `NotFoundError` naming the first such month and the latest released, never trimmed.
+  The records come back as one list in month order, `hs10_code` applied to every month, a
+  month without trade adding nothing. `meta.vintage` is the newest release time among
+  the range's months, as upstream states it; `meta.published_at` stays `None`. Over MCP
+  200 rows or 64 KB with a note naming `hs10_code` and fewer months.

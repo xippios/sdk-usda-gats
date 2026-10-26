@@ -79,8 +79,8 @@ its release times, which `get_census_release_dates` returns as upstream states t
 ### Month series
 
 The three series tasks answer one partner over a range of months, at most 60 in Python
-and over HTTP (the [MCP server](#mcp) starts with 24), as one flat list in month order;
-every record carries its month in `date`:
+and over HTTP and 24 over MCP by default (the ceiling is process-wide, see [MCP](#mcp)),
+as one flat list in month order; every record carries its month in `date`:
 
 ```python
 from xippios.usda.gats import get_census_import_series
@@ -97,14 +97,14 @@ fish.meta.request  # the six arguments: partner_code, start_year, ..., hs10_code
 take `partner_code`, `start_year`, `start_month`, `end_year`, `end_month` and
 `hs10_code`, which filters every month. Everything is checked before the first request,
 the partner code for the start and for the end month, so a code discontinued inside the
-range is refused (`"SZ"` for 1987-06 to 1988-01 names 198712); a start after the end or
-more than 60 months is refused too. The flow's release list is read once, and every month
-of the range must be in it: a range ending in a month not released yet raises
-`NotFoundError` naming that month and the latest released, rather than returning the
-months that are. `meta.vintage` is the newest release time among the range's months,
-which across Census's annual revision can be an earlier month's than the end month's
-(2025-12 to 2026-02 gives December's revised `2026-06-24T08:00:00`);
-`get_census_release_dates` has each month's own.
+range is refused (`"SZ"` for 1987-06 to 1988-01 names 198712); a start after the end, or
+a range longer than the ceiling in force, is refused too, naming the ceiling. The flow's
+release list is read once, and every month of the range must be in it: a range ending in
+a month not released yet raises `NotFoundError` naming that month and the latest released,
+rather than returning the months that are. `meta.vintage` is the newest release time
+among the range's months, which across Census's annual revision can be an earlier
+month's than the end month's (2025-12 to 2026-02 gives December's revised
+`2026-06-24T08:00:00`); `get_census_release_dates` has each month's own.
 
 **Pacing.** A series spends one keyed request per month, plus the release list unless
 the client's cache holds it, and sends them one after another at the client's pace of
@@ -224,10 +224,17 @@ serves streamable HTTP instead of stdio.
 from 1 to 60. The server starts with 24: two years, 24 requests, about 24 seconds at the
 client's pace of one request per second. The Python API and the HTTP router allow 60, five
 years and about a minute (`tasks.SERIES_MAX_MONTHS`). A longer range is refused before
-any request, with a message that names the ceiling in force and `--series-months`; a value
-outside 1 to 60 stops the server at start with exit status 2. For five-year series over
-MCP, append `"--series-months", "60"` to the `args` above. The ceiling is process-wide
-(`tasks.series_ceiling()`, `tasks.set_series_ceiling(months)`): one MCP server per process.
+any request, with a message that names the ceiling in force and, below 60,
+`--series-months`; a value outside 1 to 60 stops the server at start with exit status 2.
+For five-year series over MCP, append `"--series-months", "60"` to the `args` above.
+
+The entry point `xippios-usda-gats-mcp` sets the 24, or the `--series-months` given:
+core's `main` applies the option through the hooks `tasks.mcp_add_options` and
+`tasks.mcp_apply_options`. A host that imports `xippios.usda.gats.mcp.server` and serves
+it another way applies no option and keeps 60. The ceiling is process-wide
+(`tasks.series_ceiling()`, `tasks.set_series_ceiling(months)`), so a Python or HTTP call
+made inside an MCP server's process meets the MCP ceiling too: one ceiling, and one MCP
+server, per process.
 
 ## Status
 
@@ -236,9 +243,9 @@ MCP, append `"--series-months", "60"` to the `args` above. The ceiling is proces
 | `GATSData_GetCensusExports` (`censusExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_exports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_exports` | alpha |
 | `GATSData_GetCensusImport` (`censusImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_imports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_imports` | alpha |
 | `GATSData_GetCensusReExports` (`censusReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_reexports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_reexports` | alpha |
-| `GATSData_GetCensusExports`, one request per month | `get_census_export_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months | `usda_gats_get_census_export_series` | alpha |
-| `GATSData_GetCensusImport`, one request per month | `get_census_import_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months | `usda_gats_get_census_import_series` | alpha |
-| `GATSData_GetCensusReExports`, one request per month | `get_census_reexport_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months | `usda_gats_get_census_reexport_series` | alpha |
+| `GATSData_GetCensusExports`, one request per month | `get_census_export_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months in Python and over HTTP, 24 on the MCP server by default | `usda_gats_get_census_export_series` | alpha |
+| `GATSData_GetCensusImport`, one request per month | `get_census_import_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months in Python and over HTTP, 24 on the MCP server by default | `usda_gats_get_census_import_series` | alpha |
+| `GATSData_GetCensusReExports`, one request per month | `get_census_reexport_series(partner_code, start_year, start_month, end_year, end_month, hs10_code=None)`, at most 60 months in Python and over HTTP, 24 on the MCP server by default | `usda_gats_get_census_reexport_series` | alpha |
 | `GATSData_GetCustomsDistrictsExports` (`customsDistrictExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_exports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_exports` | alpha |
 | `GATSData_GetCustomsDistrictsImports` (`customsDistrictImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_imports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_imports` | alpha |
 | `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |

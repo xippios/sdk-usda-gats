@@ -17,9 +17,15 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, NotFoundError
+from xippios.core import InvalidRequestError, NotFoundError, RateLimitError
 from xippios.core.client import cache_key
-from xippios.core.testing import ReplayFixture, load_fixture, mcp_call, sent_urls
+from xippios.core.testing import (
+    FixtureResponse,
+    ReplayFixture,
+    load_fixture,
+    mcp_call,
+    sent_urls,
+)
 
 from xippios.usda.gats import __version__, tasks
 from xippios.usda.gats._client import BASE_URL, cache
@@ -834,24 +840,51 @@ def _ic_url(path: str, month: int) -> str:
     return f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/2026/month/{month}"
 
 
+def _answering(
+    respx_mock: respx.MockRouter, method: str, host: str, answers: dict[str, FixtureResponse]
+) -> respx.Route:
+    """One route for ``method`` on ``host`` that answers each path of ``answers`` with its
+    recorded status, headers and body, as ``replay_fixture`` does; a path not in
+    ``answers`` matches no route and fails the test."""
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        response = answers[request.url.path]
+        return httpx.Response(response.status, headers=response.headers, content=response.content)
+
+    route = respx_mock.route(method=method, host=host, path__in=tuple(answers))
+    return route.mock(side_effect=answer)
+
+
 def _replay_months(respx_mock: respx.MockRouter, endpoint: str, *cases: str) -> respx.Route:
     """Mount the recorded months ``cases`` of ``endpoint`` on one route, so that
     ``sent_urls(route)`` lists a series' requests in the order they were sent.
 
     ``replay_fixture`` mounts one route per fixture, which shows what each route received
     but not the order across them. This route answers every request with the recorded
-    exchange of its path, status, headers and body, as ``replay_fixture`` does; a path
+    exchange of its path, for the recorded method, as ``replay_fixture`` does; a path
     none of ``cases`` recorded matches no route and fails the test."""
     recorded = [load_fixture(FIXTURES / endpoint / f"{case}.json") for case in cases]
     answers = {httpx.URL(fixture.request.url).path: fixture.response for fixture in recorded}
-    (host,) = {httpx.URL(fixture.request.url).host for fixture in recorded}
+    ((method, host),) = {
+        (fixture.request.method, httpx.URL(fixture.request.url).host) for fixture in recorded
+    }
+    return _answering(respx_mock, method, host, answers)
 
-    def answer(request: httpx.Request) -> httpx.Response:
-        response = answers[request.url.path]
-        return httpx.Response(response.status, headers=response.headers, content=response.content)
 
-    route = respx_mock.route(method="GET", host=host, path__in=tuple(answers))
-    return route.mock(side_effect=answer)
+def _answer_months(
+    respx_mock: respx.MockRouter, endpoint: str, case: str, *urls: str
+) -> respx.Route:
+    """Mount ``urls`` on one route that answers each with the recorded exchange ``case``
+    of ``endpoint``, its status, headers and body, for the recorded method: the variant of
+    ``_replay_months`` for months nothing was recorded for.
+
+    NOT RECORDED for ``urls``: each gets the answer recorded for another request, e.g. the
+    empty list GATS sent for Bouvet Island (``BV``) in August 2026, so a test that uses it
+    says so. ``urls`` share the recorded request's host."""
+    fixture = load_fixture(FIXTURES / endpoint / f"{case}.json")
+    (host,) = {httpx.URL(url).host for url in (fixture.request.url, *urls)}
+    answers = {httpx.URL(url).path: fixture.response for url in urls}
+    return _answering(respx_mock, fixture.request.method, host, answers)
 
 
 def _months_recorded(endpoint: str, *cases: str) -> list[tuple[object, object]]:
@@ -1004,17 +1037,16 @@ def test_a_series_vintage_is_the_newest_release_among_its_months(
     """The annual revision re-released 2025-12 on 2026-06-24, after January's and
     February's releases, so 2025-12 to 2026-02 carries the revision's time, not the end
     month's; a month without trade adds nothing and is no error. NOT RECORDED: no answer
-    for Iceland in those months is recorded, so the data route answers ``[]`` for each
-    and the test checks what was sent, across the year's end, and the vintage."""
+    for Iceland in those months is recorded, so the data route serves each the recorded
+    empty answer of a listed partner without trade, Bouvet Island (``BV``) in August
+    2026, and the test checks what was sent, across the year's end, and the vintage."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2025/month/12",
         f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2026/month/1",
         f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2026/month/2",
     ]
-    months = respx_mock.route(
-        method="GET", host="api.fas.usda.gov", path__in=tuple(httpx.URL(url).path for url in urls)
-    ).mock(return_value=httpx.Response(200, json=[]))
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
     result = tasks.get_census_export_series("IC", 2025, 12, 2026, 2)
     assert result.data == []
     december = _release_time(EXPORT_RELEASES, "202512")
@@ -1089,7 +1121,10 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
 ) -> None:
     """The release lists end at 202608, so a range ending 2026-09 is refused before any
     data request, naming 202609 and 202608, rather than trimmed to the months released.
-    The longest range, 60 months, passes the span check and meets the same refusal."""
+    The longest range, 60 months, passes the span check and meets the same refusal. A
+    range with several months missing is refused at the first: 2026-08 to 2026-10 at
+    202609, not its end 202610, and 1966-11 to 1967-02 at 196611, its start, since the
+    lists begin at 196701."""
     releases = replay_fixture(release_list, "all")
     data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
     with pytest.raises(NotFoundError) as info:
@@ -1106,24 +1141,84 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
         task("IC", 2021, 10, 2026, 9)
     assert "for 202609, in the requested range 202110 to 202609" in longest.value.message
     assert "The release list was fetched at " in longest.value.message, "from the cache"
+    with pytest.raises(NotFoundError) as beyond:
+        task("IC", 2026, 8, 2026, 10)
+    assert beyond.value.message.startswith(
+        f"GATS has no Census {asked} for 202609, in the requested range 202608 to 202610: "
+        f"it is not released yet: the latest {flow} month released is 202608"
+    ), "the first month missing, not the end month"
+    with pytest.raises(NotFoundError) as before:
+        task("IC", 1966, 11, 1967, 2)
+    assert before.value.message.startswith(
+        f"GATS has no Census {asked} for 196611, in the requested range 196611 to 196702: "
+        f"the {flow} data starts at 196701"
+    ), "the first month missing, the start"
     assert (releases.call_count, data.call_count) == (1, 0)
+    assert respx_mock.calls.call_count == 1, "the release list, then no data request"
+
+
+OVER_RATE_LIMIT = {
+    "error": {
+        "code": "OVER_RATE_LIMIT",
+        "message": (
+            "You have exceeded your rate limit. Try again later or contact us for "
+            "assistance: https://api.fas.usda.gov:443"
+        ),
+    }
+}
+"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway
+(``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), as ``test_client.py``
+builds it."""
+SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
+"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
+
+
+def test_a_quota_spent_mid_series_returns_none_of_its_months(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """Iceland's exports over July and August 2026: July answers as recorded, August with
+    a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
+    nothing, not July's 105 records. NOT RECORDED here: GATS has no recorded 429, so
+    August's answer is psd's, built as ``test_client.py`` builds it. Not marked
+    ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which the
+    plugin leaves on, not the quota policy's pause, which it turns off."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
+    august = respx_mock.get(_ic_url("censusExports", 8)).mock(
+        return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
+    )
+    result: object = None
+    with pytest.raises(RateLimitError) as info:
+        result = tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
+    assert result is None, "no partial result"
+    assert info.value.retry_after == 3151.0
+    assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
+    assert sent_urls(july) == [_ic_url("censusExports", 7)]
+    assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"
+    assert releases.call_count == 1
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("tool", "endpoint", "release_list", "total"),
+    ("tool", "endpoint", "release_list", "total", "cut"),
     [
-        ("usda_gats_get_census_export_series", EXPORTS, EXPORT_RELEASES, 777),
-        ("usda_gats_get_census_import_series", IMPORTS, IMPORT_RELEASES, 3294),
+        ("usda_gats_get_census_export_series", EXPORTS, EXPORT_RELEASES, 777, 200),
+        ("usda_gats_get_census_import_series", IMPORTS, IMPORT_RELEASES, 3294, 185),
     ],
     ids=["exports", "imports"],
 )
 async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
-    replay_fixture: ReplayFixture, tool: str, endpoint: str, release_list: str, total: int
+    replay_fixture: ReplayFixture,
+    tool: str,
+    endpoint: str,
+    release_list: str,
+    total: int,
+    cut: int,
 ) -> None:
     """China in August 2026 alone over MCP: cut at the default cap with a note that says
-    the rows run oldest first and names ``hs10_code`` and fewer months (ADR-0016); the
-    chapter filter comes back whole."""
+    the rows run oldest first and names ``hs10_code`` and fewer months (ADR-0016), at 200
+    exports rows and at 185 imports rows, where the 64 KB cap cuts the wider rows first,
+    as the month tools are cut; the chapter filter comes back whole."""
     replay_fixture(release_list, "all")
     data = replay_fixture(endpoint, "CH_2026_8")
     arguments: dict[str, object] = {
@@ -1135,7 +1230,7 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     }
     payload = await mcp_call(server, tool, arguments)
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == cut
     assert payload["note"] == (
         f"showing {shown} of {total} rows (cap: 200 rows or 65536 bytes); {SERIES_NOTE}"
     )

@@ -1,0 +1,73 @@
+{
+  "recorded_at": "2026-10-26T06:34:32.997530Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/UNTradeExports/reporterCode/IC/year/2020"
+  },
+  "response": {
+    "body": "[]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 06:34:32 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "1"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1erlfdhfp3c43srpa70"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "983"
+      ],
+      [
+        "x-vcap-request-id",
+        "61fea43e-1c79-4f50-5ef0-4a8fc8a513bf"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

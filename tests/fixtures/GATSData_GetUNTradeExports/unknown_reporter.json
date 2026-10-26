@@ -1,0 +1,73 @@
+{
+  "recorded_at": "2026-10-26T06:32:48.343528Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/UNTradeExports/reporterCode/ZZ/year/2019"
+  },
+  "response": {
+    "body": "[]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 06:32:46 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "1"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1erklk0d93qi0vlmam0"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "987"
+      ],
+      [
+        "x-vcap-request-id",
+        "db0939e6-8d32-43b6-5fb7-7b481e6d81b0"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

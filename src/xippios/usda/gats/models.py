@@ -69,15 +69,19 @@ __all__ = [
 # two codes: every record of
 # ``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json`` ``"X"`` (3,796),
 # every record of ``tests/fixtures/GATSData_GetUNTradeImportDataReleaseInfo/all.json``
-# ``"M"`` (3,832, recorded 2026-10-26); the class docstring still names the Census lists
-# only, since only the Census release-dates tool takes the enum so far. The enum names the
-# known codes only: ``DataReleaseInfo.product_type`` and
-# ``UNTradeDataReleaseInfo.product_type`` stay ``str``, so a code upstream adds later
-# parses instead of failing the answer.
+# ``"M"`` (3,832, recorded 2026-10-26); ``X`` selects
+# ``GATSData_GetUNTradeExportDataReleaseInfo``, ``M``
+# ``GATSData_GetUNTradeImportDataReleaseInfo``, and the snapshot has no UN re-export
+# release list either. Both release-dates tools take the enum, so the class docstring
+# names both programs. The enum names the known codes only:
+# ``DataReleaseInfo.product_type`` and ``UNTradeDataReleaseInfo.product_type`` stay
+# ``str``, so a code upstream adds later parses instead of failing the answer.
 class ProductType(StrEnum):
-    """Which US Census release-date list: ``X`` the exports list, ``M`` the imports list.
+    """Which release-date list: ``X`` the exports list, ``M`` the imports list.
 
-    These are upstream's ``productType`` codes. Re-exports have no release-date list.
+    Upstream's ``productType`` codes, the same for the US Census release lists (one
+    record per month) and the UN Trade release lists (one record per reporter and
+    year). Re-exports have no release-date list on either side.
     """
 
     X = "X"

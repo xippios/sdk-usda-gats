@@ -48,6 +48,25 @@ states it and leaves ``vintage`` empty; its ``meta.retrieved_at`` is the time th
 client's cache stored the list when the cache answered (conventions §4), else the time
 of the call.
 
+The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
+and ``get_census_reexport_series``, answer one partner over a range of months, at most
+``SERIES_MAX_MONTHS`` (60), from the same wrappers as the month tasks, one data call per
+month (sdk-usda-psd's ``get_time_series`` is the family's precedent for a series
+assembled from one call per period). Every argument is checked first, the partner code
+for the start and for the end month, so a code discontinued inside the range is refused.
+The flow's release list is fetched once, the imports list for imports and the exports
+list for exports and, by the same assumption, re-exports; a range with a month the list
+lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
+released, never trimmed. Then the months are fetched oldest first, one request after the
+other at the client's pace (``_client.RATE_LIMIT``, one per second, and the quota policy
+on top), never concurrently, and returned as one list in month order: every record
+carries its month in ``date``, so nothing is grouped or summed, and a month that answers
+``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` is the
+newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
+recent of the releases that last revised them, which across the annual revision can be
+an earlier month's than the end month's; ``get_census_release_dates`` gives each month's
+own. ``meta.request`` carries the six arguments; ``meta.published_at`` stays ``None``.
+
 The three UN Trade data tasks, ``get_un_exports``, ``get_un_imports`` and
 ``get_un_reexports``, answer one reporter and one statistical year across every partner
 and HS6 product, as one upstream call returns it: data "as reported by UN COMTrade", in
@@ -89,7 +108,7 @@ stays empty. The lists' filters (``search``, ``region_code``, ``hs10_code``,
 upstream reports no count.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -127,8 +146,11 @@ from xippios.usda.gats.params import (
 )
 
 __all__ = [
+    "get_census_export_series",
     "get_census_exports",
+    "get_census_import_series",
     "get_census_imports",
+    "get_census_reexport_series",
     "get_census_reexports",
     "get_census_release_dates",
     "get_customs_district_exports",
@@ -154,6 +176,18 @@ DISTRICT_NOTE = (
     "customs_district_id, e.g. 10 (NEW YORK, N.Y.), to see the rest"
 )
 """What a cut customs-district result tells the agent: the two filters the tools have."""
+
+SERIES_NOTE = (
+    "the rows run month by month, oldest first; filter by hs10_code, a full code or a "
+    "prefix such as the chapter '03', or ask for fewer months to see the rest"
+)
+"""What a cut Census series tells the agent: which rows it got, its one filter and a
+shorter range, the two ways to narrow it."""
+
+SERIES_MAX_MONTHS = 60
+"""Most months one Census series call spans, five years, a self-imposed bound: one data
+request per month at the client's pace of one request per second, so the longest series
+takes about a minute and spends 60 of api.data.gov's 1,000 requests per hour for the key."""
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
@@ -199,8 +233,11 @@ except ImportError:  # pragma: no cover - a base install, without the mcp extra,
     MCP_CAPS: "Mapping[str, ResultCap]" = {}
 else:
     MCP_CAPS = {
+        "get_census_export_series": ResultCap(note=SERIES_NOTE),
         "get_census_exports": ResultCap(note=HS10_NOTE),
+        "get_census_import_series": ResultCap(note=SERIES_NOTE),
         "get_census_imports": ResultCap(note=HS10_NOTE),
+        "get_census_reexport_series": ResultCap(note=SERIES_NOTE),
         "get_census_reexports": ResultCap(note=HS10_NOTE),
         "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE),
         "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
@@ -222,6 +259,11 @@ own: a tool with a filter names it (§8). One partner-month is one record per HS
 and about 1.1 MB for imports from China; ``hs10_code`` narrows it to a chapter, a heading
 or one product. By customs district it is one record per district and code, 1,697
 records for exports to China, so those notes name ``customs_district_id`` as well.
+The three Census series tools keep the default bounds with a note of their own,
+``SERIES_NOTE``, naming ``hs10_code`` and a shorter range as the ways to narrow: a series
+is one record per HS10 code and month, in month order, so the rows shown are the oldest
+months' (197 records for exports to Iceland over July and August 2026, all of them within
+the bounds; 777 for exports to China in August 2026 alone, which are cut).
 ``get_census_release_dates`` keeps the default bounds with a note of its own,
 ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive, 202608
 back to 201001 as recorded, 16 years and 8 months; the tool has no filter, so the note
@@ -306,6 +348,8 @@ def _release_of(
     flow: str,
     operation: str,
     data: str | None = None,
+    *,
+    series: tuple[str, str] | None = None,
 ) -> DataReleaseInfo:
     """The record of ``month_code`` in the flow's release list, else ``NotFoundError``.
 
@@ -317,6 +361,9 @@ def _release_of(
         operation: The release-date operation, for the message.
         data: What was asked for, e.g. ``"re-exports"``, ``"customs-district imports"``;
             ``None`` for the flow itself.
+        series: The first and the last month of a series task's range, six digits each,
+            e.g. ``("202607", "202609")``: the refusal names the range and says that a
+            series is refused whole. ``None`` for a month task.
 
     Raises:
         NotFoundError: The list has no record for ``month_code``: not released yet, or
@@ -349,12 +396,30 @@ def _release_of(
         else:
             reason = f"{operation} lists no release for it"
         reason += f" ({operation} lists {len(months)} months, {earliest} to {latest})"
+    within = "" if series is None else f", in the requested range {series[0]} to {series[1]}"
+    whole = (
+        ""
+        if series is None
+        else " A series is refused whole, never trimmed to the months released: every "
+        "month of the range must be in the release list."
+    )
     raise NotFoundError(
-        f"GATS has no Census {asked} for {month_code}: {reason}. GATS answers a month it has "
-        f"not released with an empty list, so the package checks the release list first."
-        f"{own}{when}",
+        f"GATS has no Census {asked} for {month_code}{within}: {reason}. GATS answers a month "
+        f"it has not released with an empty list, so the package checks the release list "
+        f"first.{whole}{own}{when}",
         source=SOURCE,
     )
+
+
+async def _releases(product_type: ProductType) -> tuple[list[DataReleaseInfo], datetime | None]:
+    """The Census release list of ``product_type`` and when the client's cache stored it.
+
+    One request, or none while the cache holds the list (``_client.RELEASE_DATES_TTL``);
+    the time is ``None`` for a list from the wire.
+    """
+    if product_type is ProductType.X:
+        return await api.GATSData_GetCensusExportDataReleaseInfo()
+    return await api.GATSData_GetCensusImportDataReleaseInfo()
 
 
 async def _release(
@@ -365,10 +430,7 @@ async def _release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``.
     """
-    if product_type is ProductType.X:
-        releases, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    else:
-        releases, stored = await api.GATSData_GetCensusImportDataReleaseInfo()
+    releases, stored = await _releases(product_type)
     flow, operation = RELEASE_LISTS[product_type]
     return _release_of(f"{year:04d}{month:02d}", releases, stored, flow, operation, data)
 
@@ -713,6 +775,317 @@ async def get_customs_district_reexports_async(
     )
     selected = _in_district(_matching(records, hs10_code), customs_district_id)
     return Result(data=selected, meta=meta)
+
+
+def _series_months(
+    partner_code: str,
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+    hs10_code: str | None,
+) -> list[tuple[int, int]]:
+    """Every argument of a Census series task, checked before any call; its months in order.
+
+    ``validate_partner_month`` checks the partner code, the year and the month of the
+    start and then of the end month: a code discontinued inside the range is refused at
+    the end month, naming its ``discontinuedOn``. Then the start must not be after the
+    end, the span must be at most ``SERIES_MAX_MONTHS``, and ``hs10_code`` must pass
+    ``validate_hs10_code``.
+
+    Returns:
+        ``(year, month)`` of every month from the start to the end, both included, oldest
+        first, e.g. ``[(2026, 7), (2026, 8)]``.
+
+    Raises:
+        UnknownCode: The packaged countries list lacks ``partner_code``.
+        InvalidRequestError: A year or a month is not valid, the code was discontinued
+            before the start or the end month, the start is after the end, the range
+            spans more than ``SERIES_MAX_MONTHS`` months, or ``hs10_code`` is not 1 to 10
+            digits.
+    """
+    validate_partner_month(partner_code, start_year, start_month)
+    validate_partner_month(partner_code, end_year, end_month)
+    start = f"{start_year:04d}-{start_month:02d}"
+    end = f"{end_year:04d}-{end_month:02d}"
+    if (start_year, start_month) > (end_year, end_month):
+        raise InvalidRequestError(
+            f"the range starts at {start}, after its end {end}: pass the earlier month as "
+            "start_year and start_month, e.g. start_year=2026, start_month=6, end_year=2026, "
+            "end_month=8.",
+            source=SOURCE,
+        )
+    first = start_year * 12 + start_month - 1
+    last = end_year * 12 + end_month - 1
+    span = last - first + 1
+    if span > SERIES_MAX_MONTHS:
+        raise InvalidRequestError(
+            f"{start} to {end} is {span} months, one request each; a series spans at most "
+            f"{SERIES_MAX_MONTHS} months. Ask for a shorter range, or for consecutive ranges "
+            f"of at most {SERIES_MAX_MONTHS} months one after another.",
+            source=SOURCE,
+        )
+    if hs10_code is not None:
+        validate_hs10_code(hs10_code)
+    return [(index // 12, index % 12 + 1) for index in range(first, last + 1)]
+
+
+async def _series[R: _Coded](
+    fetch: Callable[[str, int, int], Awaitable[list[R]]],
+    endpoint: str,
+    product_type: ProductType,
+    data: str | None,
+    partner_code: str,
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+    hs10_code: str | None,
+) -> tuple[list[R], ResultMeta]:
+    """A Census series: the checks, the release list once, then ``fetch`` month by month.
+
+    The arguments are checked first (``_series_months``). The release list of
+    ``product_type`` is fetched once, or answered by the client's cache, and every month
+    of the range must be in it: the first month it lacks raises ``NotFoundError``
+    (``_release_of``), before any data request, so a range is never trimmed to the
+    months released. Then ``fetch`` runs once per month, oldest first, each request
+    awaited before the next: the client's rate limiter and quota policy pace them, and
+    nothing runs concurrently. ``hs10_code`` filters every month's records, which are
+    kept in upstream order and concatenated in month order; a month that answers ``[]``
+    adds nothing.
+
+    Args:
+        fetch: The month's data wrapper, e.g. ``api.GATSData_GetCensusExports``.
+        endpoint: Its operation, ``meta.endpoint``, e.g. ``"GATSData_GetCensusExports"``.
+        product_type: Which release list to check: ``ProductType.X`` for exports and
+            re-exports, ``ProductType.M`` for imports.
+        data: What was asked for, for the refusal, e.g. ``"re-exports"``; ``None`` when
+            it is the list's own flow.
+        partner_code: The partner, e.g. ``"IC"``.
+        start_year: The first month's year, e.g. ``2026``.
+        start_month: The first month, e.g. ``7``.
+        end_year: The last month's year, e.g. ``2026``.
+        end_month: The last month, included, e.g. ``8``.
+        hs10_code: A prefix of the HS10 code, e.g. ``"03"``, or ``None``.
+
+    Returns:
+        The records in month order and their ``ResultMeta``: ``vintage`` the newest
+        ``releaseTimeStamp`` among the range's months as upstream states it, ``request``
+        the six arguments. The task builds its ``Result`` from the two, since pydantic
+        cannot parametrise ``Result`` with a type variable bound to a protocol.
+    """
+    months = _series_months(partner_code, start_year, start_month, end_year, end_month, hs10_code)
+    releases, stored = await _releases(product_type)
+    flow, operation = RELEASE_LISTS[product_type]
+    codes = [f"{year:04d}{month:02d}" for year, month in months]
+    found = [
+        _release_of(code, releases, stored, flow, operation, data, series=(codes[0], codes[-1]))
+        for code in codes
+    ]
+    records: list[R] = []
+    for year, month in months:
+        records.extend(_matching(await fetch(partner_code, year, month), hs10_code))
+    meta = ResultMeta(
+        source=SOURCE,
+        endpoint=endpoint,
+        vintage=max(release.release_time_stamp for release in found).isoformat(),
+        request={
+            "partner_code": partner_code,
+            "start_year": start_year,
+            "start_month": start_month,
+            "end_year": end_year,
+            "end_month": end_month,
+            "hs10_code": hs10_code,
+        },
+    )
+    return records, meta
+
+
+async def get_census_export_series_async(
+    partner_code: str,
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+    hs10_code: str | None = None,
+) -> Result[list[CensusExport]]:
+    """US exports to one partner over a range of months by HS10 product, oldest month first.
+
+    The records ``get_census_exports`` answers for each month from the start month to the
+    end month, both included, as one list in month order, each month's records in
+    upstream order; every record carries its month in ``date`` (``"202607"``), and a month
+    without exports adds none. 197 records for Iceland (``"IC"``) over July and August
+    2026, 105 and 92. At most 60 months per call. Requests: the exports release list
+    (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
+    it, for an hour; then one ``GATSData_GetCensusExports`` request per month, one after
+    another at the client's pace of one request per second, never at once. Each spends
+    one of api.data.gov's 1,000 requests per hour for the key, and 60 months take about
+    a minute; a quota spent partway raises ``RateLimitError`` and returns none of the
+    months. Everything is checked before the first request: the partner code as for
+    ``get_census_exports`` (an unknown code names close codes) for the start and for the
+    end month, so a code discontinued inside the range is refused naming its last month
+    (``"SZ"``, Switzerland, 198712, for 1987-06 to 1988-01); a start after the end, or a
+    range of more than 60 months, raises ``InvalidRequestError``. Every month of the
+    range must be released: the first month the release list lacks raises
+    ``NotFoundError`` naming it and the latest month released, so an end month not
+    released yet refuses the series rather than trimming it. ``meta.vintage`` is the
+    newest release time among the range's months, as upstream states it:
+    ``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08, August's release. Across Census's
+    annual revision it can be an earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to
+    2026-02, December's revised release, not February's. Each month's own release time is
+    in ``get_census_release_dates``. ``meta.published_at`` stays empty. The MCP server
+    returns at most 200 rows or 64 KB, oldest month first, so pass ``hs10_code`` or ask
+    for fewer months there.
+
+    Args:
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
+            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        start_year: The first month's year, four digits, e.g. ``2026``; the data starts
+            in January 1967.
+        start_month: The first month, 1 to 12, e.g. ``6`` (June).
+        end_year: The last month's year, four digits, e.g. ``2026``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
+            months after the first.
+        hs10_code: Keep only the products whose HS10 code starts with this, in every
+            month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
+            or ``"0304"`` (fish fillets), or a full code such as ``"0203292000"`` for one
+            product. ``None`` (the default) keeps every product. Applied after each
+            month's request.
+    """
+    records, meta = await _series(
+        api.GATSData_GetCensusExports,
+        "GATSData_GetCensusExports",
+        ProductType.X,
+        None,
+        partner_code,
+        start_year,
+        start_month,
+        end_year,
+        end_month,
+        hs10_code,
+    )
+    return Result(data=records, meta=meta)
+
+
+async def get_census_import_series_async(
+    partner_code: str,
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+    hs10_code: str | None = None,
+) -> Result[list[CensusImport]]:
+    """US imports from one partner over a range of months by HS10 product, oldest month first.
+
+    The records ``get_census_imports`` answers for each month from the start month to the
+    end month, both included, as one list in month order, each month's records in
+    upstream order, with their consumption and CIF fields; every record carries its month
+    in ``date``, and a month without imports adds none. 157 records for Iceland
+    (``"IC"``) over July and August 2026, 83 and 74, of which 85 are fish (``hs10_code``
+    ``"03"``). At most 60 months per call. Requests: the imports release list
+    (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps
+    it, for an hour; then one ``GATSData_GetCensusImport`` request per month, one after
+    another at the client's pace of one request per second, never at once, each one of
+    api.data.gov's 1,000 requests per hour for the key: 60 months take about a minute,
+    and a quota spent partway raises ``RateLimitError`` and returns none of the months.
+    The arguments are checked before the first request as for
+    ``get_census_export_series``; the first month the imports list lacks raises
+    ``NotFoundError`` naming it and the latest month released, so the series is refused,
+    not trimmed. ``meta.vintage`` is the newest release time among the range's months
+    in the imports list, as upstream states it (``"2026-10-06T08:00:00"`` for 2026-06 to
+    2026-08); each month's own is in ``get_census_release_dates``. ``meta.published_at``
+    stays empty. The MCP server returns at most 200 rows or 64 KB, oldest month first, so
+    pass ``hs10_code`` or ask for fewer months there.
+
+    Args:
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
+            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        start_year: The first month's year, four digits, e.g. ``2026``; the data starts
+            in January 1967.
+        start_month: The first month, 1 to 12, e.g. ``6`` (June).
+        end_year: The last month's year, four digits, e.g. ``2026``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
+            months after the first.
+        hs10_code: Keep only the products whose HS10 code starts with this, in every
+            month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
+            or ``"0304"`` (fish fillets), or a full code such as ``"0302140003"`` for one
+            product. ``None`` (the default) keeps every product. Applied after each
+            month's request.
+    """
+    records, meta = await _series(
+        api.GATSData_GetCensusImport,
+        "GATSData_GetCensusImport",
+        ProductType.M,
+        None,
+        partner_code,
+        start_year,
+        start_month,
+        end_year,
+        end_month,
+        hs10_code,
+    )
+    return Result(data=records, meta=meta)
+
+
+async def get_census_reexport_series_async(
+    partner_code: str,
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+    hs10_code: str | None = None,
+) -> Result[list[CensusExport]]:
+    """US re-exports to one partner over a range of months by HS10 product, oldest month first.
+
+    The records ``get_census_reexports`` answers for each month from the start month to
+    the end month, both included, as one list in month order, each month's records in
+    upstream order; every record carries its month in ``date``, and a month without
+    re-exports adds none. 31 records for Iceland (``"IC"``) over July and August 2026, 19
+    and 12. At most 60 months per call. Requests: the exports release list
+    (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
+    it, for an hour; then one ``GATSData_GetCensusReExports`` request per month, one
+    after another at the client's pace of one request per second, never at once, each one
+    of api.data.gov's 1,000 requests per hour for the key: 60 months take about a minute,
+    and a quota spent partway raises ``RateLimitError`` and returns none of the months.
+    Upstream publishes no re-export release list, so the package checks the exports list,
+    by assumption, as ``get_census_reexports`` does. The arguments are checked before the
+    first request as for ``get_census_export_series``; the first month the exports list
+    lacks raises ``NotFoundError`` naming it and the latest month released, so the
+    series is refused, not trimmed. ``meta.vintage`` is the newest release time among the
+    range's months in the exports list (``"2026-10-06T08:00:00"`` for 2026-06 to
+    2026-08), the exports' releases, not ones the re-exports state; each month's own is
+    in ``get_census_release_dates``. ``meta.published_at`` stays empty. The MCP server
+    returns at most 200 rows or 64 KB, oldest month first, so pass ``hs10_code`` or ask
+    for fewer months there.
+
+    Args:
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
+            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        start_year: The first month's year, four digits, e.g. ``2026``; the data starts
+            in January 1967.
+        start_month: The first month, 1 to 12, e.g. ``6`` (June).
+        end_year: The last month's year, four digits, e.g. ``2026``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
+            months after the first.
+        hs10_code: Keep only the products whose HS10 code starts with this, in every
+            month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
+            or ``"62"`` (chapter 62, 7 of Iceland's 31 records), or a full code such as
+            ``"0709202000"`` for one product. ``None`` (the default) keeps every product.
+            Applied after each month's request.
+    """
+    records, meta = await _series(
+        api.GATSData_GetCensusReExports,
+        "GATSData_GetCensusReExports",
+        ProductType.X,
+        "re-exports",
+        partner_code,
+        start_year,
+        start_month,
+        end_year,
+        end_month,
+        hs10_code,
+    )
+    return Result(data=records, meta=meta)
 
 
 async def get_census_release_dates_async(
@@ -1345,8 +1718,11 @@ async def list_commodities_async(
     return Result(data=selected, meta=meta)
 
 
+get_census_export_series = sync(get_census_export_series_async)
 get_census_exports = sync(get_census_exports_async)
+get_census_import_series = sync(get_census_import_series_async)
 get_census_imports = sync(get_census_imports_async)
+get_census_reexport_series = sync(get_census_reexport_series_async)
 get_census_reexports = sync(get_census_reexports_async)
 get_census_release_dates = sync(get_census_release_dates_async)
 get_customs_district_exports = sync(get_customs_district_exports_async)

@@ -7,8 +7,11 @@ in ``_client`` are internal.
 
 from xippios.usda.gats._version import __version__
 from xippios.usda.gats.tasks import (
+    get_census_export_series,
     get_census_exports,
+    get_census_import_series,
     get_census_imports,
+    get_census_reexport_series,
     get_census_reexports,
     get_census_release_dates,
     get_customs_district_exports,
@@ -28,8 +31,11 @@ from xippios.usda.gats.tasks import (
 
 __all__ = [
     "__version__",
+    "get_census_export_series",
     "get_census_exports",
+    "get_census_import_series",
     "get_census_imports",
+    "get_census_reexport_series",
     "get_census_reexports",
     "get_census_release_dates",
     "get_customs_district_exports",

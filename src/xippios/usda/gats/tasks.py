@@ -756,10 +756,12 @@ async def list_countries_async(
             US), ``"R40"`` (East Asia, 9 codes), ``"R55"`` (Sub-Saharan Africa, 67). A
             code no country carries yields an empty list. Omit (``None``) for every
             region.
-        search: Keep the countries where this text occurs, ignoring case, in the code,
-            the name, the ISO code or the GENC code, e.g. ``"united"`` (AE, U0, UK, US),
-            ``"CHN"`` (CH China, by its ISO and GENC code), ``"che"`` (SE Seychelles, SZ
-            and SR Switzerland, V5), ``"IC"``. Omit (``None``) for every country.
+        search: Keep the countries whose code, name, ISO3 code or GENC code contains
+            this text, ignoring case, e.g. ``"iceland"`` (IC Iceland), ``"united"`` (AE,
+            U0, UK, US), ``"CHN"`` (CH China, by its ISO3 and GENC code), ``"che"`` (SE
+            Seychelles, SZ and SR Switzerland, V5). A short text matches widely:
+            ``"IC"`` keeps 44, every name with "ic" in it. Omit (``None``) for every
+            country.
     """
     _search(search)
     countries, packaged = _packaged("countries", list[Country])

@@ -1,13 +1,17 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
-One live smoke test per task function, seventeen tasks in all, nineteen keyed calls. Each
-data task spends one call for its month or year, and its release list once per flow and
-program: the tests share the client's cache, so ``get_census_exports`` fetches the
-Census exports list and ``get_census_imports`` the imports list, and
-``get_census_release_dates``, the re-export tasks and the customs-district tasks answer
-their check from the cache; ``get_un_exports`` and ``get_un_imports`` fetch the two UN
-Trade lists, and ``get_un_reexports`` and ``get_un_release_dates`` answer from them. The
-Census data tasks ask for Iceland (``"IC"``), a listed partner with modest trade, so the
+One live smoke test per task function but two, twenty tasks in all, twenty-two keyed
+calls. Each data task spends one call for its month or year, and its release list once
+per flow and program: the tests share the client's cache, so ``get_census_exports``
+fetches the Census exports list and ``get_census_imports`` the imports list, and
+``get_census_release_dates``, the re-export tasks, the customs-district tasks and the
+export series answer their check from the cache; ``get_un_exports`` and
+``get_un_imports`` fetch the two UN Trade lists, and ``get_un_reexports`` and
+``get_un_release_dates`` answer from them. The export series asks for Iceland from June
+to August 2026, three data calls; the import and re-export series run the same code
+(``tasks._series``) over wrappers the month tests reach live, so they have no live test
+of their own, to spare the key's quota.
+The Census data tasks ask for Iceland (``"IC"``), a listed partner with modest trade, so the
 nightly run stays light, in August 2026, released on 2026-10-06; ``vintage`` is that
 month's release time as upstream writes it, a date and a time without a zone. The UN
 Trade tasks ask for the reporter-years the fixtures hold, all of statistical year 2019:
@@ -116,6 +120,24 @@ async def test_get_census_reexports_live(record_property: Callable[[str, object]
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
     assert result.meta.published_at is None
     record_property("records", len(result.data))
+    record_property("vintage", result.meta.vintage)
+
+
+async def test_get_census_export_series_live(
+    record_property: Callable[[str, object], None],
+) -> None:
+    """June to August 2026: three data calls, the exports list from the cache."""
+    result = await tasks.get_census_export_series_async(PARTNER, YEAR, 6, YEAR, MONTH)
+    assert result.data
+    dates = [r.date for r in result.data]
+    assert dates == sorted(dates), "month order, oldest first"
+    assert set(dates) <= {"202606", "202607", "202608"}
+    assert {r.country_code for r in result.data} == {PARTNER}
+    _vintage_is_a_release_time(result.meta.vintage)
+    assert result.meta.endpoint == "GATSData_GetCensusExports"
+    assert result.meta.published_at is None
+    record_property("records", len(result.data))
+    record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
 
 

@@ -133,9 +133,9 @@ class Region(UpstreamModel):
 class Commodity(UpstreamModel):
     """One record of ``GATSData_GetCommodities`` (``GET /api/gats/commodities``).
 
-    Shape from the answer recorded 2026-10-26: 24,936 records, 7,592,916 bytes of JSON
-    (8,383,278 as a fixture file), every one with all eleven fields. That file is not
-    committed under ``tests/fixtures/`` for its size, so no replay test parses it yet.
+    Shape from ``tests/fixtures/GATSData_GetCommodities/all.json``, recorded 2026-10-26:
+    24,936 records, 7,592,916 bytes of JSON (8,383,278 as a fixture file), every one with
+    all eleven fields.
     Upstream: "Commodity record contains HS10 Code and Census and FAS Unit Of Measure
     IDS". A record names a code, the month it starts, a product type, a short name, a
     description, an agricultural flag and four unit-of-measure ids; it carries no FAS

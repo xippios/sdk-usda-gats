@@ -6,9 +6,9 @@ Upstream: "Returns a set of records with Commodity Information. Commodity record
 HS10 Code and Census and FAS Unit Of Measure IDS. Please see UnitsOfMeasure end point for
 Units of measure description." The record shape is the one recorded on 2026-10-26
 (``models.Commodity``): one answer, never paged, 24,936 records and about 7.6 MB of JSON,
-the largest answer in the family so far. The recorded file is not committed under
-``tests/fixtures/`` for its size. Error shapes are mapped once in
-``xippios.usda.gats._client.classify``.
+the largest answer in the family so far, committed whole as
+``tests/fixtures/GATSData_GetCommodities/all.json`` (8,383,278 bytes). Error shapes are
+mapped once in ``xippios.usda.gats._client.classify``.
 """
 
 from xippios.core import parse

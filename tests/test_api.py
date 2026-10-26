@@ -5,7 +5,7 @@ never a request kept from ``route.calls``.
 """
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime
 from decimal import Decimal
@@ -22,6 +22,7 @@ from xippios.usda.gats._client import BASE_URL, cache, classify
 from xippios.usda.gats.models import (
     CensusExport,
     CensusImport,
+    Commodity,
     Country,
     CustomsDistrict,
     CustomsDistrictExport,
@@ -130,14 +131,65 @@ async def test_get_regions(replay_fixture: ReplayFixture) -> None:
     assert sent_urls(route) == [f"{BASE_URL}/api/gats/regions"]
 
 
-async def test_get_commodities_requests_the_whole_list(respx_mock: respx.MockRouter) -> None:
-    """The wrapper's request alone: the recorded answer (24,936 records, 8,383,278 bytes as
-    a fixture file) is not committed for its size, so the route answers ``[]`` and no
-    fixture is needed."""
-    url = f"{BASE_URL}/api/gats/commodities"
-    route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    assert await api.GATSData_GetCommodities() == []
-    assert sent_urls(route) == [url]
+async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
+    """The HS10 list whole: 24,936 records, 8,383,278 bytes as a fixture file, the largest
+    in the family. Product types ``T`` and ``B`` carry seven digits padded with three
+    spaces, kept as sent; code, product type and start month are unique together."""
+    route = replay_fixture("GATSData_GetCommodities", "all")
+    records = await api.GATSData_GetCommodities()
+    assert len(records) == 24936
+    by_key = {(r.hs10_code, r.product_type, r.start_date): r for r in records}
+    assert len(by_key) == 24936, "code, product type and start month are unique together"
+    assert by_key[("0103910000", "X", "198901")] == Commodity(
+        hs10_code="0103910000",
+        start_date="198901",
+        end_dtate=None,
+        product_type="X",
+        commodity_name="SWINE,<50KG EACH",
+        commodity_description="SWINE, LIVE, NESOI, WEIGHING LESS THAN 50 KG EACH  (NO)",
+        is_ag_commodity=False,
+        census_uom_id1=78,
+        census_uom_id2=78,
+        fas_converted_uom_id=78,
+        fas_non_converted_uom_id=78,
+    )
+    assert records[0] == Commodity(
+        hs10_code="0011010   ",
+        start_date="196701",
+        end_dtate=None,
+        product_type="B",
+        commodity_name="CTL,DAIRY,BREDNG",
+        commodity_description=None,
+        is_ag_commodity=False,
+        census_uom_id1=78,
+        census_uom_id2=78,
+        fas_converted_uom_id=78,
+        fas_non_converted_uom_id=78,
+    ), "a padded code, kept as sent"
+    assert Counter(r.product_type for r in records) == {
+        "X": 5919,
+        "M": 14469,
+        "T": 2704,
+        "B": 1844,
+    }
+    padded = [r for r in records if r.product_type in {"T", "B"}]
+    assert {(r.hs10_code[7:], r.hs10_code[:7].isdigit()) for r in padded} == {("   ", True)}
+    assert {r.commodity_description for r in padded} == {None}
+    assert all(
+        len(r.hs10_code) == 10 and r.hs10_code.isdigit()
+        for r in records
+        if r.product_type in {"X", "M"}
+    )
+    assert {r.end_dtate for r in records} == {None}, "upstream's endDtate, null throughout"
+    assert sum(r.is_ag_commodity for r in records) == 13870
+    assert isinstance(records[0].census_uom_id1, int)
+    assert len({r.hs10_code for r in records}) == 20702, "a code repeats across product types"
+    ducks = by_key[("0207410000", "M", "201201")]
+    assert ducks.commodity_description == "DUCKS, WHOLE, FRESH OR CHILLED"
+    assert by_key[("0207410000", "M", "198901")].commodity_name == "CCTS&EDOF(XL)FRZ"
+    codes = [r.hs10_code for r in records]
+    assert codes == sorted(codes), "in code order"
+    assert sent_urls(route) == [f"{BASE_URL}/api/gats/commodities"]
 
 
 async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:

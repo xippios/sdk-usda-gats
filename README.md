@@ -36,27 +36,74 @@ releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-
 ```
 
 `partner_code` is GATS's own two-character code, not ISO (`"CH"` China, `"MX"` Mexico,
-`"JA"` Japan), checked against the countries list packaged in `reference/` before any
-call; an unknown code is refused, naming close codes where the list has any and example
-codes otherwise, since GATS answers it with an empty list. `month` is 1 to 12 and `year`
-four digits; `hs10_code` keeps the products whose code starts with it, a full ten-digit
-code for one product or a prefix such as a chapter, applied after the one data request.
-`get_census_imports` takes the same arguments and adds five consumption and CIF fields
-per record.
+`"JA"` Japan, `"IC"` Iceland), checked against the countries list packaged in
+`reference/` before any call, since GATS answers an unknown code with an empty list. An
+unknown code is refused, naming close codes (an ISO or GENC code leads to its partner
+code first: `"CHN"` names `CH` before `CN`) or pointing to `list_countries` when none is
+close. A code GATS discontinued (`discontinuedOn`, 26 of them) is refused for a month
+after its last, naming the listed codes of the same name: `"SZ"` (Switzerland) ended in
+198712, so 2026-08 is refused and `SR` named, while 1987-06 passes. `month` is 1 to 12
+and `year` four digits; `hs10_code` keeps the products whose code starts with it, a full
+ten-digit code for one product or a prefix such as a chapter, applied after the one data
+request. `get_census_imports` takes the same arguments and adds five consumption and CIF
+fields per record; `get_census_reexports` answers the exports' record for US re-exports.
 
-Each data task makes two requests, its flow's release list and the month, or only the
-second while the client's cache holds the list, for an hour. A month the list lacks (not
-released yet, or before January 1967) raises `NotFoundError` naming the months released;
-a listed partner without trade in a released month is an empty list. `meta.vintage` is
-the month's release time from that list, as upstream states it (`"2026-10-06T08:00:00"`
-for August 2026): upstream's identifier of the release that last revised the figures,
-since Census applies corrections once a year and the list records only each month's
-latest release. The month itself is in `meta.request` and in every record's `date`. For
-up to an hour after a release the cached list may still give a revised month the
-previous release's time, or refuse a month just released, and the refusal says when the
-list was fetched: an accepted lag. `meta.published_at` stays `None`: core's `ResultMeta`
-takes only a timezone-aware time, and FAS states no zone for its release times, which
-`get_census_release_dates` returns as upstream states them.
+The customs-district forms answer the same partner-month by US customs district, one
+record per district and HS10 code, and take `customs_district_id` too, checked against
+the packaged districts list (an unknown id names the nearest listed ones):
+
+```python
+from xippios.usda.gats import get_customs_district_imports
+
+fillets = get_customs_district_imports("IC", 2026, 8, hs10_code="0304", customs_district_id=10)
+len(fillets.data)  # 13: fish fillets from Iceland through New York, of 51 in all districts
+```
+
+Each data task makes two requests, a release list and the month, or only the second
+while the client's cache holds the list, for an hour. The imports forms check the
+imports list; the exports forms and the re-exports forms check the exports list, the
+latter by assumption, since upstream publishes no re-export release list. A month the
+list lacks (not released yet, or before January 1967) raises `NotFoundError` naming the
+months released; a listed partner without trade in a released month is an empty list.
+`meta.vintage` is the month's release time from that list, as upstream states it
+(`"2026-10-06T08:00:00"` for August 2026): upstream's identifier of the release that
+last revised the figures, since Census applies corrections once a year and the list
+records only each month's latest release. The month itself is in `meta.request` and in
+every record's `date`. For up to an hour after a release the cached list may still give
+a revised month the previous release's time, or refuse a month just released, and the
+refusal says when the list was fetched: an accepted lag. `meta.published_at` stays
+`None`: core's `ResultMeta` takes only a timezone-aware time, and FAS states no zone for
+its release times, which `get_census_release_dates` returns as upstream states them.
+
+## Reference lists
+
+Five GATS lists ship with the package under `reference/`, and their `list_*` tasks
+answer from them without a call; `meta.vintage` is the day the package fetched the
+list, `meta.retrieved_at` when the task answered:
+
+```python
+from xippios.usda.gats import list_countries, list_hs6_commodities
+from xippios.usda.gats.enums import UnitOfMeasureId
+
+list_countries(search="CHN").data  # [Country(country_code="CH", ..., iso3_code="CHN", ...)]
+list_countries(region_code="R05").data  # CA, GL, MX, SB, US (North America)
+list_hs6_commodities(search="0201").data  # the three HS6 codes of heading 0201
+UnitOfMeasureId.KILOGRAMS  # 47, the unit id of the data records
+```
+
+`list_regions()` (15), `list_countries(region_code=None, search=None)` (322 codes,
+current and discontinued; `search` on the code, the name, the ISO and the GENC code),
+`list_hs6_commodities(search=None)` (2,909; `search` on the code, the name and the
+description), `list_units_of_measure()` (108, ids 0 to 107, which `enums.UnitOfMeasureId`
+names) and `list_customs_districts()` (53, e.g. 10 NEW YORK, N.Y.).
+
+The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commodities(search=None,
+hs10_code=None, product_type=None)` fetches it live, in one request the client keeps for
+a day, and filters it: `search` on the name and the description, `hs10_code` a prefix of
+the code, `product_type` exact. Upstream's product types are `"X"` (exports, 5,919
+records), `"M"` (imports, 14,469), `"T"` (2,704) and `"B"` (1,844); upstream documents
+none of them, and the `T` and `B` records carry seven-digit codes padded with three
+spaces, kept as sent. On a cache hit `meta.retrieved_at` is when the list was fetched.
 
 ## MCP
 
@@ -73,12 +120,16 @@ takes only a timezone-aware time, and FAS states no zone for its release times, 
 ```
 
 Tools are read-only and named `usda_gats_<verb>_<noun>`. Results are capped, at
-200 rows or 64 KB unless a tool has a cap of its own, with a note on the rows left out:
-one partner-month is one row per HS10 product (777 rows for exports to China in August
-2026, 3,294 for imports), so the notes of `usda_gats_get_census_exports` and
-`usda_gats_get_census_imports` name `hs10_code`; `usda_gats_get_census_release_dates`,
-which has no filter, returns the newest 200 months, more than sixteen years, with a note
-that says so. `--http` serves streamable HTTP instead of stdio.
+200 rows or 64 KB unless a tool has a cap of its own, with a note on the rows left out
+that names the tool's filters: one partner-month is one row per HS10 product (777 rows
+for exports to China in August 2026, 3,294 for imports, 1,697 by customs district), so
+the notes of the Census data tools name `hs10_code`, and those of the customs-district
+tools `customs_district_id` too; `usda_gats_list_hs6_commodities` names `search`,
+`usda_gats_list_commodities` its three filters. `usda_gats_list_countries` has a cap of
+its own, 400 rows or 100,000 bytes, so its 322 codes arrive whole.
+`usda_gats_get_census_release_dates`, which has no filter, returns the newest 200
+months, more than sixteen years, with a note that says so. `--http` serves streamable
+HTTP instead of stdio.
 
 ## Status
 
@@ -86,18 +137,29 @@ that says so. `--http` serves streamable HTTP instead of stdio.
 | --- | --- | --- | --- |
 | `GATSData_GetCensusExports` (`censusExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_exports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_exports` | alpha |
 | `GATSData_GetCensusImport` (`censusImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_imports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_imports` | alpha |
-| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by `get_census_exports` too | `usda_gats_get_census_release_dates` | alpha |
-| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by `get_census_imports` too | `usda_gats_get_census_release_dates` | alpha |
-| `GATSData_GetCountries` (`countries`) | none yet: packaged as `reference/countries.json`, which checks `partner_code` | none yet | packaged |
+| `GATSData_GetCensusReExports` (`censusReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_census_reexports(partner_code, year, month, hs10_code=None)` | `usda_gats_get_census_reexports` | alpha |
+| `GATSData_GetCustomsDistrictsExports` (`customsDistrictExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_exports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_exports` | alpha |
+| `GATSData_GetCustomsDistrictsImports` (`customsDistrictImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_imports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_imports` | alpha |
+| `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |
+| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by the exports and re-exports tasks too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by the imports tasks too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
+| `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
+| `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks `partner_code` | `usda_gats_list_countries` | alpha |
+| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None)`, packaged as `reference/HS6Commodities.json` | `usda_gats_list_hs6_commodities` | alpha |
+| `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
+| `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
-The other fourteen GATS operations of the snapshot (`docs/upstream/`) are not wrapped yet.
+The five UN Trade operations of the snapshot (`docs/upstream/`), the data and their two
+release-date lists, are not wrapped yet.
 Alpha: the public surface may change in a minor version before 1.0 (conventions §12);
 `CHANGELOG.md` lists every change.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and
 xippios-usda-esr among them); a release list answered from the client's cache spends
-none. The client keeps its own pace of one request per second; once the quota is spent it
+none, and so does the commodities list answered from it within its day. The client
+keeps its own pace of one request per second; once the quota is spent it
 waits for the quota to come back when that takes at most 30 s, and otherwise raises
 `RateLimitError` with `retry_after` instead of sending.
 

@@ -63,8 +63,7 @@ All notable changes to this project are documented here. The format follows
 - `scripts/check-siblings.sh` and `.github/workflows/siblings.yml`: the ADR-0006 sibling
   proof, this wheel installed with xippios-usda-psd, xippios-usda-nass and
   xippios-usda-esr, all three from PyPI, as portions of the `xippios.usda` namespace;
-  `PSD_REQUIREMENT`, `NASS_REQUIREMENT` and `ESR_REQUIREMENT` override each. nass and esr
-  came from git main until their 0.1.0 was published.
+  `PSD_REQUIREMENT`, `NASS_REQUIREMENT` and `ESR_REQUIREMENT` override each.
 - Endpoint wrappers for nine more GATS operations: the reference lists
   `GATSData_GetRegions`, `GATSData_GetCommodities`, `GATSData_GetHS6Commodities`,
   `GATSData_GetUnitsOfMeasure` and `GATSData_GetCustomsDistricts`, and the data
@@ -112,8 +111,7 @@ All notable changes to this project are documented here. The format follows
   unknown partner code names an ISO or GENC code's partner code first (`CHN` leads to
   `CH` before `CN`), and the refusal without a close code points to `list_countries`.
   `errors.UnknownCode` words its message over the parameter and the list, so it serves
-  `customs_district_id` too. Nothing is released yet, so this is part of 0.1.0's Census
-  tasks, not a change to them.
+  `customs_district_id` too.
 - Endpoint wrappers for the five UN Trade operations, named after the snapshot's
   operationIds: `GATSData_GetUNTradeExports`, `GATSData_GetUNTradeImports` and
   `GATSData_GetUNTradeReExports` (path parameters `reporterCode` and `year`, both text as

@@ -1100,8 +1100,9 @@ async def get_census_release_dates_async(
     revision corrected carries the revision's time: 2023-01 to 2025-12 read
     ``2026-06-24T08:00:00``. Compare it with a stored one to fetch only the months that
     changed; the six Census data tasks give their month's time as ``meta.vintage``, the
-    re-export forms the exports list's, since re-exports have no list of their own. One
-    request, kept by the client for an hour; ``meta.retrieved_at`` is when it was
+    three series tasks the newest among their months, the re-export forms the exports
+    list's, since re-exports have no list of their own. One request, kept by the client
+    for an hour; ``meta.retrieved_at`` is when it was
     fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The MCP server
     returns the newest 200 months, more than sixteen years, and says so.
 

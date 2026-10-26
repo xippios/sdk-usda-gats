@@ -30,9 +30,10 @@ Rules:
 - A multi-tenant source packages no tenant data (ADR-0014); GATS is single-tenant, every
   list is the same for every caller of the api.data.gov key.
 - Use: `params.validate_partner_code` checks the `partner_code` of the six Census data
-  tasks against `countries.json` before any call, since GATS answers an unknown partner
-  code with an empty list, the same as a partner without trade, and refuses a code for a
-  month after its `discontinuedOn`; `params.validate_customs_district_id` checks the
+  tasks and the three Census series tasks against `countries.json` before any call,
+  since GATS answers an unknown partner code with an empty list, the same as a partner
+  without trade, and refuses a code for a month after its `discontinuedOn` (a series for
+  its start and its end month); `params.validate_customs_district_id` checks the
   `customs_district_id` filter of the three customs-district tasks against
   `customsDistricts.json`. The four UN Trade tasks check `reporter_code`
   (`params.validate_reporter_code`) and the `partner_code` filter against

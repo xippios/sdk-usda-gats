@@ -53,6 +53,10 @@ IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/imports/dataReleaseDates
 CH_EXPORTS_URL = f"{BASE_URL}/api/gats/censusExports/partnerCode/CH/year/2026/month/8"
 CH_IMPORTS_URL = f"{BASE_URL}/api/gats/censusImports/partnerCode/CH/year/2026/month/8"
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
+RELEASE_DATES_NOTE = (
+    "the list runs newest first, so the rows shown are the latest released months; "
+    "200 months reach back more than sixteen years"
+)
 RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
 
@@ -404,14 +408,27 @@ async def test_the_imports_tool_names_the_filter_too(replay_fixture: ReplayFixtu
 
 
 @pytest.mark.anyio
-async def test_the_release_dates_tool_keeps_the_default_cap(replay_fixture: ReplayFixture) -> None:
-    replay_fixture(EXPORT_RELEASES, "all")
+async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The exports release list, 716 months, over MCP: cut at the default 200 rows, with a
+    note of its own that says the rows shown are the newest months and names no filter,
+    since the tool has none (ADR-0016)."""
+    route = replay_fixture(EXPORT_RELEASES, "all")
     payload = await mcp_call(server, "usda_gats_get_census_release_dates", {"product_type": "X"})
     assert len(payload["data"]) == 200
-    assert payload["data"][0]["statistical_year_month"] == "202608"
+    assert payload["data"][0] == {
+        "statistical_year_month": "202608",
+        "product_type": "X",
+        "reporter_code": "US",
+        "release_time_stamp": RELEASED_2026_08,
+    }
+    assert payload["data"][-1]["statistical_year_month"] == "201001", "16 years and 8 months"
     assert payload["note"] == (
-        "showing 200 of 716 rows (cap: 200 rows or 65536 bytes); narrow the query to see the rest"
+        f"showing 200 of 716 rows (cap: 200 rows or 65536 bytes); {RELEASE_DATES_NOTE}"
     )
+    assert "filter" not in payload["note"]
+    assert sent_urls(route) == [EXPORT_RELEASES_URL]
 
 
 def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> None:

@@ -62,6 +62,13 @@ __all__ = ["get_census_exports", "get_census_imports", "get_census_release_dates
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
 """What a cut Census data result tells the agent: the one filter the tools have."""
 
+RELEASE_DATES_NOTE = (
+    "the list runs newest first, so the rows shown are the latest released months; "
+    "200 months reach back more than sixteen years"
+)
+"""What a cut release-date list tells the agent: which months it got. The tool has no
+filter, so the note names none (ADR-0016)."""
+
 try:
     from xippios.core.mcp import ResultCap
 except ImportError:  # pragma: no cover - a base install, without the mcp extra, has no server
@@ -70,6 +77,7 @@ else:
     MCP_CAPS = {
         "get_census_exports": ResultCap(note=HS10_NOTE),
         "get_census_imports": ResultCap(note=HS10_NOTE),
+        "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE),
     }
 """MCP result caps of their own, by task function name (conventions §8, ADR-0016).
 
@@ -77,9 +85,11 @@ The Census data tools keep the family's bounds, 200 rows or 64 KB, with a note o
 own: a tool with a filter names it (§8). One partner-month is one record per HS10 code,
 777 records and about 154 KB of JSON for exports to China in August 2026, 3,294 records
 and about 1.1 MB for imports from China; ``hs10_code`` narrows it to a chapter, a heading
-or one product. ``get_census_release_dates`` keeps the default and its note: 716 months,
-newest first, of which the newest 200 arrive. ``ResultCap`` lives in ``xippios.core.mcp``,
-which needs the ``mcp`` extra, so a base install, which serves no MCP tool, has no caps.
+or one product. ``get_census_release_dates`` keeps the default bounds with a note of its
+own, ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive,
+202608 back to 201001 as recorded, 16 years and 8 months; the tool has no filter, so the
+note names none. ``ResultCap`` lives in ``xippios.core.mcp``, which needs the ``mcp``
+extra, so a base install, which serves no MCP tool, has no caps.
 """
 
 
@@ -288,7 +298,7 @@ async def get_census_release_dates_async(
     changed; ``get_census_exports`` and ``get_census_imports`` give their month's time as
     ``meta.vintage``. One request, kept by the client for an hour; ``meta.retrieved_at``
     is when it was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The
-    MCP server returns the newest 200 months.
+    MCP server returns the newest 200 months, more than sixteen years, and says so.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports

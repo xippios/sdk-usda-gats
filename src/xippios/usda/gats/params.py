@@ -37,11 +37,19 @@ __all__ = [
 
 PACKAGE = "xippios.usda.gats"
 
-PACKAGED_LISTS: tuple[str, ...] = ("countries",)
-"""Lists that ship inside the package, named as the upstream path names them.
+PACKAGED_LISTS: tuple[str, ...] = (
+    "regions",
+    "countries",
+    "HS6Commodities",
+    "unitsOfMeasure",
+    "customsDistricts",
+)
+"""Lists that ship inside the package, named as the upstream path names them, in the
+snapshot's order.
 
-Keep in step with ``TABLES`` in ``scripts/refresh_reference.py``, which checks it before
-a refresh.
+Keep in step with ``ID_LISTS`` and ``TABLES`` in ``scripts/refresh_reference.py``, which
+checks it before a refresh. The HS10 list (``commodities``) is not packaged:
+``tasks.list_commodities`` fetches it live.
 """
 
 PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'

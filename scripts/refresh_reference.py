@@ -12,17 +12,22 @@ and names in ``ID_LISTS`` one ``IntEnum`` through ``id_name_pairs`` and
 fill one of the two. ``TABLES`` is this package's own, as in sdk-usda-psd: record lists
 packaged without an enum.
 
-GATS packages one list so far, ``countries`` (``GATSData_GetCountries``), a table: its
-records are packaged under upstream's field names (``upstream_record``) and checked
-against by ``params.validate_partner_code``; the partner codes stay a table, not an enum.
-``LISTS`` and ``ID_LISTS`` are empty, so ``enums.py`` renders without a class, as the
-scaffold left it. The list endpoint takes the api.data.gov key, so ``DATA_GOV_API_KEY``
-must be in the environment; run from the repository root::
+GATS packages five of its lists, all of them records, packaged under upstream's field
+names (``upstream_record``): ``unitsOfMeasure`` is an id list, which makes
+``UnitOfMeasureId`` (``unitOfMeasureId`` to ``unitOfMeasureName``, ids 0 to 107; the name
+``"Crates"`` of ids 33 and 105 gets ``_<id>`` appended, ``CRATES_33`` and ``CRATES_105``);
+``regions``, ``countries``, ``HS6Commodities`` and ``customsDistricts`` stay tables, not
+enums: ``params`` checks partner codes and customs-district ids against two of them, and
+the ``list_*`` tasks answer from all five. GATS has no value list, so ``LISTS`` stays
+empty. The HS10 list, ``GATSData_GetCommodities``, is not packaged: 24,936 records and
+7.6 MB, which ``tasks.list_commodities`` fetches live. The list endpoints take the
+api.data.gov key, so ``DATA_GOV_API_KEY`` must be in the environment; run from the
+repository root::
 
     uv run python scripts/refresh_reference.py
 
-One request against api.data.gov's hourly quota. Then update the date and the count in
-``reference/README.md``. Only lists that are the same for every caller are packaged; a
+Five requests against api.data.gov's hourly quota. Then update the dates and the counts
+in ``reference/README.md``. Only lists that are the same for every caller are packaged; a
 multi-tenant source packages no tenant data (ADR-0014), which GATS is not.
 
 ``--render-only`` regenerates ``enums.py`` from the packaged ``reference/*.json`` alone,
@@ -55,22 +60,33 @@ Fetcher = Callable[[], Coroutine[Any, Any, Sequence[UpstreamModel]]]
 LISTS: dict[str, Callable[[], Coroutine[Any, Any, list[str]]]] = {}
 """Value lists, one ``StrEnum`` each: none packaged; GATS's lists are records."""
 
-ID_LISTS: dict[str, tuple[str, str, Fetcher]] = {}
-"""Lists of integer ids and names, one ``IntEnum`` each (conventions §3): none packaged yet.
+ID_LISTS: dict[str, tuple[str, str, Fetcher]] = {
+    "unitsOfMeasure": ("unitOfMeasureId", "unitOfMeasureName", api.GATSData_GetUnitsOfMeasure),
+}
+"""Lists of integer ids and names, one ``IntEnum`` each (conventions §3), in module order.
 
 List name, as the upstream path names it, to (id field, name field, wrapper), the fields
 as upstream names them in the recorded answer. Packaged as upstream's records under
-upstream's field names (``upstream_record``).
+upstream's field names (``upstream_record``). Each enum is keyed by its id field and
+named after it, as sdk-usda-psd's are, so ``unitOfMeasureId`` makes ``UnitOfMeasureId``,
+whose docstring reads "Values of ``unitOfMeasureId``". The name field is
+``unitOfMeasureName`` (``"Kilograms"``), not ``unitOfMeasureCode`` (``"KG"``): codes
+repeat as names do (``"CRT"`` is 33 and 105) and many are no identifier (``"24LBC"``,
+``"MT50%"``).
 """
 
 TABLES: dict[str, Fetcher] = {
+    "regions": api.GATSData_GetRegions,
     "countries": api.GATSData_GetCountries,
+    "HS6Commodities": api.GATSData_GetHS6Commodities,
+    "customsDistricts": api.GATSData_GetCustomsDistricts,
 }
-"""Record lists packaged as tables, with no enum: the partner codes.
+"""Record lists packaged as tables, with no enum: region, partner, HS6 and district codes.
 
-List name, as the upstream path names it, to its wrapper. Packaged like an id list, as
-upstream's records under upstream's field names, which ``params`` reads; together with
-``LISTS`` and ``ID_LISTS`` they are ``params.PACKAGED_LISTS``.
+List name, as the upstream path names it, to its wrapper, in the snapshot's order.
+Packaged like an id list, as upstream's records under upstream's field names, which
+``params`` reads; together with ``LISTS`` and ``ID_LISTS`` they are
+``params.PACKAGED_LISTS``.
 """
 
 
@@ -117,9 +133,22 @@ def render(
     pairs: Mapping[str, Sequence[tuple[int, str]]],
     fetched: str | None,
 ) -> str:
-    """``enums.py`` as core renders it: one ``IntEnum`` per id list, else one ``StrEnum`` each."""
+    """``enums.py`` as core renders it: one ``IntEnum`` per id list, else one ``StrEnum`` each.
+
+    Args:
+        values: Value list name to its values, ``{}`` for GATS.
+        pairs: Id list name to its ``(id, name)`` pairs, e.g.
+            ``{"unitsOfMeasure": [(0, "NONE"), (1, "24-Pound Cartons"), ...]}``.
+        fetched: The fetch date each class docstring names, e.g. ``"2026-10-26"``.
+    """
     if pairs:
-        return render_int_enums(pairs, fetched=fetched, generator=GENERATOR)
+        fields = {name: ID_LISTS[name][0] for name in pairs}
+        return render_int_enums(
+            {fields[name]: rows for name, rows in pairs.items()},
+            class_names={field: field[:1].upper() + field[1:] for field in fields.values()},
+            fetched=fetched,
+            generator=GENERATOR,
+        )
     return render_str_enums(values, fetched=fetched, generator=GENERATOR)
 
 

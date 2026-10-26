@@ -1,0 +1,67 @@
+{
+  "param": "regions",
+  "endpoint": "GATSData_GetRegions",
+  "fetched": "2026-10-26",
+  "records": [
+    {
+      "regionCode": "R05",
+      "regionName": "North America"
+    },
+    {
+      "regionCode": "R10",
+      "regionName": "Caribbean"
+    },
+    {
+      "regionCode": "R15",
+      "regionName": "Central America"
+    },
+    {
+      "regionCode": "R20",
+      "regionName": "South America"
+    },
+    {
+      "regionCode": "R25",
+      "regionName": "European Union-27"
+    },
+    {
+      "regionCode": "R30",
+      "regionName": "Other Europe"
+    },
+    {
+      "regionCode": "R35",
+      "regionName": "Former Soviet Union-12"
+    },
+    {
+      "regionCode": "R40",
+      "regionName": "East Asia"
+    },
+    {
+      "regionCode": "R45",
+      "regionName": "Middle East"
+    },
+    {
+      "regionCode": "R50",
+      "regionName": "North Africa"
+    },
+    {
+      "regionCode": "R55",
+      "regionName": "Sub-Saharan Africa"
+    },
+    {
+      "regionCode": "R60",
+      "regionName": "South Asia"
+    },
+    {
+      "regionCode": "R65",
+      "regionName": "Southeast Asia"
+    },
+    {
+      "regionCode": "R70",
+      "regionName": "Oceania"
+    },
+    {
+      "regionCode": "R99",
+      "regionName": "Miscellaneous Designated Areas"
+    }
+  ]
+}

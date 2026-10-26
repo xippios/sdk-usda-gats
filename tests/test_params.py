@@ -1,6 +1,7 @@
-"""The packaged countries list and the argument checks of the Census tasks."""
+"""The packaged lists, the enum rendered from them and the argument checks of the Census tasks."""
 
 import json
+from enum import IntEnum
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from xippios.core.testing import load_fixture
 
 from xippios.usda.gats import enums
 from xippios.usda.gats.errors import UnknownCode
-from xippios.usda.gats.models import Country
+from xippios.usda.gats.models import Country, UnitOfMeasure
 from xippios.usda.gats.params import (
     PACKAGED_LISTS,
     packaged_values,
@@ -23,8 +24,51 @@ from xippios.usda.gats.params import (
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+PACKAGED = [
+    ("regions", "GATSData_GetRegions", "2026-10-26", 15),
+    ("countries", "GATSData_GetCountries", "2026-10-25", 322),
+    ("HS6Commodities", "GATSData_GetHS6Commodities", "2026-10-26", 2909),
+    ("unitsOfMeasure", "GATSData_GetUnitsOfMeasure", "2026-10-26", 108),
+    ("customsDistricts", "GATSData_GetCustomsDistricts", "2026-10-26", 53),
+]
+
+
+def test_five_lists_are_packaged_under_upstreams_names() -> None:
+    """In the snapshot's order; the HS10 list is not packaged, ``list_commodities`` fetches
+    it live."""
+    assert PACKAGED_LISTS == (
+        "regions",
+        "countries",
+        "HS6Commodities",
+        "unitsOfMeasure",
+        "customsDistricts",
+    )
+    assert [name for name, *_ in PACKAGED] == list(PACKAGED_LISTS)
+    assert "commodities" not in PACKAGED_LISTS
+
+
+@pytest.mark.parametrize(
+    ("name", "endpoint", "fetched", "count"), PACKAGED, ids=[name for name, *_ in PACKAGED]
+)
+def test_each_packaged_list_is_its_recorded_answer_verbatim(
+    name: str, endpoint: str, fetched: str, count: int
+) -> None:
+    """Written by ``scripts/refresh_reference.py`` from the recorded answer served through
+    ``respx``: the same records, field for field, in upstream's field order and record
+    order; ``fetched`` is the day of the recording (UTC)."""
+    packaged = packaged_values(name)
+    assert packaged is not None
+    assert (packaged.param, packaged.endpoint) == (name, endpoint)
+    assert packaged.fetched.isoformat() == fetched
+    fixture = load_fixture(FIXTURES / endpoint / "all.json")
+    assert fixture.recorded_at.date().isoformat() == fetched
+    recorded = json.loads(fixture.response.body)
+    assert len(packaged.records) == count
+    assert packaged.records == recorded
+    assert [list(r) for r in packaged.records] == [list(r) for r in recorded], "field order"
+
+
 def test_the_countries_list_is_packaged_and_parses() -> None:
-    assert PACKAGED_LISTS == ("countries",)
     packaged = packaged_values("countries")
     assert packaged is not None
     assert (packaged.param, packaged.endpoint) == ("countries", "GATSData_GetCountries")
@@ -38,22 +82,41 @@ def test_the_countries_list_is_packaged_and_parses() -> None:
     assert all(len(c.country_code) == 2 for c in countries)
 
 
-def test_the_packaged_list_is_the_recorded_answer_verbatim() -> None:
-    packaged = packaged_values("countries")
-    assert packaged is not None
-    fixture = FIXTURES / "GATSData_GetCountries" / "all.json"
-    recorded = json.loads(load_fixture(fixture).response.body)
-    assert packaged.records == recorded
-    assert [list(r) for r in packaged.records] == [list(r) for r in recorded], "field order"
-
-
 def test_an_unknown_list_is_none() -> None:
-    assert packaged_values("regions") is None, "not packaged yet"
+    assert packaged_values("commodities") is None, "the HS10 list is fetched live"
     assert packaged_values("not_a_list") is None
 
 
-def test_the_countries_table_renders_no_enum() -> None:
-    assert enums.__all__ == []
+def test_units_of_measure_render_one_int_enum() -> None:
+    """``unitOfMeasureId`` to ``unitOfMeasureName``, ids 0 to 107: a member equals the id
+    in upstream's data, and the name ``"Crates"`` of ids 33 and 105 gets ``_<id>``."""
+    assert enums.__all__ == ["UnitOfMeasureId"]
+    unit = enums.UnitOfMeasureId
+    assert issubclass(unit, IntEnum)
+    assert [member.value for member in unit] == list(range(108))
+    assert unit.KILOGRAMS.value == 47
+    assert unit(47) is unit.KILOGRAMS
+    assert (unit.NONE, unit.NUMBERS, unit.METRIC_TONS) == (0, 78, 70)
+    assert (unit.CRATES_33, unit.CRATES_105) == (33, 105)
+    assert not hasattr(unit, "CRATES")
+    assert unit._1_000_UNITS.value == 60, (
+        "a name that starts with a digit gets a leading underscore"
+    )
+    assert unit.OZONE_DEPLETION_EQUIVALENT.value == 107
+    packaged = packaged_values("unitsOfMeasure")
+    assert packaged is not None
+    assert {r["unitOfMeasureId"] for r in packaged.records} == {m.value for m in unit}
+    kilograms = packaged.records[47]
+    assert kilograms["unitOfMeasureId"] == unit.KILOGRAMS, "an IntEnum equals upstream's int"
+    assert UnitOfMeasure.model_validate(kilograms).unit_of_measure_id == unit.KILOGRAMS
+    assert unit.__doc__ == "Values of ``unitOfMeasureId`` (fetched 2026-10-26)."
+
+
+def test_the_rendered_module_is_ascii() -> None:
+    """Committed as rendered: ASCII-only, as core renders it (ADR-0008)."""
+    source = Path(enums.__file__).read_text(encoding="utf-8")
+    assert source.isascii()
+    assert source.startswith('"""IntEnums for packaged id lists (conventions, section 3).')
 
 
 @pytest.mark.parametrize("code", ["CH", "MX", "BV", "01", "GE"])

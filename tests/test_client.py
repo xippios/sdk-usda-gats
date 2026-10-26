@@ -56,6 +56,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 REGIONS = "/api/gats/regions"
 EXPORT_RELEASES = "/api/gats/census/data/exports/dataReleaseDates"
 IMPORT_RELEASES = "/api/gats/census/data/imports/dataReleaseDates"
+UN_EXPORT_RELEASES = "/api/gats/UNTrade/data/exports/dataReleaseDates"
+UN_IMPORT_RELEASES = "/api/gats/UNTrade/data/imports/dataReleaseDates"
 
 
 @pytest.fixture(autouse=True)
@@ -336,33 +338,41 @@ async def test_core_retries_a_429_only_within_its_backoff(
         assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
 
 
-def test_the_client_caches_three_paths_and_nothing_else() -> None:
-    """Core's cache on the two release-date paths, for an hour, and the commodities path,
-    for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per TTL behind
-    ``PathCaches``): the data, the countries and every other path go to the wire."""
+def test_the_client_caches_five_paths_and_nothing_else() -> None:
+    """Core's cache on the four release-date paths, Census and UN Trade, for an hour, and
+    the commodities path, for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per
+    TTL behind ``PathCaches``): the data, the countries and every other path go to the
+    wire."""
     assert config.cache is cache
     assert config.cache_filter is cache_filter
     assert isinstance(cache, PathCaches)
     assert release_dates_cache.ttl == RELEASE_DATES_TTL == 3600.0
     assert commodities_cache.ttl == COMMODITIES_TTL == 86400.0
-    assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
+    releases = {EXPORT_RELEASES, IMPORT_RELEASES, UN_EXPORT_RELEASES, UN_IMPORT_RELEASES}
+    assert releases == RELEASE_DATES_PATHS
     assert COMMODITIES_PATH == "/api/gats/commodities"
-    assert {EXPORT_RELEASES, IMPORT_RELEASES, COMMODITIES_PATH} == CACHED_PATHS
+    assert {*releases, COMMODITIES_PATH} == CACHED_PATHS
     assert cache.by_path == {
         EXPORT_RELEASES: release_dates_cache,
         IMPORT_RELEASES: release_dates_cache,
+        UN_EXPORT_RELEASES: release_dates_cache,
+        UN_IMPORT_RELEASES: release_dates_cache,
         COMMODITIES_PATH: commodities_cache,
     }
     for path, cached in [
         (EXPORT_RELEASES, True),
         (IMPORT_RELEASES, True),
+        (UN_EXPORT_RELEASES, True),
+        (UN_IMPORT_RELEASES, True),
         (COMMODITIES_PATH, True),
         ("/api/gats/censusExports/partnerCode/CH/year/2026/month/8", False),
         ("/api/gats/censusImports/partnerCode/CH/year/2026/month/8", False),
         ("/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8", False),
+        ("/api/gats/UNTradeExports/reporterCode/IC/year/2019", False),
+        ("/api/gats/UNTradeImports/reporterCode/TP/year/2019", False),
+        ("/api/gats/UNTradeReExports/reporterCode/MC/year/2019", False),
         ("/api/gats/countries", False),
         ("/api/gats/HS6Commodities", False),
-        ("/api/gats/UNTrade/data/exports/dataReleaseDates", False),
         (REGIONS, False),
     ]:
         assert cache_filter(httpx.Request("GET", f"{BASE_URL}{path}")) is cached, path

@@ -1,0 +1,678 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "version": "v1",
+    "title": "FAS Open Data Services",
+    "description": "<h1>ESR, GATS and PSD Data APIs</h1>"
+  },
+  "host": "apps.fas.usda.gov",
+  "basePath": "/OpenData",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/api/gats/census/data/exports/dataReleaseDates": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with the date of the last release of Census Export Data.\r\nUse this information to query for only those Census Export data records that have changed since last invocation of this API End point",
+        "operationId": "GATSData_GetCensusExportDataReleaseInfo",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/census/data/imports/dataReleaseDates": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with the date of the last release of Census Import Data.\r\nUse this information to query for only the Census Import data that has changed since last invocation of this API End point",
+        "operationId": "GATSData_GetCensusImportDataReleaseInfo",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/UNTrade/data/exports/dataReleaseDates": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with the date of the last release of UN Trade Export Data.\r\nUse this information to query for only the UN Trade Export data that has changed since last invocation of this API End point",
+        "operationId": "GATSData_GetUNTradeExportDataReleaseInfo",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/UNTrade/data/imports/dataReleaseDates": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with the date of the last release of UN Trade Import Data.\r\nUse this information to query for only the UN Trade Import data that has changed since last invocation of this API End point",
+        "operationId": "GATSData_GetUNTradeImportDataReleaseInfo",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/regions": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with Region Codes and Region Names.\r\nUse it to associate Region Name with Country records obtained by querying Country end point",
+        "operationId": "GATSData_GetRegions",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/countries": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with Countries and their corresponding Regions Codes the Country belongs to.\r\nUse records from Regions end point to get the names of the corresponding region in Country records",
+        "operationId": "GATSData_GetCountries",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/commodities": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with Commodity Information.\r\nCommodity record contains HS10 Code and Census and FAS Unit Of Measure IDS. Please see UnitsOfMeasure end point for Units of measure description.",
+        "operationId": "GATSData_GetCommodities",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/HS6Commodities": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a list of Commodities classified at a broader level of classification, at the HS6 Level, as opposed to HS10 Level.\r\nUse this to correlate the Import, Export and Re-export data records obtained by querying UN Trade Data.",
+        "operationId": "GATSData_GetHS6Commodities",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/unitsOfMeasure": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with Units of Measure.\r\nUse this to match against Units Of Measure IDs in the Import and Export records to get the name of the Unit of Measure",
+        "operationId": "GATSData_GetUnitsOfMeasure",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/customsDistricts": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Returns a set of records with US Customs Districts, the point of Entry and Exit for the Commodity Imports and Exports.\r\nFor Ex, Total imports from China into USA could come in from multiple US Customs Districts for a given year.",
+        "operationId": "GATSData_GetCustomsDistricts",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/censusImports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code (Ex: CH for China) and YearMonth (Ex: 201001 for Year 2010 Month January) this API End point will return\r\na list of records of Imports into USA as reported by US Census Bureau for the given year month combination.\r\nPlease see Countries end point to get a list of all 2 character country codes",
+        "operationId": "GATSData_GetCensusImport",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/censusExports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code (Ex: CH for China) and Year and Month (Ex: 2010 for Year 2010, 01 for January) this API End point will return\r\na list of records of Exports out of USA as reported by US Census Bureau for the given year month combination.\r\nCensus reports data on a monthly basis with corrections applied once a year.\r\nPlease see Countries end point to get a list of all 2 character country codes",
+        "operationId": "GATSData_GetCensusExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/censusReExports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code(Ex: CH for China) and Year and Month (Ex: 2010 for Year 2010, 01 for January) this API End point will return\r\na list of records of Re-expors out of USA as reported by US Census Bureau for the given year month combination.\r\nCensus reports data on a monthly basis with corrections applied once a year.\r\nPlease see Countries end point to get a list of all 2 character country codes",
+        "operationId": "GATSData_GetCensusReExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/customsDistrictExports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code(Ex: CH for China) and Year and Month (Ex: 2010 for Year 2010, 01 for January) this API End point will return\r\na list of records of Exports from USA through US Customs Districts as reported by US Census Bureau for the given year month combination.\r\nCensus reports data on a monthly basis with corrections applied once a year.\r\nPlease see Countries end point to get a list of all 2 character country codes, and CustomsDistricts end point for all US Customs Districts",
+        "operationId": "GATSData_GetCustomsDistrictsExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/customsDistrictImports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code(Ex: CH for China) and Year and Month (Ex: 2010 for Year 2010, 01 for January) this API End point will return\r\na list of records of Imports into USA through US Customs Districts as reported by US Census Bureau for the given year month combination.\r\nCensus reports data on a monthly basis with corrections applied once a year.\r\nPlease see Countries end point to get a list of all 2 character country codes, and CustomsDistricts end point for all US Customs Districts",
+        "operationId": "GATSData_GetCustomsDistrictsImports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Partner Code(Ex: CH for China) and Year and Month (Ex: 2010 for Year 2010, 01 for January) this API End point will return\r\na list of records of Re-Exports from USA through US Customs Districts as reported by US Census Bureau for the given year month combination.\r\nCensus reports data on a monthly basis with corrections applied once a year.\r\nPlease see Countries end point to get a list of all 2 character country codes, and CustomsDistricts end point for all US Customs Districts.\r\nRe-Exports are all imported commodities from few countries into USA, that are ultimately exported out to other countries from USA",
+        "operationId": "GATSData_GetCustomsDistrictsReExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "partnerCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/UNTradeImports/reporterCode/{reporterCode}/year/{year}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Reporter Code (Ex IN for India), and Import Year (for ex, 2010), this API End point returns\r\na list of records of Commodity Import data as reported by UN COMTrade for a given year.\r\nUN COMTrade reports data on a yearly basis at a HS6 Code Level.",
+        "operationId": "GATSData_GetUNTradeImports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "reporterCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/UNTradeExports/reporterCode/{reporterCode}/year/{year}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Reporter Code (Ex IN for India), and Export Year (for ex, 2010), this API End point returns\r\na list of records of Commodity Export data as reported by UN COMTrade for a given year.\r\nUN COMTrade reports data on a yearly basis at a HS6 Code Level.",
+        "operationId": "GATSData_GetUNTradeExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "reporterCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "/api/gats/UNTradeReExports/reporterCode/{reporterCode}/year/{year}": {
+      "get": {
+        "tags": [
+          "GATS Data API - US Census and UN ComTrade Import Export & Re-Export Data"
+        ],
+        "summary": "Given Reporter Code (Ex IN for India), and Export Year (for ex, 2010), this API End point returns\r\na list of records of Commodity Re-Export data as reported by UN COMTrade for a given year.\r\nUN COMTrade reports data on a yearly basis at a HS6 Code Level.",
+        "operationId": "GATSData_GetUNTradeReExports",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json",
+          "application/xml",
+          "text/xml"
+        ],
+        "parameters": [
+          {
+            "name": "reporterCode",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "year",
+            "in": "path",
+            "description": "",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {},
+  "securityDefinitions": {
+    "apiKey": {
+      "type": "apiKey",
+      "description": "API Key Authentication",
+      "name": "API_KEY",
+      "in": "header"
+    }
+  }
+}

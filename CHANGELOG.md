@@ -6,11 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
 ### Added
 
-- Scaffold from [sdk-template](https://github.com/xippios/sdk-template): configured
-  client for USDA FAS Global Agricultural Trade System, empty task layer, MCP server and FastAPI router
-  wired to it, test harness, CI, the nightly live tests and publishing.
+- Scaffold from [sdk-template](https://github.com/xippios/sdk-template) v0.2.0: configured
+  client for USDA FAS Global Agricultural Trade System, MCP server and FastAPI router wired
+  to the task layer, test harness, CI, the nightly live tests and publishing.
 - Upstream documentation snapshot in `docs/upstream/` (2026-10-25): the GATS part of
   the FAS Open Data Services Swagger 2.0 document as the portal loads it
   (`openapi/portal-document.json`) and as the API serves it itself
@@ -59,8 +61,9 @@ All notable changes to this project are documented here. The format follows
   `params.validate_year`, `validate_month` and `validate_hs10_code` check the other
   arguments.
 - `scripts/check-siblings.sh` and `.github/workflows/siblings.yml`: the ADR-0006 sibling
-  proof with xippios-usda-psd from PyPI and xippios-usda-nass and xippios-usda-esr from
-  git main.
+  proof, this wheel installed with xippios-usda-psd, xippios-usda-nass and
+  xippios-usda-esr, all three from PyPI, as portions of the `xippios.usda` namespace;
+  `PSD_REQUIREMENT`, `NASS_REQUIREMENT` and `ESR_REQUIREMENT` override each.
 - Endpoint wrappers for nine more GATS operations: the reference lists
   `GATSData_GetRegions`, `GATSData_GetCommodities`, `GATSData_GetHS6Commodities`,
   `GATSData_GetUnitsOfMeasure` and `GATSData_GetCustomsDistricts`, and the data
@@ -108,8 +111,7 @@ All notable changes to this project are documented here. The format follows
   unknown partner code names an ISO or GENC code's partner code first (`CHN` leads to
   `CH` before `CN`), and the refusal without a close code points to `list_countries`.
   `errors.UnknownCode` words its message over the parameter and the list, so it serves
-  `customs_district_id` too. Nothing is released yet, so this is part of 0.1.0's Census
-  tasks, not a change to them.
+  `customs_district_id` too.
 - Endpoint wrappers for the five UN Trade operations, named after the snapshot's
   operationIds: `GATSData_GetUNTradeExports`, `GATSData_GetUNTradeImports` and
   `GATSData_GetUNTradeReExports` (path parameters `reporterCode` and `year`, both text as

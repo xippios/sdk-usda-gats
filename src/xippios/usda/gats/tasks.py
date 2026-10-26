@@ -49,11 +49,15 @@ client's cache stored the list when the cache answered (conventions §4), else t
 of the call.
 
 The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
-and ``get_census_reexport_series``, answer one partner over a range of months, at most
-``SERIES_MAX_MONTHS`` (60), from the same wrappers as the month tasks, one data call per
-month (sdk-usda-psd's ``get_time_series`` is the family's precedent for a series
-assembled from one call per period). Every argument is checked first, the partner code
-for the start and for the end month, so a code discontinued inside the range is refused.
+and ``get_census_reexport_series``, answer one partner over a range of months from the
+same wrappers as the month tasks, one data call per month (sdk-usda-psd's
+``get_time_series`` is the family's precedent for a series assembled from one call per
+period). A call spans at most ``series_ceiling()`` months: ``SERIES_MAX_MONTHS`` (60) in
+Python and over HTTP; the MCP server starts with ``MCP_SERIES_MAX_MONTHS`` (24), and its
+``--series-months`` sets another ceiling from 1 to 60 through core's option hooks
+(``mcp_add_options``, ``mcp_apply_options``; ADR-0014). The ceiling is process-wide: one
+MCP server per process. Every argument is checked first, the partner code for the start
+and for the end month, so a code discontinued inside the range is refused.
 The flow's release list is fetched once, the imports list for imports and the exports
 list for exports and, by the same assumption, re-exports; a range with a month the list
 lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
@@ -108,9 +112,10 @@ stays empty. The lists' filters (``search``, ``region_code``, ``hs10_code``,
 upstream reports no count.
 """
 
+import argparse
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from xippios.core import InvalidRequestError, NotFoundError, Result, ResultMeta, parse, sync
 
@@ -144,6 +149,9 @@ from xippios.usda.gats.params import (
     validate_reporter_code,
     validate_year,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import MCPServer
 
 __all__ = [
     "get_census_export_series",
@@ -185,9 +193,15 @@ SERIES_NOTE = (
 shorter range, the two ways to narrow it."""
 
 SERIES_MAX_MONTHS = 60
-"""Most months one Census series call spans, five years, a self-imposed bound: one data
-request per month at the client's pace of one request per second, so the longest series
-takes about a minute and spends 60 of api.data.gov's 1,000 requests per hour for the key."""
+"""Most months one Census series call spans in Python and over HTTP, five years, a
+self-imposed bound: one data request per month at the client's pace of one request per
+second, so the longest series takes about a minute and spends 60 of api.data.gov's 1,000
+requests per hour for the key. No ceiling goes above it (``set_series_ceiling``)."""
+
+MCP_SERIES_MAX_MONTHS = 24
+"""The ceiling the MCP server starts with, two years: 24 requests, about 24 seconds at the
+client's pace, for one tool call. Its ``--series-months`` sets another, from 1 to
+``SERIES_MAX_MONTHS`` (``mcp_add_options``, ``mcp_apply_options``)."""
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
@@ -285,6 +299,96 @@ the default bounds with notes naming their filters. ``list_regions`` (15),
 ``ResultCap`` lives in ``xippios.core.mcp``, which needs the ``mcp`` extra, so a base
 install, which serves no MCP tool, has no caps.
 """
+
+_series_ceiling = SERIES_MAX_MONTHS
+"""The series ceiling in force, process-wide: ``series_ceiling`` reads it,
+``set_series_ceiling`` sets it."""
+
+
+def series_ceiling() -> int:
+    """The most months one Census series call spans in this process, e.g. ``60``.
+
+    ``SERIES_MAX_MONTHS`` (60) unless ``set_series_ceiling`` set another, as the MCP
+    server does when it starts: ``MCP_SERIES_MAX_MONTHS`` (24), or its
+    ``--series-months``. The setting is process-wide, so every series call in the
+    process meets the same ceiling, from Python, over HTTP or over MCP: one MCP server
+    per process.
+    """
+    return _series_ceiling
+
+
+def set_series_ceiling(months: int) -> None:
+    """Set the most months one Census series call spans, for every call in this process.
+
+    A range longer than the ceiling is refused before any request, naming the ceiling;
+    below ``SERIES_MAX_MONTHS`` the refusal says it is the MCP server's and that
+    ``--series-months`` raises it, up to 60. No ceiling goes above ``SERIES_MAX_MONTHS``.
+    The MCP server calls this once when it starts (``mcp_apply_options``); the setting is
+    process-wide, so it holds for the Python API and an HTTP router in the same process
+    too: one MCP server per process.
+
+    Args:
+        months: A whole number of months from 1 to 60 (``SERIES_MAX_MONTHS``), e.g.
+            ``24`` (the MCP server's default), ``36``, ``60`` (the Python API's).
+
+    Raises:
+        InvalidRequestError: ``months`` is not a whole number from 1 to 60 (``True`` is
+            not ``1``); the ceiling stays as it was.
+    """
+    global _series_ceiling
+    whole = isinstance(months, int) and not isinstance(months, bool)
+    if not whole or not 1 <= months <= SERIES_MAX_MONTHS:
+        raise InvalidRequestError(
+            "the series ceiling, --series-months on the MCP server, must be a whole number "
+            f"of months from 1 to {SERIES_MAX_MONTHS}, got {months!r}.",
+            source=SOURCE,
+        )
+    _series_ceiling = months
+
+
+def mcp_add_options(parser: argparse.ArgumentParser) -> None:
+    """Add ``--series-months`` to the MCP server's command line, a hook of core's ``main``.
+
+    ``--series-months MONTHS`` is the most months one series tool call spans, a whole
+    number from 1 to ``SERIES_MAX_MONTHS`` (60), ``MCP_SERIES_MAX_MONTHS`` (24) when not
+    given; ``mcp_apply_options`` sets it. The ceiling is process-wide: one MCP server per
+    process.
+
+    Args:
+        parser: Core's parser (``xippios.core.mcp.build_parser``), which then accepts
+            e.g. ``xippios-usda-gats-mcp --series-months 36``.
+    """
+    parser.add_argument(
+        "--series-months",
+        type=int,
+        default=MCP_SERIES_MAX_MONTHS,
+        metavar="MONTHS",
+        help=(
+            f"most months one series tool call spans, 1 to {SERIES_MAX_MONTHS} "
+            f"(default {MCP_SERIES_MAX_MONTHS}); one request per month, so "
+            f"{SERIES_MAX_MONTHS} months take about a minute of calls"
+        ),
+    )
+
+
+def mcp_apply_options(namespace: argparse.Namespace, server: "MCPServer") -> "MCPServer":
+    """Set the series ceiling from ``--series-months``, a hook of core's ``main``.
+
+    Calls ``set_series_ceiling(namespace.series_months)`` and returns ``server``
+    unchanged. The ceiling is process-wide: one MCP server per process. A value outside
+    1 to 60 raises ``InvalidRequestError``, which core's ``main`` turns into the parser's
+    error: the message on stderr, exit status 2, nothing served.
+
+    Args:
+        namespace: The parsed command line with ``series_months`` from
+            ``mcp_add_options``, e.g. ``argparse.Namespace(series_months=24)``.
+        server: The server ``mcp.py`` built, returned as it is.
+
+    Returns:
+        ``server`` itself.
+    """
+    set_series_ceiling(namespace.series_months)
+    return server
 
 
 class _Coded(Protocol):
@@ -790,8 +894,10 @@ def _series_months(
     ``validate_partner_month`` checks the partner code, the year and the month of the
     start and then of the end month: a code discontinued inside the range is refused at
     the end month, naming its ``discontinuedOn``. Then the start must not be after the
-    end, the span must be at most ``SERIES_MAX_MONTHS``, and ``hs10_code`` must pass
-    ``validate_hs10_code``.
+    end, the span must be at most ``series_ceiling()`` months, and ``hs10_code`` must
+    pass ``validate_hs10_code``. A refusal of the span names the ceiling in force and,
+    below ``SERIES_MAX_MONTHS``, that it is the MCP server's and that ``--series-months``
+    raises it, up to 60.
 
     Returns:
         ``(year, month)`` of every month from the start to the end, both included, oldest
@@ -801,7 +907,7 @@ def _series_months(
         UnknownCode: The packaged countries list lacks ``partner_code``.
         InvalidRequestError: A year or a month is not valid, the code was discontinued
             before the start or the end month, the start is after the end, the range
-            spans more than ``SERIES_MAX_MONTHS`` months, or ``hs10_code`` is not 1 to 10
+            spans more months than ``series_ceiling()``, or ``hs10_code`` is not 1 to 10
             digits.
     """
     validate_partner_month(partner_code, start_year, start_month)
@@ -818,11 +924,18 @@ def _series_months(
     first = start_year * 12 + start_month - 1
     last = end_year * 12 + end_month - 1
     span = last - first + 1
-    if span > SERIES_MAX_MONTHS:
+    ceiling = series_ceiling()
+    if span > ceiling:
+        bound = f"a series spans at most {ceiling} months"
+        if ceiling < SERIES_MAX_MONTHS:
+            bound += (
+                " on this MCP server, the ceiling it was started with (--series-months "
+                f"raises it, up to {SERIES_MAX_MONTHS})"
+            )
         raise InvalidRequestError(
-            f"{start} to {end} is {span} months, one request each; a series spans at most "
-            f"{SERIES_MAX_MONTHS} months. Ask for a shorter range, or for consecutive ranges "
-            f"of at most {SERIES_MAX_MONTHS} months one after another.",
+            f"{start} to {end} is {span} months, one request each; {bound}. Ask for a "
+            f"shorter range, or for consecutive ranges of at most {ceiling} months one after "
+            "another.",
             source=SOURCE,
         )
     if hs10_code is not None:
@@ -915,7 +1028,8 @@ async def get_census_export_series_async(
     end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date`` (``"202607"``), and a month
     without exports adds none. 197 records for Iceland (``"IC"``) over July and August
-    2026, 105 and 92. At most 60 months per call. Requests: the exports release list
+    2026, 105 and 92. Up to 60 months in Python and over HTTP; the MCP server starts with
+    24 (``--series-months`` raises it, up to 60). Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusExports`` request per month, one after
     another at the client's pace of one request per second, never at once. Each spends
@@ -925,11 +1039,11 @@ async def get_census_export_series_async(
     ``get_census_exports`` (an unknown code names close codes) for the start and for the
     end month, so a code discontinued inside the range is refused naming its last month
     (``"SZ"``, Switzerland, 198712, for 1987-06 to 1988-01); a start after the end, or a
-    range of more than 60 months, raises ``InvalidRequestError``. Every month of the
-    range must be released: the first month the release list lacks raises
-    ``NotFoundError`` naming it and the latest month released, so an end month not
-    released yet refuses the series rather than trimming it. ``meta.vintage`` is the
-    newest release time among the range's months, as upstream states it:
+    range of more months than the ceiling, raises ``InvalidRequestError`` naming the
+    ceiling. Every month of the range must be released: the first month the release list
+    lacks raises ``NotFoundError`` naming it and the latest month released, so an end
+    month not released yet refuses the series rather than trimming it. ``meta.vintage``
+    is the newest release time among the range's months, as upstream states it:
     ``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08, August's release. Across Census's
     annual revision it can be an earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to
     2026-02, December's revised release, not February's. Each month's own release time is
@@ -945,7 +1059,8 @@ async def get_census_export_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first.
+            months after the first in Python and over HTTP, 23 on the MCP server at its
+            default ceiling.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0203292000"`` for one
@@ -982,7 +1097,8 @@ async def get_census_import_series_async(
     upstream order, with their consumption and CIF fields; every record carries its month
     in ``date``, and a month without imports adds none. 157 records for Iceland
     (``"IC"``) over July and August 2026, 83 and 74, of which 85 are fish (``hs10_code``
-    ``"03"``). At most 60 months per call. Requests: the imports release list
+    ``"03"``). Up to 60 months in Python and over HTTP; the MCP server starts with 24
+    (``--series-months`` raises it, up to 60). Requests: the imports release list
     (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusImport`` request per month, one after
     another at the client's pace of one request per second, never at once, each one of
@@ -1005,7 +1121,8 @@ async def get_census_import_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first.
+            months after the first in Python and over HTTP, 23 on the MCP server at its
+            default ceiling.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0302140003"`` for one
@@ -1041,7 +1158,8 @@ async def get_census_reexport_series_async(
     the end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date``, and a month without
     re-exports adds none. 31 records for Iceland (``"IC"``) over July and August 2026, 19
-    and 12. At most 60 months per call. Requests: the exports release list
+    and 12. Up to 60 months in Python and over HTTP; the MCP server starts with 24
+    (``--series-months`` raises it, up to 60). Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusReExports`` request per month, one
     after another at the client's pace of one request per second, never at once, each one
@@ -1066,7 +1184,8 @@ async def get_census_reexport_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first.
+            months after the first in Python and over HTTP, 23 on the MCP server at its
+            default ceiling.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"62"`` (chapter 62, 7 of Iceland's 31 records), or a full code such as

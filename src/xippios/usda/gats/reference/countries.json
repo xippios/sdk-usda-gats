@@ -1,0 +1,3227 @@
+{
+  "param": "countries",
+  "endpoint": "GATSData_GetCountries",
+  "fetched": "2026-10-25",
+  "records": [
+    {
+      "countryCode": "01",
+      "regionCode": "R99",
+      "countryParentCode": "01",
+      "countryName": "Caribbean,nes",
+      "description": null,
+      "isO3Code": "X21",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "02",
+      "regionCode": "R99",
+      "countryParentCode": "02",
+      "countryName": "Eastern Europe,nes",
+      "description": null,
+      "isO3Code": "X22",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "03",
+      "regionCode": "R99",
+      "countryParentCode": "03",
+      "countryName": "Northern Africa,nes",
+      "description": null,
+      "isO3Code": "X23",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "04",
+      "regionCode": "R99",
+      "countryParentCode": "04",
+      "countryName": "Central American Common Market, NES",
+      "description": null,
+      "isO3Code": "X24",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "05",
+      "regionCode": "R99",
+      "countryParentCode": "05",
+      "countryName": "Latin American Integration Association",
+      "description": null,
+      "isO3Code": "X25",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "06",
+      "regionCode": "R99",
+      "countryParentCode": "06",
+      "countryName": "Oceania, not elsewhere specified",
+      "description": null,
+      "isO3Code": "X27",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "07",
+      "regionCode": "R99",
+      "countryParentCode": "07",
+      "countryName": "Europe, not elsewhere specified",
+      "description": null,
+      "isO3Code": "X28",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "08",
+      "regionCode": "R99",
+      "countryParentCode": "08",
+      "countryName": "Americas, not elsewhere specified",
+      "description": null,
+      "isO3Code": "X29",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "09",
+      "regionCode": "R99",
+      "countryParentCode": "09",
+      "countryName": "North and Central America, NES",
+      "description": null,
+      "isO3Code": "X30",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "10",
+      "regionCode": "R99",
+      "countryParentCode": "10",
+      "countryName": "Bunkers",
+      "description": null,
+      "isO3Code": "X31",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "11",
+      "regionCode": "R99",
+      "countryParentCode": "11",
+      "countryName": "Free Zones",
+      "description": null,
+      "isO3Code": "X32",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "12",
+      "regionCode": "R99",
+      "countryParentCode": "12",
+      "countryName": "Special Categories",
+      "description": null,
+      "isO3Code": "X33",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "13",
+      "regionCode": "R99",
+      "countryParentCode": "13",
+      "countryName": "US Miscellaneous Pacific Islands",
+      "description": null,
+      "isO3Code": "X34",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "14",
+      "regionCode": "R99",
+      "countryParentCode": "14",
+      "countryName": "Western Asia,not elsewhere specified",
+      "description": null,
+      "isO3Code": "X35",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "15",
+      "regionCode": "R99",
+      "countryParentCode": "15",
+      "countryName": "Areas, not elsewhere specified",
+      "description": null,
+      "isO3Code": "X36",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "16",
+      "regionCode": "R99",
+      "countryParentCode": "16",
+      "countryName": "Southern African Customs Union",
+      "description": null,
+      "isO3Code": "X37",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "17",
+      "regionCode": "R99",
+      "countryParentCode": "17",
+      "countryName": "European Free Trade Association,nes",
+      "description": null,
+      "isO3Code": "X02",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "18",
+      "regionCode": "R99",
+      "countryParentCode": "18",
+      "countryName": "ASEAN",
+      "description": null,
+      "isO3Code": "   ",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "8U",
+      "regionCode": "R25",
+      "countryParentCode": "8U",
+      "countryName": "Faroe Islands",
+      "description": null,
+      "isO3Code": "8UN",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "9U",
+      "regionCode": "R25",
+      "countryParentCode": "9U",
+      "countryName": "Denmark",
+      "description": null,
+      "isO3Code": "9UN",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "AE",
+      "regionCode": "R45",
+      "countryParentCode": "AE",
+      "countryName": "United Arab Emirates",
+      "description": null,
+      "isO3Code": "ARE",
+      "discontinuedOn": null,
+      "gencCode": "ARE"
+    },
+    {
+      "countryCode": "AF",
+      "regionCode": "R60",
+      "countryParentCode": "AF",
+      "countryName": "Afghanistan",
+      "description": null,
+      "isO3Code": "AFG",
+      "discontinuedOn": null,
+      "gencCode": "AFG"
+    },
+    {
+      "countryCode": "AG",
+      "regionCode": "R50",
+      "countryParentCode": "AG",
+      "countryName": "Algeria",
+      "description": null,
+      "isO3Code": "DZA",
+      "discontinuedOn": null,
+      "gencCode": "DZA"
+    },
+    {
+      "countryCode": "AJ",
+      "regionCode": "R35",
+      "countryParentCode": "AJ",
+      "countryName": "Azerbaijan",
+      "description": null,
+      "isO3Code": "AZE",
+      "discontinuedOn": null,
+      "gencCode": "AZE"
+    },
+    {
+      "countryCode": "AL",
+      "regionCode": "R30",
+      "countryParentCode": "AL",
+      "countryName": "Albania",
+      "description": null,
+      "isO3Code": "ALB",
+      "discontinuedOn": null,
+      "gencCode": "ALB"
+    },
+    {
+      "countryCode": "AM",
+      "regionCode": "R35",
+      "countryParentCode": "AM",
+      "countryName": "Armenia",
+      "description": null,
+      "isO3Code": "ARM",
+      "discontinuedOn": null,
+      "gencCode": "ARM"
+    },
+    {
+      "countryCode": "AO",
+      "regionCode": "R55",
+      "countryParentCode": "AO",
+      "countryName": "Angola",
+      "description": null,
+      "isO3Code": "AGO",
+      "discontinuedOn": null,
+      "gencCode": "AGO"
+    },
+    {
+      "countryCode": "AQ",
+      "regionCode": "R70",
+      "countryParentCode": "AQ",
+      "countryName": "American Samoa",
+      "description": null,
+      "isO3Code": "ASM",
+      "discontinuedOn": null,
+      "gencCode": "ASM"
+    },
+    {
+      "countryCode": "AR",
+      "regionCode": "R20",
+      "countryParentCode": "AR",
+      "countryName": "Argentina",
+      "description": null,
+      "isO3Code": "ARG",
+      "discontinuedOn": null,
+      "gencCode": "ARG"
+    },
+    {
+      "countryCode": "AS",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Australia",
+      "description": null,
+      "isO3Code": "AUS",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "A2",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Australia",
+      "description": null,
+      "isO3Code": "AUS",
+      "discontinuedOn": null,
+      "gencCode": "AUS"
+    },
+    {
+      "countryCode": "CK",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Cocos (Keeling) Islands",
+      "description": null,
+      "isO3Code": "CCK",
+      "discontinuedOn": null,
+      "gencCode": "CCK"
+    },
+    {
+      "countryCode": "HM",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Heard Island and McDonald Islands",
+      "description": null,
+      "isO3Code": "HMD",
+      "discontinuedOn": null,
+      "gencCode": "HMD"
+    },
+    {
+      "countryCode": "KT",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Christmas Island",
+      "description": null,
+      "isO3Code": "CXR",
+      "discontinuedOn": null,
+      "gencCode": "CXR"
+    },
+    {
+      "countryCode": "NF",
+      "regionCode": "R70",
+      "countryParentCode": "AS",
+      "countryName": "Norfolk Island",
+      "description": null,
+      "isO3Code": "NFK",
+      "discontinuedOn": null,
+      "gencCode": "NFK"
+    },
+    {
+      "countryCode": "AU",
+      "regionCode": "R25",
+      "countryParentCode": "AU",
+      "countryName": "Austria",
+      "description": null,
+      "isO3Code": "AUT",
+      "discontinuedOn": null,
+      "gencCode": "AUT"
+    },
+    {
+      "countryCode": "AY",
+      "regionCode": "R99",
+      "countryParentCode": "AY",
+      "countryName": "Antarctica",
+      "description": null,
+      "isO3Code": "ATA",
+      "discontinuedOn": null,
+      "gencCode": "ATA"
+    },
+    {
+      "countryCode": "BA",
+      "regionCode": "R45",
+      "countryParentCode": "BA",
+      "countryName": "Bahrain",
+      "description": null,
+      "isO3Code": "BHR",
+      "discontinuedOn": null,
+      "gencCode": "BHR"
+    },
+    {
+      "countryCode": "BB",
+      "regionCode": "R10",
+      "countryParentCode": "BB",
+      "countryName": "Barbados",
+      "description": null,
+      "isO3Code": "BRB",
+      "discontinuedOn": null,
+      "gencCode": "BRB"
+    },
+    {
+      "countryCode": "BC",
+      "regionCode": "R55",
+      "countryParentCode": "BC",
+      "countryName": "Botswana",
+      "description": null,
+      "isO3Code": "BWA",
+      "discontinuedOn": null,
+      "gencCode": "BWA"
+    },
+    {
+      "countryCode": "BD",
+      "regionCode": "R10",
+      "countryParentCode": "BD",
+      "countryName": "Bermuda",
+      "description": null,
+      "isO3Code": "BMU",
+      "discontinuedOn": null,
+      "gencCode": "BMU"
+    },
+    {
+      "countryCode": "BE",
+      "regionCode": "R25",
+      "countryParentCode": "BE",
+      "countryName": "Belgium-Luxembourg",
+      "description": null,
+      "isO3Code": "XBL",
+      "discontinuedOn": "198801",
+      "gencCode": null
+    },
+    {
+      "countryCode": "LU",
+      "regionCode": "R25",
+      "countryParentCode": "BE",
+      "countryName": "Luxembourg",
+      "description": null,
+      "isO3Code": "LUX",
+      "discontinuedOn": null,
+      "gencCode": "LUX"
+    },
+    {
+      "countryCode": "B1",
+      "regionCode": "R25",
+      "countryParentCode": "BE",
+      "countryName": "Belgium",
+      "description": null,
+      "isO3Code": "BEL",
+      "discontinuedOn": null,
+      "gencCode": "BEL"
+    },
+    {
+      "countryCode": "BF",
+      "regionCode": "R10",
+      "countryParentCode": "BF",
+      "countryName": "Bahamas, The",
+      "description": null,
+      "isO3Code": "BHS",
+      "discontinuedOn": null,
+      "gencCode": "BHS"
+    },
+    {
+      "countryCode": "BG",
+      "regionCode": "R60",
+      "countryParentCode": "BG",
+      "countryName": "Bangladesh",
+      "description": null,
+      "isO3Code": "BGD",
+      "discontinuedOn": null,
+      "gencCode": "BGD"
+    },
+    {
+      "countryCode": "BH",
+      "regionCode": "R15",
+      "countryParentCode": "BH",
+      "countryName": "Belize",
+      "description": null,
+      "isO3Code": "BLZ",
+      "discontinuedOn": null,
+      "gencCode": "BLZ"
+    },
+    {
+      "countryCode": "BK",
+      "regionCode": "R30",
+      "countryParentCode": "BK",
+      "countryName": "Bosnia and Herzegovina",
+      "description": null,
+      "isO3Code": "BIH",
+      "discontinuedOn": null,
+      "gencCode": "BIH"
+    },
+    {
+      "countryCode": "BL",
+      "regionCode": "R20",
+      "countryParentCode": "BL",
+      "countryName": "Bolivia",
+      "description": null,
+      "isO3Code": "BOL",
+      "discontinuedOn": null,
+      "gencCode": "BOL"
+    },
+    {
+      "countryCode": "BM",
+      "regionCode": "R65",
+      "countryParentCode": "BM",
+      "countryName": "Burma",
+      "description": null,
+      "isO3Code": "MMR",
+      "discontinuedOn": null,
+      "gencCode": "MMR"
+    },
+    {
+      "countryCode": "BN",
+      "regionCode": "R55",
+      "countryParentCode": "BN",
+      "countryName": "Benin",
+      "description": null,
+      "isO3Code": "BEN",
+      "discontinuedOn": null,
+      "gencCode": "BEN"
+    },
+    {
+      "countryCode": "BO",
+      "regionCode": "R35",
+      "countryParentCode": "BO",
+      "countryName": "Belarus",
+      "description": null,
+      "isO3Code": "BLR",
+      "discontinuedOn": null,
+      "gencCode": "BLR"
+    },
+    {
+      "countryCode": "BR",
+      "regionCode": "R20",
+      "countryParentCode": "BR",
+      "countryName": "Brazil",
+      "description": null,
+      "isO3Code": "BRA",
+      "discontinuedOn": null,
+      "gencCode": "BRA"
+    },
+    {
+      "countryCode": "BU",
+      "regionCode": "R25",
+      "countryParentCode": "BU",
+      "countryName": "Bulgaria",
+      "description": null,
+      "isO3Code": "BGR",
+      "discontinuedOn": null,
+      "gencCode": "BGR"
+    },
+    {
+      "countryCode": "BV",
+      "regionCode": "R99",
+      "countryParentCode": "BV",
+      "countryName": "Bouvet Island",
+      "description": null,
+      "isO3Code": "BVT",
+      "discontinuedOn": null,
+      "gencCode": "BVT"
+    },
+    {
+      "countryCode": "BX",
+      "regionCode": "R65",
+      "countryParentCode": "BX",
+      "countryName": "Brunei",
+      "description": null,
+      "isO3Code": "BRN",
+      "discontinuedOn": null,
+      "gencCode": "BRN"
+    },
+    {
+      "countryCode": "BY",
+      "regionCode": "R55",
+      "countryParentCode": "BY",
+      "countryName": "Burundi",
+      "description": null,
+      "isO3Code": "BDI",
+      "discontinuedOn": null,
+      "gencCode": "BDI"
+    },
+    {
+      "countryCode": "CA",
+      "regionCode": "R05",
+      "countryParentCode": "CA",
+      "countryName": "Canada",
+      "description": null,
+      "isO3Code": "CAN",
+      "discontinuedOn": null,
+      "gencCode": "CAN"
+    },
+    {
+      "countryCode": "CB",
+      "regionCode": "R65",
+      "countryParentCode": "CB",
+      "countryName": "Cambodia",
+      "description": null,
+      "isO3Code": "KHM",
+      "discontinuedOn": null,
+      "gencCode": "KHM"
+    },
+    {
+      "countryCode": "CD",
+      "regionCode": "R55",
+      "countryParentCode": "CD",
+      "countryName": "Chad",
+      "description": null,
+      "isO3Code": "TCD",
+      "discontinuedOn": null,
+      "gencCode": "TCD"
+    },
+    {
+      "countryCode": "CE",
+      "regionCode": "R60",
+      "countryParentCode": "CE",
+      "countryName": "Sri Lanka",
+      "description": null,
+      "isO3Code": "LKA",
+      "discontinuedOn": null,
+      "gencCode": "LKA"
+    },
+    {
+      "countryCode": "CF",
+      "regionCode": "R55",
+      "countryParentCode": "CF",
+      "countryName": "Congo (Brazzaville)",
+      "description": null,
+      "isO3Code": "COG",
+      "discontinuedOn": null,
+      "gencCode": "COG"
+    },
+    {
+      "countryCode": "CG",
+      "regionCode": "R55",
+      "countryParentCode": "CG",
+      "countryName": "Congo (Kinshasa)",
+      "description": null,
+      "isO3Code": "COD",
+      "discontinuedOn": null,
+      "gencCode": "COD"
+    },
+    {
+      "countryCode": "CH",
+      "regionCode": "R40",
+      "countryParentCode": "CH",
+      "countryName": "China",
+      "description": null,
+      "isO3Code": "CHN",
+      "discontinuedOn": null,
+      "gencCode": "CHN"
+    },
+    {
+      "countryCode": "CI",
+      "regionCode": "R20",
+      "countryParentCode": "CI",
+      "countryName": "Chile",
+      "description": null,
+      "isO3Code": "CHL",
+      "discontinuedOn": null,
+      "gencCode": "CHL"
+    },
+    {
+      "countryCode": "CJ",
+      "regionCode": "R10",
+      "countryParentCode": "CJ",
+      "countryName": "Cayman Islands",
+      "description": null,
+      "isO3Code": "CYM",
+      "discontinuedOn": null,
+      "gencCode": "CYM"
+    },
+    {
+      "countryCode": "CM",
+      "regionCode": "R55",
+      "countryParentCode": "CM",
+      "countryName": "Cameroon",
+      "description": null,
+      "isO3Code": "CMR",
+      "discontinuedOn": null,
+      "gencCode": "CMR"
+    },
+    {
+      "countryCode": "CN",
+      "regionCode": "R55",
+      "countryParentCode": "CN",
+      "countryName": "Comoros",
+      "description": null,
+      "isO3Code": "COM",
+      "discontinuedOn": null,
+      "gencCode": "COM"
+    },
+    {
+      "countryCode": "CO",
+      "regionCode": "R20",
+      "countryParentCode": "CO",
+      "countryName": "Colombia",
+      "description": null,
+      "isO3Code": "COL",
+      "discontinuedOn": null,
+      "gencCode": "COL"
+    },
+    {
+      "countryCode": "CQ",
+      "regionCode": "R70",
+      "countryParentCode": "CQ",
+      "countryName": "Northern Mariana Islands",
+      "description": null,
+      "isO3Code": "MNP",
+      "discontinuedOn": null,
+      "gencCode": "MNP"
+    },
+    {
+      "countryCode": "CS",
+      "regionCode": "R15",
+      "countryParentCode": "CS",
+      "countryName": "Costa Rica",
+      "description": null,
+      "isO3Code": "CRI",
+      "discontinuedOn": null,
+      "gencCode": "CRI"
+    },
+    {
+      "countryCode": "CT",
+      "regionCode": "R55",
+      "countryParentCode": "CT",
+      "countryName": "Central African Republic",
+      "description": null,
+      "isO3Code": "CAF",
+      "discontinuedOn": null,
+      "gencCode": "CAF"
+    },
+    {
+      "countryCode": "CU",
+      "regionCode": "R10",
+      "countryParentCode": "CU",
+      "countryName": "Cuba",
+      "description": null,
+      "isO3Code": "CUB",
+      "discontinuedOn": null,
+      "gencCode": "CUB"
+    },
+    {
+      "countryCode": "CY",
+      "regionCode": "R25",
+      "countryParentCode": "CY",
+      "countryName": "Cyprus",
+      "description": null,
+      "isO3Code": "CYP",
+      "discontinuedOn": null,
+      "gencCode": "CYP"
+    },
+    {
+      "countryCode": "CZ",
+      "regionCode": "R25",
+      "countryParentCode": "CZ",
+      "countryName": "Czechoslovakia",
+      "description": null,
+      "isO3Code": "CSK",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "D1",
+      "regionCode": "R25",
+      "countryParentCode": "D1",
+      "countryName": "Denmark",
+      "description": null,
+      "isO3Code": "DNK",
+      "discontinuedOn": "198712",
+      "gencCode": "DNK"
+    },
+    {
+      "countryCode": "DA",
+      "regionCode": "R25",
+      "countryParentCode": "DA",
+      "countryName": "Denmark",
+      "description": null,
+      "isO3Code": "DNK",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "DJ",
+      "regionCode": "R55",
+      "countryParentCode": "DJ",
+      "countryName": "Djibouti",
+      "description": null,
+      "isO3Code": "DJI",
+      "discontinuedOn": null,
+      "gencCode": "DJI"
+    },
+    {
+      "countryCode": "DR",
+      "regionCode": "R10",
+      "countryParentCode": "DR",
+      "countryName": "Dominican Republic",
+      "description": null,
+      "isO3Code": "DOM",
+      "discontinuedOn": null,
+      "gencCode": "DOM"
+    },
+    {
+      "countryCode": "EC",
+      "regionCode": "R20",
+      "countryParentCode": "EC",
+      "countryName": "Ecuador",
+      "description": null,
+      "isO3Code": "ECU",
+      "discontinuedOn": null,
+      "gencCode": "ECU"
+    },
+    {
+      "countryCode": "EG",
+      "regionCode": "R50",
+      "countryParentCode": "EG",
+      "countryName": "Egypt",
+      "description": null,
+      "isO3Code": "EGY",
+      "discontinuedOn": null,
+      "gencCode": "EGY"
+    },
+    {
+      "countryCode": "EI",
+      "regionCode": "R25",
+      "countryParentCode": "EI",
+      "countryName": "Ireland",
+      "description": null,
+      "isO3Code": "IRL",
+      "discontinuedOn": null,
+      "gencCode": "IRL"
+    },
+    {
+      "countryCode": "EK",
+      "regionCode": "R55",
+      "countryParentCode": "EK",
+      "countryName": "Equatorial Guinea",
+      "description": null,
+      "isO3Code": "GNQ",
+      "discontinuedOn": null,
+      "gencCode": "GNQ"
+    },
+    {
+      "countryCode": "EN",
+      "regionCode": "R25",
+      "countryParentCode": "EN",
+      "countryName": "Estonia",
+      "description": null,
+      "isO3Code": "EST",
+      "discontinuedOn": null,
+      "gencCode": "EST"
+    },
+    {
+      "countryCode": "ER",
+      "regionCode": "R55",
+      "countryParentCode": "ER",
+      "countryName": "Eritrea",
+      "description": null,
+      "isO3Code": "ERI",
+      "discontinuedOn": null,
+      "gencCode": "ERI"
+    },
+    {
+      "countryCode": "ES",
+      "regionCode": "R15",
+      "countryParentCode": "ES",
+      "countryName": "El Salvador",
+      "description": null,
+      "isO3Code": "SLV",
+      "discontinuedOn": null,
+      "gencCode": "SLV"
+    },
+    {
+      "countryCode": "ET",
+      "regionCode": "R55",
+      "countryParentCode": "ET",
+      "countryName": "Ethiopia",
+      "description": null,
+      "isO3Code": "ETH",
+      "discontinuedOn": "199306",
+      "gencCode": null
+    },
+    {
+      "countryCode": "E1",
+      "regionCode": "R55",
+      "countryParentCode": "ET",
+      "countryName": "Ethiopia",
+      "description": null,
+      "isO3Code": "ETH",
+      "discontinuedOn": null,
+      "gencCode": "ETH"
+    },
+    {
+      "countryCode": "EZ",
+      "regionCode": "R25",
+      "countryParentCode": "EZ",
+      "countryName": "Czech Republic",
+      "description": null,
+      "isO3Code": "CZE",
+      "discontinuedOn": null,
+      "gencCode": "CZE"
+    },
+    {
+      "countryCode": "FG",
+      "regionCode": "R20",
+      "countryParentCode": "FG",
+      "countryName": "French Guiana",
+      "description": null,
+      "isO3Code": "GUF",
+      "discontinuedOn": null,
+      "gencCode": "GUF"
+    },
+    {
+      "countryCode": "FI",
+      "regionCode": "R25",
+      "countryParentCode": "FI",
+      "countryName": "Finland",
+      "description": null,
+      "isO3Code": "FIN",
+      "discontinuedOn": null,
+      "gencCode": "FIN"
+    },
+    {
+      "countryCode": "FK",
+      "regionCode": "R20",
+      "countryParentCode": "FK",
+      "countryName": "Falkland Islands (Islas Malvinas)",
+      "description": null,
+      "isO3Code": "FLK",
+      "discontinuedOn": null,
+      "gencCode": "FLK"
+    },
+    {
+      "countryCode": "FM",
+      "regionCode": "R70",
+      "countryParentCode": "FM",
+      "countryName": "Micronesia",
+      "description": null,
+      "isO3Code": "FSM",
+      "discontinuedOn": null,
+      "gencCode": "FSM"
+    },
+    {
+      "countryCode": "FO",
+      "regionCode": "R30",
+      "countryParentCode": "FO",
+      "countryName": "Faroe Islands",
+      "description": null,
+      "isO3Code": "FRO",
+      "discontinuedOn": null,
+      "gencCode": "FRO"
+    },
+    {
+      "countryCode": "AN",
+      "regionCode": "R25",
+      "countryParentCode": "FR",
+      "countryName": "Andorra",
+      "description": null,
+      "isO3Code": "AND",
+      "discontinuedOn": null,
+      "gencCode": "AND"
+    },
+    {
+      "countryCode": "F1",
+      "regionCode": "R25",
+      "countryParentCode": "FR",
+      "countryName": "France",
+      "description": null,
+      "isO3Code": "FRA",
+      "discontinuedOn": null,
+      "gencCode": "FRA"
+    },
+    {
+      "countryCode": "MN",
+      "regionCode": "R25",
+      "countryParentCode": "FR",
+      "countryName": "Monaco",
+      "description": null,
+      "isO3Code": "MCO",
+      "discontinuedOn": null,
+      "gencCode": "MCO"
+    },
+    {
+      "countryCode": "FR",
+      "regionCode": "R25",
+      "countryParentCode": "FR",
+      "countryName": "France",
+      "description": null,
+      "isO3Code": "FRA",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "GA",
+      "regionCode": "R55",
+      "countryParentCode": "GA",
+      "countryName": "Gambia, The",
+      "description": null,
+      "isO3Code": "GMB",
+      "discontinuedOn": null,
+      "gencCode": "GMB"
+    },
+    {
+      "countryCode": "GB",
+      "regionCode": "R55",
+      "countryParentCode": "GB",
+      "countryName": "Gabon",
+      "description": null,
+      "isO3Code": "GAB",
+      "discontinuedOn": null,
+      "gencCode": "GAB"
+    },
+    {
+      "countryCode": "GG",
+      "regionCode": "R35",
+      "countryParentCode": "GG",
+      "countryName": "Georgia",
+      "description": null,
+      "isO3Code": "GEO",
+      "discontinuedOn": null,
+      "gencCode": "GEO"
+    },
+    {
+      "countryCode": "GH",
+      "regionCode": "R55",
+      "countryParentCode": "GH",
+      "countryName": "Ghana",
+      "description": null,
+      "isO3Code": "GHA",
+      "discontinuedOn": null,
+      "gencCode": "GHA"
+    },
+    {
+      "countryCode": "GI",
+      "regionCode": "R30",
+      "countryParentCode": "GI",
+      "countryName": "Gibraltar",
+      "description": null,
+      "isO3Code": "GIB",
+      "discontinuedOn": null,
+      "gencCode": "GIB"
+    },
+    {
+      "countryCode": "GL",
+      "regionCode": "R05",
+      "countryParentCode": "GL",
+      "countryName": "Greenland",
+      "description": null,
+      "isO3Code": "GRL",
+      "discontinuedOn": null,
+      "gencCode": "GRL"
+    },
+    {
+      "countryCode": "GM",
+      "regionCode": "R25",
+      "countryParentCode": "GM",
+      "countryName": "Germany",
+      "description": null,
+      "isO3Code": "DEU",
+      "discontinuedOn": null,
+      "gencCode": "DEU"
+    },
+    {
+      "countryCode": "GC",
+      "regionCode": "R25",
+      "countryParentCode": "GM",
+      "countryName": "Germany, Democratic Republic",
+      "description": null,
+      "isO3Code": "DDR",
+      "discontinuedOn": "199009",
+      "gencCode": null
+    },
+    {
+      "countryCode": "GE",
+      "regionCode": "R25",
+      "countryParentCode": "GM",
+      "countryName": "Germany, Federal Republic (Former)",
+      "description": null,
+      "isO3Code": "DEU",
+      "discontinuedOn": "199009",
+      "gencCode": null
+    },
+    {
+      "countryCode": "GQ",
+      "regionCode": "R70",
+      "countryParentCode": "GQ",
+      "countryName": "Guam",
+      "description": null,
+      "isO3Code": "GUM",
+      "discontinuedOn": null,
+      "gencCode": "GUM"
+    },
+    {
+      "countryCode": "GR",
+      "regionCode": "R25",
+      "countryParentCode": "GR",
+      "countryName": "Greece",
+      "description": null,
+      "isO3Code": "GRC",
+      "discontinuedOn": null,
+      "gencCode": "GRC"
+    },
+    {
+      "countryCode": "GT",
+      "regionCode": "R15",
+      "countryParentCode": "GT",
+      "countryName": "Guatemala",
+      "description": null,
+      "isO3Code": "GTM",
+      "discontinuedOn": null,
+      "gencCode": "GTM"
+    },
+    {
+      "countryCode": "GV",
+      "regionCode": "R55",
+      "countryParentCode": "GV",
+      "countryName": "Guinea",
+      "description": null,
+      "isO3Code": "GIN",
+      "discontinuedOn": null,
+      "gencCode": "GIN"
+    },
+    {
+      "countryCode": "GY",
+      "regionCode": "R20",
+      "countryParentCode": "GY",
+      "countryName": "Guyana",
+      "description": null,
+      "isO3Code": "GUY",
+      "discontinuedOn": null,
+      "gencCode": "GUY"
+    },
+    {
+      "countryCode": "GZ",
+      "regionCode": "R45",
+      "countryParentCode": "GZ",
+      "countryName": "Gaza Strip",
+      "description": null,
+      "isO3Code": "PSE",
+      "discontinuedOn": null,
+      "gencCode": "XGZ"
+    },
+    {
+      "countryCode": "HA",
+      "regionCode": "R10",
+      "countryParentCode": "HA",
+      "countryName": "Haiti",
+      "description": null,
+      "isO3Code": "HTI",
+      "discontinuedOn": null,
+      "gencCode": "HTI"
+    },
+    {
+      "countryCode": "HK",
+      "regionCode": "R40",
+      "countryParentCode": "HK",
+      "countryName": "Hong Kong",
+      "description": null,
+      "isO3Code": "HKG",
+      "discontinuedOn": null,
+      "gencCode": "HKG"
+    },
+    {
+      "countryCode": "HO",
+      "regionCode": "R15",
+      "countryParentCode": "HO",
+      "countryName": "Honduras",
+      "description": null,
+      "isO3Code": "HND",
+      "discontinuedOn": null,
+      "gencCode": "HND"
+    },
+    {
+      "countryCode": "HR",
+      "regionCode": "R25",
+      "countryParentCode": "HR",
+      "countryName": "Croatia",
+      "description": null,
+      "isO3Code": "HRV",
+      "discontinuedOn": null,
+      "gencCode": "HRV"
+    },
+    {
+      "countryCode": "HU",
+      "regionCode": "R25",
+      "countryParentCode": "HU",
+      "countryName": "Hungary",
+      "description": null,
+      "isO3Code": "HUN",
+      "discontinuedOn": null,
+      "gencCode": "HUN"
+    },
+    {
+      "countryCode": "IC",
+      "regionCode": "R30",
+      "countryParentCode": "IC",
+      "countryName": "Iceland",
+      "description": null,
+      "isO3Code": "ISL",
+      "discontinuedOn": null,
+      "gencCode": "ISL"
+    },
+    {
+      "countryCode": "ID",
+      "regionCode": "R65",
+      "countryParentCode": "ID",
+      "countryName": "Indonesia",
+      "description": null,
+      "isO3Code": "IDN",
+      "discontinuedOn": null,
+      "gencCode": "IDN"
+    },
+    {
+      "countryCode": "IN",
+      "regionCode": "R60",
+      "countryParentCode": "IN",
+      "countryName": "India",
+      "description": null,
+      "isO3Code": "IND",
+      "discontinuedOn": null,
+      "gencCode": "IND"
+    },
+    {
+      "countryCode": "IO",
+      "regionCode": "R55",
+      "countryParentCode": "IO",
+      "countryName": "British Indian Ocean Territory",
+      "description": null,
+      "isO3Code": "IOT",
+      "discontinuedOn": null,
+      "gencCode": "IOT"
+    },
+    {
+      "countryCode": "IR",
+      "regionCode": "R45",
+      "countryParentCode": "IR",
+      "countryName": "Iran",
+      "description": null,
+      "isO3Code": "IRN",
+      "discontinuedOn": null,
+      "gencCode": "IRN"
+    },
+    {
+      "countryCode": "IS",
+      "regionCode": "R45",
+      "countryParentCode": "IS",
+      "countryName": "Israel",
+      "description": null,
+      "isO3Code": "ISR",
+      "discontinuedOn": "198908",
+      "gencCode": null
+    },
+    {
+      "countryCode": "I2",
+      "regionCode": "R45",
+      "countryParentCode": "IS",
+      "countryName": "Israel",
+      "description": null,
+      "isO3Code": "ISR",
+      "discontinuedOn": null,
+      "gencCode": "ISR"
+    },
+    {
+      "countryCode": "G1",
+      "regionCode": "R45",
+      "countryParentCode": "IS",
+      "countryName": "Gaza Strip",
+      "description": null,
+      "isO3Code": "PSE",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "WE",
+      "regionCode": "R45",
+      "countryParentCode": "IS",
+      "countryName": "West Bank",
+      "description": null,
+      "isO3Code": "PSE",
+      "discontinuedOn": null,
+      "gencCode": "XWB"
+    },
+    {
+      "countryCode": "VT",
+      "regionCode": "R25",
+      "countryParentCode": "IT",
+      "countryName": "Vatican City (Holy See)",
+      "description": null,
+      "isO3Code": "VAT",
+      "discontinuedOn": null,
+      "gencCode": "VAT"
+    },
+    {
+      "countryCode": "I1",
+      "regionCode": "R25",
+      "countryParentCode": "IT",
+      "countryName": "Italy",
+      "description": null,
+      "isO3Code": "ITA",
+      "discontinuedOn": null,
+      "gencCode": "ITA"
+    },
+    {
+      "countryCode": "SM",
+      "regionCode": "R25",
+      "countryParentCode": "IT",
+      "countryName": "San Marino",
+      "description": null,
+      "isO3Code": "SMR",
+      "discontinuedOn": null,
+      "gencCode": "SMR"
+    },
+    {
+      "countryCode": "IT",
+      "regionCode": "R25",
+      "countryParentCode": "IT",
+      "countryName": "Italy",
+      "description": null,
+      "isO3Code": "ITA",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "IV",
+      "regionCode": "R55",
+      "countryParentCode": "IV",
+      "countryName": "Cote d'Ivoire",
+      "description": null,
+      "isO3Code": "CIV",
+      "discontinuedOn": null,
+      "gencCode": "CIV"
+    },
+    {
+      "countryCode": "IY",
+      "regionCode": "R45",
+      "countryParentCode": "IY",
+      "countryName": "Iraq-Saudi Arabia Neutral Zone",
+      "description": null,
+      "isO3Code": "NTZ",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "IZ",
+      "regionCode": "R45",
+      "countryParentCode": "IZ",
+      "countryName": "Iraq",
+      "description": null,
+      "isO3Code": "IRQ",
+      "discontinuedOn": null,
+      "gencCode": "IRQ"
+    },
+    {
+      "countryCode": "JA",
+      "regionCode": "R40",
+      "countryParentCode": "JA",
+      "countryName": "Japan",
+      "description": null,
+      "isO3Code": "JPN",
+      "discontinuedOn": null,
+      "gencCode": "JPN"
+    },
+    {
+      "countryCode": "JM",
+      "regionCode": "R10",
+      "countryParentCode": "JM",
+      "countryName": "Jamaica",
+      "description": null,
+      "isO3Code": "JAM",
+      "discontinuedOn": null,
+      "gencCode": "JAM"
+    },
+    {
+      "countryCode": "JO",
+      "regionCode": "R45",
+      "countryParentCode": "JO",
+      "countryName": "Jordan",
+      "description": null,
+      "isO3Code": "JOR",
+      "discontinuedOn": null,
+      "gencCode": "JOR"
+    },
+    {
+      "countryCode": "KE",
+      "regionCode": "R55",
+      "countryParentCode": "KE",
+      "countryName": "Kenya",
+      "description": null,
+      "isO3Code": "KEN",
+      "discontinuedOn": null,
+      "gencCode": "KEN"
+    },
+    {
+      "countryCode": "KG",
+      "regionCode": "R35",
+      "countryParentCode": "KG",
+      "countryName": "Kyrgyzstan",
+      "description": null,
+      "isO3Code": "KGZ",
+      "discontinuedOn": null,
+      "gencCode": "KGZ"
+    },
+    {
+      "countryCode": "KN",
+      "regionCode": "R40",
+      "countryParentCode": "KN",
+      "countryName": "Korea, North",
+      "description": null,
+      "isO3Code": "PRK",
+      "discontinuedOn": null,
+      "gencCode": "PRK"
+    },
+    {
+      "countryCode": "KS",
+      "regionCode": "R40",
+      "countryParentCode": "KS",
+      "countryName": "Korea, South",
+      "description": null,
+      "isO3Code": "KOR",
+      "discontinuedOn": null,
+      "gencCode": "KOR"
+    },
+    {
+      "countryCode": "KU",
+      "regionCode": "R45",
+      "countryParentCode": "KU",
+      "countryName": "Kuwait",
+      "description": null,
+      "isO3Code": "KWT",
+      "discontinuedOn": null,
+      "gencCode": "KWT"
+    },
+    {
+      "countryCode": "KV",
+      "regionCode": "R30",
+      "countryParentCode": "KV",
+      "countryName": "Kosovo",
+      "description": null,
+      "isO3Code": "KOS",
+      "discontinuedOn": null,
+      "gencCode": "XKS"
+    },
+    {
+      "countryCode": "KZ",
+      "regionCode": "R35",
+      "countryParentCode": "KZ",
+      "countryName": "Kazakhstan",
+      "description": null,
+      "isO3Code": "KAZ",
+      "discontinuedOn": null,
+      "gencCode": "KAZ"
+    },
+    {
+      "countryCode": "LA",
+      "regionCode": "R65",
+      "countryParentCode": "LA",
+      "countryName": "Laos",
+      "description": null,
+      "isO3Code": "LAO",
+      "discontinuedOn": null,
+      "gencCode": "LAO"
+    },
+    {
+      "countryCode": "LE",
+      "regionCode": "R45",
+      "countryParentCode": "LE",
+      "countryName": "Lebanon",
+      "description": null,
+      "isO3Code": "LBN",
+      "discontinuedOn": null,
+      "gencCode": "LBN"
+    },
+    {
+      "countryCode": "LG",
+      "regionCode": "R25",
+      "countryParentCode": "LG",
+      "countryName": "Latvia",
+      "description": null,
+      "isO3Code": "LVA",
+      "discontinuedOn": null,
+      "gencCode": "LVA"
+    },
+    {
+      "countryCode": "LH",
+      "regionCode": "R25",
+      "countryParentCode": "LH",
+      "countryName": "Lithuania",
+      "description": null,
+      "isO3Code": "LTU",
+      "discontinuedOn": null,
+      "gencCode": "LTU"
+    },
+    {
+      "countryCode": "LI",
+      "regionCode": "R55",
+      "countryParentCode": "LI",
+      "countryName": "Liberia",
+      "description": null,
+      "isO3Code": "LBR",
+      "discontinuedOn": null,
+      "gencCode": "LBR"
+    },
+    {
+      "countryCode": "LO",
+      "regionCode": "R25",
+      "countryParentCode": "LO",
+      "countryName": "Slovakia",
+      "description": null,
+      "isO3Code": "SVK",
+      "discontinuedOn": null,
+      "gencCode": "SVK"
+    },
+    {
+      "countryCode": "LT",
+      "regionCode": "R55",
+      "countryParentCode": "LT",
+      "countryName": "Lesotho",
+      "description": null,
+      "isO3Code": "LSO",
+      "discontinuedOn": null,
+      "gencCode": "LSO"
+    },
+    {
+      "countryCode": "LY",
+      "regionCode": "R50",
+      "countryParentCode": "LY",
+      "countryName": "Libya",
+      "description": null,
+      "isO3Code": "LBY",
+      "discontinuedOn": null,
+      "gencCode": "LBY"
+    },
+    {
+      "countryCode": "MA",
+      "regionCode": "R55",
+      "countryParentCode": "MA",
+      "countryName": "Madagascar",
+      "description": null,
+      "isO3Code": "MDG",
+      "discontinuedOn": null,
+      "gencCode": "MDG"
+    },
+    {
+      "countryCode": "MC",
+      "regionCode": "R40",
+      "countryParentCode": "MC",
+      "countryName": "Macau",
+      "description": null,
+      "isO3Code": "MAC",
+      "discontinuedOn": null,
+      "gencCode": "MAC"
+    },
+    {
+      "countryCode": "MD",
+      "regionCode": "R35",
+      "countryParentCode": "MD",
+      "countryName": "Moldova",
+      "description": null,
+      "isO3Code": "MDA",
+      "discontinuedOn": null,
+      "gencCode": "MDA"
+    },
+    {
+      "countryCode": "MF",
+      "regionCode": "R55",
+      "countryParentCode": "MF",
+      "countryName": "Mayotte",
+      "description": null,
+      "isO3Code": "MYT",
+      "discontinuedOn": null,
+      "gencCode": "MYT"
+    },
+    {
+      "countryCode": "MG",
+      "regionCode": "R40",
+      "countryParentCode": "MG",
+      "countryName": "Mongolia",
+      "description": null,
+      "isO3Code": "MNG",
+      "discontinuedOn": null,
+      "gencCode": "MNG"
+    },
+    {
+      "countryCode": "MI",
+      "regionCode": "R55",
+      "countryParentCode": "MI",
+      "countryName": "Malawi",
+      "description": null,
+      "isO3Code": "MWI",
+      "discontinuedOn": null,
+      "gencCode": "MWI"
+    },
+    {
+      "countryCode": "MJ",
+      "regionCode": "R30",
+      "countryParentCode": "MJ",
+      "countryName": "Montenegro",
+      "description": null,
+      "isO3Code": "MNE",
+      "discontinuedOn": null,
+      "gencCode": "MNE"
+    },
+    {
+      "countryCode": "MK",
+      "regionCode": "R30",
+      "countryParentCode": "MK",
+      "countryName": "North Macedonia",
+      "description": null,
+      "isO3Code": "MKD",
+      "discontinuedOn": null,
+      "gencCode": "MKD"
+    },
+    {
+      "countryCode": "ML",
+      "regionCode": "R55",
+      "countryParentCode": "ML",
+      "countryName": "Mali",
+      "description": null,
+      "isO3Code": "MLI",
+      "discontinuedOn": null,
+      "gencCode": "MLI"
+    },
+    {
+      "countryCode": "MO",
+      "regionCode": "R50",
+      "countryParentCode": "MO",
+      "countryName": "Morocco",
+      "description": null,
+      "isO3Code": "MAR",
+      "discontinuedOn": null,
+      "gencCode": "MAR"
+    },
+    {
+      "countryCode": "MP",
+      "regionCode": "R55",
+      "countryParentCode": "MP",
+      "countryName": "Mauritius",
+      "description": null,
+      "isO3Code": "MUS",
+      "discontinuedOn": null,
+      "gencCode": "MUS"
+    },
+    {
+      "countryCode": "MQ",
+      "regionCode": "R70",
+      "countryParentCode": "MQ",
+      "countryName": "Midway Islands",
+      "description": null,
+      "isO3Code": "   ",
+      "discontinuedOn": null,
+      "gencCode": "XMW"
+    },
+    {
+      "countryCode": "MR",
+      "regionCode": "R55",
+      "countryParentCode": "MR",
+      "countryName": "Mauritania",
+      "description": null,
+      "isO3Code": "MRT",
+      "discontinuedOn": null,
+      "gencCode": "MRT"
+    },
+    {
+      "countryCode": "MT",
+      "regionCode": "R25",
+      "countryParentCode": "MT",
+      "countryName": "Malta",
+      "description": null,
+      "isO3Code": "MLT",
+      "discontinuedOn": null,
+      "gencCode": "MLT"
+    },
+    {
+      "countryCode": "MU",
+      "regionCode": "R45",
+      "countryParentCode": "MU",
+      "countryName": "Oman",
+      "description": null,
+      "isO3Code": "OMN",
+      "discontinuedOn": null,
+      "gencCode": "OMN"
+    },
+    {
+      "countryCode": "MX",
+      "regionCode": "R05",
+      "countryParentCode": "MX",
+      "countryName": "Mexico",
+      "description": null,
+      "isO3Code": "MEX",
+      "discontinuedOn": null,
+      "gencCode": "MEX"
+    },
+    {
+      "countryCode": "MY",
+      "regionCode": "R65",
+      "countryParentCode": "MY",
+      "countryName": "Malaysia",
+      "description": null,
+      "isO3Code": "MYS",
+      "discontinuedOn": null,
+      "gencCode": "MYS"
+    },
+    {
+      "countryCode": "MZ",
+      "regionCode": "R55",
+      "countryParentCode": "MZ",
+      "countryName": "Mozambique",
+      "description": null,
+      "isO3Code": "MOZ",
+      "discontinuedOn": null,
+      "gencCode": "MOZ"
+    },
+    {
+      "countryCode": "NG",
+      "regionCode": "R55",
+      "countryParentCode": "NG",
+      "countryName": "Niger",
+      "description": null,
+      "isO3Code": "NER",
+      "discontinuedOn": null,
+      "gencCode": "NER"
+    },
+    {
+      "countryCode": "NI",
+      "regionCode": "R55",
+      "countryParentCode": "NI",
+      "countryName": "Nigeria",
+      "description": null,
+      "isO3Code": "NGA",
+      "discontinuedOn": null,
+      "gencCode": "NGA"
+    },
+    {
+      "countryCode": "NL",
+      "regionCode": "R25",
+      "countryParentCode": "NL",
+      "countryName": "Netherlands",
+      "description": null,
+      "isO3Code": "NLD",
+      "discontinuedOn": null,
+      "gencCode": "NLD"
+    },
+    {
+      "countryCode": "NO",
+      "regionCode": "R30",
+      "countryParentCode": "NO",
+      "countryName": "Norway",
+      "description": null,
+      "isO3Code": "NOR",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "SV",
+      "regionCode": "R30",
+      "countryParentCode": "NO",
+      "countryName": "Svalbard",
+      "description": null,
+      "isO3Code": "SJM",
+      "discontinuedOn": null,
+      "gencCode": "XSV"
+    },
+    {
+      "countryCode": "N3",
+      "regionCode": "R30",
+      "countryParentCode": "NO",
+      "countryName": "Norway",
+      "description": null,
+      "isO3Code": "NOR",
+      "discontinuedOn": null,
+      "gencCode": "NOR"
+    },
+    {
+      "countryCode": "NP",
+      "regionCode": "R60",
+      "countryParentCode": "NP",
+      "countryName": "Nepal",
+      "description": null,
+      "isO3Code": "NPL",
+      "discontinuedOn": null,
+      "gencCode": "NPL"
+    },
+    {
+      "countryCode": "NQ",
+      "regionCode": "R70",
+      "countryParentCode": "NQ",
+      "countryName": "Trust Territory of the Pacific Islands",
+      "description": null,
+      "isO3Code": "X10",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "NS",
+      "regionCode": "R20",
+      "countryParentCode": "NS",
+      "countryName": "Suriname",
+      "description": null,
+      "isO3Code": "SUR",
+      "discontinuedOn": null,
+      "gencCode": "SUR"
+    },
+    {
+      "countryCode": "NT",
+      "regionCode": "R10",
+      "countryParentCode": "NT",
+      "countryName": "Netherlands Antilles",
+      "description": null,
+      "isO3Code": "ANT",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "N2",
+      "regionCode": "R10",
+      "countryParentCode": "NT",
+      "countryName": "Netherlands Antilles (exc. Aruba)",
+      "description": null,
+      "isO3Code": "ANT",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "NN",
+      "regionCode": "R10",
+      "countryParentCode": "NT",
+      "countryName": "Sint Maarten",
+      "description": null,
+      "isO3Code": "SXM",
+      "discontinuedOn": null,
+      "gencCode": "SXM"
+    },
+    {
+      "countryCode": "AA",
+      "regionCode": "R10",
+      "countryParentCode": "NT",
+      "countryName": "Aruba",
+      "description": null,
+      "isO3Code": "ABW",
+      "discontinuedOn": null,
+      "gencCode": "ABW"
+    },
+    {
+      "countryCode": "UC",
+      "regionCode": "R10",
+      "countryParentCode": "NT",
+      "countryName": "Curacao",
+      "description": null,
+      "isO3Code": "CUW",
+      "discontinuedOn": null,
+      "gencCode": "CUW"
+    },
+    {
+      "countryCode": "NU",
+      "regionCode": "R15",
+      "countryParentCode": "NU",
+      "countryName": "Nicaragua",
+      "description": null,
+      "isO3Code": "NIC",
+      "discontinuedOn": null,
+      "gencCode": "NIC"
+    },
+    {
+      "countryCode": "NZ",
+      "regionCode": "R70",
+      "countryParentCode": "NZ",
+      "countryName": "New Zealand",
+      "description": null,
+      "isO3Code": "NZL",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "CW",
+      "regionCode": "R70",
+      "countryParentCode": "NZ",
+      "countryName": "Cook Islands",
+      "description": null,
+      "isO3Code": "COK",
+      "discontinuedOn": null,
+      "gencCode": "COK"
+    },
+    {
+      "countryCode": "NE",
+      "regionCode": "R70",
+      "countryParentCode": "NZ",
+      "countryName": "Niue",
+      "description": null,
+      "isO3Code": "NIU",
+      "discontinuedOn": null,
+      "gencCode": "NIU"
+    },
+    {
+      "countryCode": "TL",
+      "regionCode": "R70",
+      "countryParentCode": "NZ",
+      "countryName": "Tokelau",
+      "description": null,
+      "isO3Code": "TKL",
+      "discontinuedOn": null,
+      "gencCode": "TKL"
+    },
+    {
+      "countryCode": "N1",
+      "regionCode": "R70",
+      "countryParentCode": "NZ",
+      "countryName": "New Zealand",
+      "description": null,
+      "isO3Code": "NZL",
+      "discontinuedOn": null,
+      "gencCode": "NZL"
+    },
+    {
+      "countryCode": "P1",
+      "regionCode": "R70",
+      "countryParentCode": "P1",
+      "countryName": "Pacific Islands (excl. Mariana Islands)",
+      "description": null,
+      "isO3Code": "X11",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "PA",
+      "regionCode": "R20",
+      "countryParentCode": "PA",
+      "countryName": "Paraguay",
+      "description": null,
+      "isO3Code": "PRY",
+      "discontinuedOn": null,
+      "gencCode": "PRY"
+    },
+    {
+      "countryCode": "PE",
+      "regionCode": "R20",
+      "countryParentCode": "PE",
+      "countryName": "Peru",
+      "description": null,
+      "isO3Code": "PER",
+      "discontinuedOn": null,
+      "gencCode": "PER"
+    },
+    {
+      "countryCode": "PK",
+      "regionCode": "R60",
+      "countryParentCode": "PK",
+      "countryName": "Pakistan",
+      "description": null,
+      "isO3Code": "PAK",
+      "discontinuedOn": null,
+      "gencCode": "PAK"
+    },
+    {
+      "countryCode": "PL",
+      "regionCode": "R25",
+      "countryParentCode": "PL",
+      "countryName": "Poland",
+      "description": null,
+      "isO3Code": "POL",
+      "discontinuedOn": null,
+      "gencCode": "POL"
+    },
+    {
+      "countryCode": "PM",
+      "regionCode": "R15",
+      "countryParentCode": "PM",
+      "countryName": "Panama",
+      "description": null,
+      "isO3Code": "PAN",
+      "discontinuedOn": null,
+      "gencCode": "PAN"
+    },
+    {
+      "countryCode": "PO",
+      "regionCode": "R25",
+      "countryParentCode": "PO",
+      "countryName": "Portugal",
+      "description": null,
+      "isO3Code": "PRT",
+      "discontinuedOn": null,
+      "gencCode": "PRT"
+    },
+    {
+      "countryCode": "PP",
+      "regionCode": "R70",
+      "countryParentCode": "PP",
+      "countryName": "Papua New Guinea",
+      "description": null,
+      "isO3Code": "PNG",
+      "discontinuedOn": null,
+      "gencCode": "PNG"
+    },
+    {
+      "countryCode": "PQ",
+      "regionCode": "R15",
+      "countryParentCode": "PQ",
+      "countryName": "Panama Canal Zone",
+      "description": null,
+      "isO3Code": "PCZ",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "PS",
+      "regionCode": "R70",
+      "countryParentCode": "PS",
+      "countryName": "Palau",
+      "description": null,
+      "isO3Code": "PLW",
+      "discontinuedOn": null,
+      "gencCode": "PLW"
+    },
+    {
+      "countryCode": "QA",
+      "regionCode": "R45",
+      "countryParentCode": "QA",
+      "countryName": "Qatar",
+      "description": null,
+      "isO3Code": "QAT",
+      "discontinuedOn": null,
+      "gencCode": "QAT"
+    },
+    {
+      "countryCode": "R1",
+      "regionCode": "R30",
+      "countryParentCode": "R1",
+      "countryName": "Serbia",
+      "description": null,
+      "isO3Code": "SRB",
+      "discontinuedOn": null,
+      "gencCode": "SRB"
+    },
+    {
+      "countryCode": "RB",
+      "regionCode": "R30",
+      "countryParentCode": "RB",
+      "countryName": "Serbia and Kosovo",
+      "description": null,
+      "isO3Code": "SRB",
+      "discontinuedOn": "200812",
+      "gencCode": null
+    },
+    {
+      "countryCode": "RM",
+      "regionCode": "R70",
+      "countryParentCode": "RM",
+      "countryName": "Marshall Islands",
+      "description": null,
+      "isO3Code": "MHL",
+      "discontinuedOn": null,
+      "gencCode": "MHL"
+    },
+    {
+      "countryCode": "RO",
+      "regionCode": "R25",
+      "countryParentCode": "RO",
+      "countryName": "Romania",
+      "description": null,
+      "isO3Code": "ROM",
+      "discontinuedOn": null,
+      "gencCode": "ROU"
+    },
+    {
+      "countryCode": "RP",
+      "regionCode": "R65",
+      "countryParentCode": "RP",
+      "countryName": "Philippines",
+      "description": null,
+      "isO3Code": "PHL",
+      "discontinuedOn": null,
+      "gencCode": "PHL"
+    },
+    {
+      "countryCode": "RQ",
+      "regionCode": "R10",
+      "countryParentCode": "RQ",
+      "countryName": "Puerto Rico",
+      "description": null,
+      "isO3Code": "PRI",
+      "discontinuedOn": null,
+      "gencCode": "PRI"
+    },
+    {
+      "countryCode": "RS",
+      "regionCode": "R35",
+      "countryParentCode": "RS",
+      "countryName": "Russia",
+      "description": null,
+      "isO3Code": "RUS",
+      "discontinuedOn": null,
+      "gencCode": "RUS"
+    },
+    {
+      "countryCode": "RW",
+      "regionCode": "R55",
+      "countryParentCode": "RW",
+      "countryName": "Rwanda",
+      "description": null,
+      "isO3Code": "RWA",
+      "discontinuedOn": null,
+      "gencCode": "RWA"
+    },
+    {
+      "countryCode": "S1",
+      "regionCode": "R99",
+      "countryParentCode": "S1",
+      "countryName": "British Antarctic Territories",
+      "description": null,
+      "isO3Code": "ATB",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "SA",
+      "regionCode": "R45",
+      "countryParentCode": "SA",
+      "countryName": "Saudi Arabia",
+      "description": null,
+      "isO3Code": "SAU",
+      "discontinuedOn": null,
+      "gencCode": "SAU"
+    },
+    {
+      "countryCode": "SB",
+      "regionCode": "R05",
+      "countryParentCode": "SB",
+      "countryName": "Saint Pierre and Miquelon",
+      "description": null,
+      "isO3Code": "SPM",
+      "discontinuedOn": null,
+      "gencCode": "SPM"
+    },
+    {
+      "countryCode": "SE",
+      "regionCode": "R55",
+      "countryParentCode": "SE",
+      "countryName": "Seychelles",
+      "description": null,
+      "isO3Code": "SYC",
+      "discontinuedOn": null,
+      "gencCode": "SYC"
+    },
+    {
+      "countryCode": "SF",
+      "regionCode": "R55",
+      "countryParentCode": "SF",
+      "countryName": "South Africa",
+      "description": null,
+      "isO3Code": "ZAF",
+      "discontinuedOn": null,
+      "gencCode": "ZAF"
+    },
+    {
+      "countryCode": "SG",
+      "regionCode": "R55",
+      "countryParentCode": "SG",
+      "countryName": "Senegal",
+      "description": null,
+      "isO3Code": "SEN",
+      "discontinuedOn": null,
+      "gencCode": "SEN"
+    },
+    {
+      "countryCode": "SH",
+      "regionCode": "R55",
+      "countryParentCode": "SH",
+      "countryName": "Saint Helena",
+      "description": null,
+      "isO3Code": "SHN",
+      "discontinuedOn": null,
+      "gencCode": "SHN"
+    },
+    {
+      "countryCode": "SI",
+      "regionCode": "R25",
+      "countryParentCode": "SI",
+      "countryName": "Slovenia",
+      "description": null,
+      "isO3Code": "SVN",
+      "discontinuedOn": null,
+      "gencCode": "SVN"
+    },
+    {
+      "countryCode": "SL",
+      "regionCode": "R55",
+      "countryParentCode": "SL",
+      "countryName": "Sierra Leone",
+      "description": null,
+      "isO3Code": "SLE",
+      "discontinuedOn": null,
+      "gencCode": "SLE"
+    },
+    {
+      "countryCode": "SN",
+      "regionCode": "R65",
+      "countryParentCode": "SN",
+      "countryName": "Singapore",
+      "description": null,
+      "isO3Code": "SGP",
+      "discontinuedOn": null,
+      "gencCode": "SGP"
+    },
+    {
+      "countryCode": "SO",
+      "regionCode": "R55",
+      "countryParentCode": "SO",
+      "countryName": "Somalia",
+      "description": null,
+      "isO3Code": "SOM",
+      "discontinuedOn": null,
+      "gencCode": "SOM"
+    },
+    {
+      "countryCode": "SP",
+      "regionCode": "R25",
+      "countryParentCode": "SP",
+      "countryName": "Spain",
+      "description": null,
+      "isO3Code": "ESP",
+      "discontinuedOn": null,
+      "gencCode": "ESP"
+    },
+    {
+      "countryCode": "SU",
+      "regionCode": "R55",
+      "countryParentCode": "SU",
+      "countryName": "Sudan",
+      "description": null,
+      "isO3Code": "SDN",
+      "discontinuedOn": "201109",
+      "gencCode": null
+    },
+    {
+      "countryCode": "OD",
+      "regionCode": "R55",
+      "countryParentCode": "SU",
+      "countryName": "South Sudan",
+      "description": null,
+      "isO3Code": "SSD",
+      "discontinuedOn": null,
+      "gencCode": "SSD"
+    },
+    {
+      "countryCode": "S2",
+      "regionCode": "R55",
+      "countryParentCode": "SU",
+      "countryName": "Sudan",
+      "description": null,
+      "isO3Code": "SDN",
+      "discontinuedOn": null,
+      "gencCode": "SDN"
+    },
+    {
+      "countryCode": "SW",
+      "regionCode": "R25",
+      "countryParentCode": "SW",
+      "countryName": "Sweden",
+      "description": null,
+      "isO3Code": "SWE",
+      "discontinuedOn": null,
+      "gencCode": "SWE"
+    },
+    {
+      "countryCode": "SX",
+      "regionCode": "R99",
+      "countryParentCode": "SX",
+      "countryName": "South Georgia and Sandwich Islands",
+      "description": null,
+      "isO3Code": "SGS",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "SY",
+      "regionCode": "R45",
+      "countryParentCode": "SY",
+      "countryName": "Syria",
+      "description": null,
+      "isO3Code": "SYR",
+      "discontinuedOn": null,
+      "gencCode": "SYR"
+    },
+    {
+      "countryCode": "SZ",
+      "regionCode": "R30",
+      "countryParentCode": "SZ",
+      "countryName": "Switzerland",
+      "description": null,
+      "isO3Code": "CHE",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "SR",
+      "regionCode": "R30",
+      "countryParentCode": "SZ",
+      "countryName": "Switzerland",
+      "description": null,
+      "isO3Code": "CHE",
+      "discontinuedOn": null,
+      "gencCode": "CHE"
+    },
+    {
+      "countryCode": "LS",
+      "regionCode": "R30",
+      "countryParentCode": "SZ",
+      "countryName": "Liechtenstein",
+      "description": null,
+      "isO3Code": "LIE",
+      "discontinuedOn": null,
+      "gencCode": "LIE"
+    },
+    {
+      "countryCode": "TD",
+      "regionCode": "R10",
+      "countryParentCode": "TD",
+      "countryName": "Trinidad and Tobago",
+      "description": null,
+      "isO3Code": "TTO",
+      "discontinuedOn": null,
+      "gencCode": "TTO"
+    },
+    {
+      "countryCode": "TH",
+      "regionCode": "R65",
+      "countryParentCode": "TH",
+      "countryName": "Thailand",
+      "description": null,
+      "isO3Code": "THA",
+      "discontinuedOn": null,
+      "gencCode": "THA"
+    },
+    {
+      "countryCode": "TI",
+      "regionCode": "R35",
+      "countryParentCode": "TI",
+      "countryName": "Tajikistan",
+      "description": null,
+      "isO3Code": "TJK",
+      "discontinuedOn": null,
+      "gencCode": "TJK"
+    },
+    {
+      "countryCode": "TK",
+      "regionCode": "R10",
+      "countryParentCode": "TK",
+      "countryName": "Turks and Caicos Islands",
+      "description": null,
+      "isO3Code": "TCA",
+      "discontinuedOn": null,
+      "gencCode": "TCA"
+    },
+    {
+      "countryCode": "TO",
+      "regionCode": "R55",
+      "countryParentCode": "TO",
+      "countryName": "Togo",
+      "description": null,
+      "isO3Code": "TGO",
+      "discontinuedOn": null,
+      "gencCode": "TGO"
+    },
+    {
+      "countryCode": "TS",
+      "regionCode": "R50",
+      "countryParentCode": "TS",
+      "countryName": "Tunisia",
+      "description": null,
+      "isO3Code": "TUN",
+      "discontinuedOn": null,
+      "gencCode": "TUN"
+    },
+    {
+      "countryCode": "TT",
+      "regionCode": "R65",
+      "countryParentCode": "TT",
+      "countryName": "Timor-Leste",
+      "description": null,
+      "isO3Code": "TLS",
+      "discontinuedOn": null,
+      "gencCode": "TLS"
+    },
+    {
+      "countryCode": "TU",
+      "regionCode": "R45",
+      "countryParentCode": "TU",
+      "countryName": "Turkey",
+      "description": null,
+      "isO3Code": "TUR",
+      "discontinuedOn": null,
+      "gencCode": "TUR"
+    },
+    {
+      "countryCode": "TW",
+      "regionCode": "R40",
+      "countryParentCode": "TW",
+      "countryName": "Taiwan",
+      "description": null,
+      "isO3Code": "TWN",
+      "discontinuedOn": null,
+      "gencCode": "TWN"
+    },
+    {
+      "countryCode": "TX",
+      "regionCode": "R35",
+      "countryParentCode": "TX",
+      "countryName": "Turkmenistan",
+      "description": null,
+      "isO3Code": "TKM",
+      "discontinuedOn": null,
+      "gencCode": "TKM"
+    },
+    {
+      "countryCode": "TZ",
+      "regionCode": "R55",
+      "countryParentCode": "TZ",
+      "countryName": "Tanzania",
+      "description": null,
+      "isO3Code": "TZA",
+      "discontinuedOn": null,
+      "gencCode": "TZA"
+    },
+    {
+      "countryCode": "U0",
+      "regionCode": "R70",
+      "countryParentCode": "U0",
+      "countryName": "United States Outlying Islands",
+      "description": null,
+      "isO3Code": "UMI",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "UG",
+      "regionCode": "R55",
+      "countryParentCode": "UG",
+      "countryName": "Uganda",
+      "description": null,
+      "isO3Code": "UGA",
+      "discontinuedOn": null,
+      "gencCode": "UGA"
+    },
+    {
+      "countryCode": "UK",
+      "regionCode": "R30",
+      "countryParentCode": "UK",
+      "countryName": "United Kingdom",
+      "description": null,
+      "isO3Code": "GBR",
+      "discontinuedOn": null,
+      "gencCode": "GBR"
+    },
+    {
+      "countryCode": "UP",
+      "regionCode": "R35",
+      "countryParentCode": "UP",
+      "countryName": "Ukraine",
+      "description": null,
+      "isO3Code": "UKR",
+      "discontinuedOn": null,
+      "gencCode": "UKR"
+    },
+    {
+      "countryCode": "UR",
+      "regionCode": "R35",
+      "countryParentCode": "UR",
+      "countryName": "Union of Soviet Socialist Republics",
+      "description": null,
+      "isO3Code": "SUN",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "US",
+      "regionCode": "R05",
+      "countryParentCode": "US",
+      "countryName": "United States",
+      "description": null,
+      "isO3Code": "USA",
+      "discontinuedOn": null,
+      "gencCode": "USA"
+    },
+    {
+      "countryCode": "UV",
+      "regionCode": "R55",
+      "countryParentCode": "UV",
+      "countryName": "Burkina Faso",
+      "description": null,
+      "isO3Code": "BFA",
+      "discontinuedOn": null,
+      "gencCode": "BFA"
+    },
+    {
+      "countryCode": "UY",
+      "regionCode": "R20",
+      "countryParentCode": "UY",
+      "countryName": "Uruguay",
+      "description": null,
+      "isO3Code": "URY",
+      "discontinuedOn": null,
+      "gencCode": "URY"
+    },
+    {
+      "countryCode": "UZ",
+      "regionCode": "R35",
+      "countryParentCode": "UZ",
+      "countryName": "Uzbekistan, Republic of",
+      "description": null,
+      "isO3Code": "UZB",
+      "discontinuedOn": null,
+      "gencCode": "UZB"
+    },
+    {
+      "countryCode": "V1",
+      "regionCode": "R65",
+      "countryParentCode": "V1",
+      "countryName": "Vietnam, Peoples Republic of",
+      "description": null,
+      "isO3Code": "VNM",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V2",
+      "regionCode": "R65",
+      "countryParentCode": "V2",
+      "countryName": "Vietnam, Republic of (South)",
+      "description": null,
+      "isO3Code": "VDR",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V4",
+      "regionCode": "R55",
+      "countryParentCode": "V4",
+      "countryName": "Burundi-Rwanda",
+      "description": null,
+      "isO3Code": "BDI",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V5",
+      "regionCode": "R55",
+      "countryParentCode": "V5",
+      "countryName": "Seychelles and Dependents",
+      "description": null,
+      "isO3Code": "X17",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V6",
+      "regionCode": "R55",
+      "countryParentCode": "V6",
+      "countryName": "Mauritius and Dependents",
+      "description": null,
+      "isO3Code": "MUS",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V7",
+      "regionCode": "R55",
+      "countryParentCode": "V7",
+      "countryName": "South Africa, NEC",
+      "description": null,
+      "isO3Code": "X19",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "V8",
+      "regionCode": "R99",
+      "countryParentCode": "V8",
+      "countryName": "Unidentified Countries",
+      "description": null,
+      "isO3Code": "X20",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "VE",
+      "regionCode": "R20",
+      "countryParentCode": "VE",
+      "countryName": "Venezuela",
+      "description": null,
+      "isO3Code": "VEN",
+      "discontinuedOn": null,
+      "gencCode": "VEN"
+    },
+    {
+      "countryCode": "VM",
+      "regionCode": "R65",
+      "countryParentCode": "VM",
+      "countryName": "Vietnam",
+      "description": null,
+      "isO3Code": "VNM",
+      "discontinuedOn": null,
+      "gencCode": "VNM"
+    },
+    {
+      "countryCode": "VO",
+      "regionCode": "R10",
+      "countryParentCode": "VO",
+      "countryName": "Virgin Islands, U.S.",
+      "description": null,
+      "isO3Code": "VIR",
+      "discontinuedOn": null,
+      "gencCode": "VIR"
+    },
+    {
+      "countryCode": "W2",
+      "regionCode": "R45",
+      "countryParentCode": "W2",
+      "countryName": "Arabian Peninsula States, NEC",
+      "description": null,
+      "isO3Code": "X05",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "W5",
+      "regionCode": "R65",
+      "countryParentCode": "W5",
+      "countryName": "South Southeast Asia, NEC",
+      "description": null,
+      "isO3Code": "X06",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "W6",
+      "regionCode": "R70",
+      "countryParentCode": "W6",
+      "countryName": "New Zealand--Western Samoa",
+      "description": null,
+      "isO3Code": "NZL",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "W7",
+      "regionCode": "R70",
+      "countryParentCode": "W7",
+      "countryName": "British West Pacific Islands",
+      "description": null,
+      "isO3Code": "IOT",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "WA",
+      "regionCode": "R55",
+      "countryParentCode": "WA",
+      "countryName": "Namibia",
+      "description": null,
+      "isO3Code": "NAM",
+      "discontinuedOn": null,
+      "gencCode": "NAM"
+    },
+    {
+      "countryCode": "WI",
+      "regionCode": "R55",
+      "countryParentCode": "WI",
+      "countryName": "Western Sahara",
+      "description": null,
+      "isO3Code": "ESH",
+      "discontinuedOn": null,
+      "gencCode": "ESH"
+    },
+    {
+      "countryCode": "WQ",
+      "regionCode": "R70",
+      "countryParentCode": "WQ",
+      "countryName": "Wake Island",
+      "description": null,
+      "isO3Code": "   ",
+      "discontinuedOn": null,
+      "gencCode": "XWK"
+    },
+    {
+      "countryCode": "WS",
+      "regionCode": "R70",
+      "countryParentCode": "WS",
+      "countryName": "Samoa",
+      "description": null,
+      "isO3Code": "WSM",
+      "discontinuedOn": null,
+      "gencCode": "WSM"
+    },
+    {
+      "countryCode": "WZ",
+      "regionCode": "R55",
+      "countryParentCode": "WZ",
+      "countryName": "Eswatini",
+      "description": null,
+      "isO3Code": "SWZ",
+      "discontinuedOn": null,
+      "gencCode": "SWZ"
+    },
+    {
+      "countryCode": "X4",
+      "regionCode": "R55",
+      "countryParentCode": "X4",
+      "countryName": "Africa, not elsewhere specified",
+      "description": null,
+      "isO3Code": "X01",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "PU",
+      "regionCode": "R55",
+      "countryParentCode": "X4",
+      "countryName": "Guinea-Bissau",
+      "description": null,
+      "isO3Code": "GNB",
+      "discontinuedOn": null,
+      "gencCode": "GNB"
+    },
+    {
+      "countryCode": "TP",
+      "regionCode": "R55",
+      "countryParentCode": "X4",
+      "countryName": "Sao Tome and Principe",
+      "description": null,
+      "isO3Code": "STP",
+      "discontinuedOn": null,
+      "gencCode": "STP"
+    },
+    {
+      "countryCode": "CV",
+      "regionCode": "R55",
+      "countryParentCode": "X4",
+      "countryName": "Cabo Verde",
+      "description": null,
+      "isO3Code": "CPV",
+      "discontinuedOn": null,
+      "gencCode": "CPV"
+    },
+    {
+      "countryCode": "FS",
+      "regionCode": "R55",
+      "countryParentCode": "X6",
+      "countryName": "French South and Antarctic Lands",
+      "description": null,
+      "isO3Code": "ATF",
+      "discontinuedOn": null,
+      "gencCode": "ATF"
+    },
+    {
+      "countryCode": "RE",
+      "regionCode": "R55",
+      "countryParentCode": "X6",
+      "countryName": "Reunion",
+      "description": null,
+      "isO3Code": "REU",
+      "discontinuedOn": null,
+      "gencCode": "REU"
+    },
+    {
+      "countryCode": "X6",
+      "regionCode": "R55",
+      "countryParentCode": "X6",
+      "countryName": "French Ind. Ocean Territory",
+      "description": null,
+      "isO3Code": "X18",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "X8",
+      "regionCode": "R60",
+      "countryParentCode": "X8",
+      "countryName": "Southern Asia NEC",
+      "description": null,
+      "isO3Code": "X07",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "MV",
+      "regionCode": "R60",
+      "countryParentCode": "X8",
+      "countryName": "Maldives",
+      "description": null,
+      "isO3Code": "MDV",
+      "discontinuedOn": null,
+      "gencCode": "MDV"
+    },
+    {
+      "countryCode": "BT",
+      "regionCode": "R60",
+      "countryParentCode": "X8",
+      "countryName": "Bhutan",
+      "description": null,
+      "isO3Code": "BTN",
+      "discontinuedOn": null,
+      "gencCode": "BTN"
+    },
+    {
+      "countryCode": "Z8",
+      "regionCode": "R60",
+      "countryParentCode": "X8",
+      "countryName": "Portuguese Timor",
+      "description": null,
+      "isO3Code": "TLS",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "X9",
+      "regionCode": "R10",
+      "countryParentCode": "X9",
+      "countryName": "Jamaica < 1976",
+      "description": null,
+      "isO3Code": "JAM",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Y1",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Leeward-Windward Islands",
+      "description": null,
+      "isO3Code": "X03",
+      "discontinuedOn": "198801",
+      "gencCode": null
+    },
+    {
+      "countryCode": "A1",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "St. Kitts and Nevis",
+      "description": null,
+      "isO3Code": "KNA",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "DO",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Dominica",
+      "description": null,
+      "isO3Code": "DMA",
+      "discontinuedOn": null,
+      "gencCode": "DMA"
+    },
+    {
+      "countryCode": "GJ",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Grenada",
+      "description": null,
+      "isO3Code": "GRD",
+      "discontinuedOn": null,
+      "gencCode": "GRD"
+    },
+    {
+      "countryCode": "AC",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Antigua and Barbuda",
+      "description": null,
+      "isO3Code": "ATG",
+      "discontinuedOn": null,
+      "gencCode": "ATG"
+    },
+    {
+      "countryCode": "AV",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Anguilla",
+      "description": null,
+      "isO3Code": "AIA",
+      "discontinuedOn": null,
+      "gencCode": "AIA"
+    },
+    {
+      "countryCode": "MH",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Montserrat",
+      "description": null,
+      "isO3Code": "MSR",
+      "discontinuedOn": null,
+      "gencCode": "MSR"
+    },
+    {
+      "countryCode": "ST",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Saint Lucia",
+      "description": null,
+      "isO3Code": "LCA",
+      "discontinuedOn": null,
+      "gencCode": "LCA"
+    },
+    {
+      "countryCode": "VC",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "Saint Vincent and the Grenadines",
+      "description": null,
+      "isO3Code": "VCT",
+      "discontinuedOn": null,
+      "gencCode": "VCT"
+    },
+    {
+      "countryCode": "VI",
+      "regionCode": "R10",
+      "countryParentCode": "Y1",
+      "countryName": "British Virgin Islands",
+      "description": null,
+      "isO3Code": "VGB",
+      "discontinuedOn": null,
+      "gencCode": "VGB"
+    },
+    {
+      "countryCode": "MB",
+      "regionCode": "R10",
+      "countryParentCode": "Y2",
+      "countryName": "Martinique",
+      "description": null,
+      "isO3Code": "MTQ",
+      "discontinuedOn": null,
+      "gencCode": "MTQ"
+    },
+    {
+      "countryCode": "GP",
+      "regionCode": "R10",
+      "countryParentCode": "Y2",
+      "countryName": "Guadeloupe",
+      "description": null,
+      "isO3Code": "GLP",
+      "discontinuedOn": null,
+      "gencCode": "GLP"
+    },
+    {
+      "countryCode": "Y2",
+      "regionCode": "R10",
+      "countryParentCode": "Y2",
+      "countryName": "French West Indies",
+      "description": null,
+      "isO3Code": "PYF",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "Y3",
+      "regionCode": "R30",
+      "countryParentCode": "Y3",
+      "countryName": "Azores",
+      "description": null,
+      "isO3Code": "X04",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Y7",
+      "regionCode": "R55",
+      "countryParentCode": "Y7",
+      "countryName": "Canary Islands",
+      "description": null,
+      "isO3Code": "X13",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Y9",
+      "regionCode": "R55",
+      "countryParentCode": "Y9",
+      "countryName": "Madeira Islands",
+      "description": null,
+      "isO3Code": "X16",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "YM",
+      "regionCode": "R45",
+      "countryParentCode": "YM",
+      "countryName": "Yemen",
+      "description": null,
+      "isO3Code": "YEM",
+      "discontinuedOn": null,
+      "gencCode": "YEM"
+    },
+    {
+      "countryCode": "YE",
+      "regionCode": "R45",
+      "countryParentCode": "YM",
+      "countryName": "Yemen (Sanaa)",
+      "description": null,
+      "isO3Code": "YEM",
+      "discontinuedOn": "199009",
+      "gencCode": null
+    },
+    {
+      "countryCode": "YS",
+      "regionCode": "R45",
+      "countryParentCode": "YM",
+      "countryName": "Yemen (Aden)",
+      "description": null,
+      "isO3Code": "YMD",
+      "discontinuedOn": "199091",
+      "gencCode": null
+    },
+    {
+      "countryCode": "YO",
+      "regionCode": "R30",
+      "countryParentCode": "YO",
+      "countryName": "Yugoslavia",
+      "description": null,
+      "isO3Code": "YUG",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "YU",
+      "regionCode": "R30",
+      "countryParentCode": "YU",
+      "countryName": "Serbia, Montenegro, and Kosovo",
+      "description": null,
+      "isO3Code": "YUG",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Z1",
+      "regionCode": "R70",
+      "countryParentCode": "Z1",
+      "countryName": "French Pacific Islands",
+      "description": null,
+      "isO3Code": "PYF",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "NC",
+      "regionCode": "R70",
+      "countryParentCode": "Z1",
+      "countryName": "New Caledonia",
+      "description": null,
+      "isO3Code": "NCL",
+      "discontinuedOn": null,
+      "gencCode": "NCL"
+    },
+    {
+      "countryCode": "FP",
+      "regionCode": "R70",
+      "countryParentCode": "Z1",
+      "countryName": "French Polynesia",
+      "description": null,
+      "isO3Code": "PYF",
+      "discontinuedOn": null,
+      "gencCode": "PYF"
+    },
+    {
+      "countryCode": "WF",
+      "regionCode": "R70",
+      "countryParentCode": "Z1",
+      "countryName": "Wallis and Futuna",
+      "description": null,
+      "isO3Code": "WLF",
+      "discontinuedOn": null,
+      "gencCode": "WLF"
+    },
+    {
+      "countryCode": "Z2",
+      "regionCode": "R55",
+      "countryParentCode": "Z2",
+      "countryName": "Spanish Africa, NEC",
+      "description": null,
+      "isO3Code": "X14",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Z5",
+      "regionCode": "R40",
+      "countryParentCode": "Z5",
+      "countryName": "Ryukyu Is - Nansei Is",
+      "description": null,
+      "isO3Code": "X08",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "Z6",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "British Pacific Islands",
+      "description": null,
+      "isO3Code": "PCI",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "GN",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Gilbert and Ellice Islands",
+      "description": null,
+      "isO3Code": "X09",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "BP",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Solomon Islands",
+      "description": null,
+      "isO3Code": "SLB",
+      "discontinuedOn": null,
+      "gencCode": "SLB"
+    },
+    {
+      "countryCode": "KR",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Kiribati",
+      "description": null,
+      "isO3Code": "KIR",
+      "discontinuedOn": null,
+      "gencCode": "KIR"
+    },
+    {
+      "countryCode": "TV",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Tuvalu",
+      "description": null,
+      "isO3Code": "TUV",
+      "discontinuedOn": null,
+      "gencCode": "TUV"
+    },
+    {
+      "countryCode": "PC",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Pitcairn Islands",
+      "description": null,
+      "isO3Code": "PCN",
+      "discontinuedOn": null,
+      "gencCode": "PCN"
+    },
+    {
+      "countryCode": "NH",
+      "regionCode": "R70",
+      "countryParentCode": "Z6",
+      "countryName": "Vanuatu/New Hebrides",
+      "description": null,
+      "isO3Code": "VUT",
+      "discontinuedOn": null,
+      "gencCode": "VUT"
+    },
+    {
+      "countryCode": "NR",
+      "regionCode": "R70",
+      "countryParentCode": "Z7",
+      "countryName": "Nauru",
+      "description": null,
+      "isO3Code": "NRU",
+      "discontinuedOn": null,
+      "gencCode": "NRU"
+    },
+    {
+      "countryCode": "TN",
+      "regionCode": "R70",
+      "countryParentCode": "Z7",
+      "countryName": "Tonga",
+      "description": null,
+      "isO3Code": "TON",
+      "discontinuedOn": null,
+      "gencCode": "TON"
+    },
+    {
+      "countryCode": "FJ",
+      "regionCode": "R70",
+      "countryParentCode": "Z7",
+      "countryName": "Fiji",
+      "description": null,
+      "isO3Code": "FJI",
+      "discontinuedOn": null,
+      "gencCode": "FJI"
+    },
+    {
+      "countryCode": "Z7",
+      "regionCode": "R70",
+      "countryParentCode": "Z7",
+      "countryName": "Other Pacific Islands, NEC",
+      "description": null,
+      "isO3Code": "X12",
+      "discontinuedOn": "198712",
+      "gencCode": null
+    },
+    {
+      "countryCode": "ZA",
+      "regionCode": "R55",
+      "countryParentCode": "ZA",
+      "countryName": "Zambia",
+      "description": null,
+      "isO3Code": "ZMB",
+      "discontinuedOn": null,
+      "gencCode": "ZMB"
+    },
+    {
+      "countryCode": "ZB",
+      "regionCode": "R55",
+      "countryParentCode": "ZB",
+      "countryName": "Spanish Africa & Eq. Guinea",
+      "description": null,
+      "isO3Code": "X15",
+      "discontinuedOn": null,
+      "gencCode": null
+    },
+    {
+      "countryCode": "ZI",
+      "regionCode": "R55",
+      "countryParentCode": "ZI",
+      "countryName": "Zimbabwe",
+      "description": null,
+      "isO3Code": "ZWE",
+      "discontinuedOn": null,
+      "gencCode": "ZWE"
+    }
+  ]
+}

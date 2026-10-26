@@ -217,8 +217,8 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
     Runs ``validate_partner_code``, ``validate_year`` and ``validate_month``, then the
     code's ``discontinuedOn``: 26 codes of the packaged ``countries`` list carry one, a
     year and month as six digits (``SZ``, Switzerland, ``"198712"``), and GATS lists a
-    successor under the same name for most (``SR``, Switzerland). The package reads that
-    month as the code's last: a month at or before it passes, a later one is refused
+    successor under the same name for 11 of them (``SR``, Switzerland). The package reads
+    that month as the code's last: a month at or before it passes, a later one is refused
     before any call, naming the listed codes with the same ``countryName``. Months are
     compared as six-digit text, as upstream writes them; ``YS`` (Yemen (Aden)) reads
     ``"199091"``, so every month of 1990 passes for it and 1991-01 on is refused.

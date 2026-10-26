@@ -598,7 +598,7 @@ async def test_the_district_tools_name_both_filters_when_cut(
         {"partner_code": "CH", "year": 2026, "month": 8},
     )
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == 200
     assert payload["note"] == (
         f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
@@ -700,7 +700,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     arguments: dict[str, object] = {"partner_code": "CH", "year": 2026, "month": 8}
     payload = await mcp_call(server, "usda_gats_get_census_exports", arguments)
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == 200
     assert payload["note"] == (
         f"showing {shown} of 777 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
     )
@@ -736,7 +736,10 @@ async def test_the_imports_tool_names_the_filter_too(replay_fixture: ReplayFixtu
     payload = await mcp_call(
         server, "usda_gats_get_census_imports", {"partner_code": "CH", "year": 2026, "month": 8}
     )
-    assert payload["note"].endswith(f"of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}")
+    assert len(payload["data"]) == 185, "the 64 KB cap cuts these wider rows before 200"
+    assert payload["note"] == (
+        f"showing 185 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+    )
 
 
 @pytest.mark.anyio
@@ -1093,7 +1096,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
 def test_an_imports_reporter_year_is_checked_against_the_imports_list(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Haiti (``HA``) is in the exports list only."""
+    """Haiti (``HA``) is in the exports list only; Chad (``CD``) lists one year of imports."""
     replay_fixture(UN_IMPORT_RELEASES, "all")
     with pytest.raises(NotFoundError) as info:
         tasks.get_un_imports("HA", 2019)
@@ -1102,6 +1105,8 @@ def test_an_imports_reporter_year_is_checked_against_the_imports_list(
         "GATSData_GetUNTradeImportDataReleaseInfo lists no year of imports for reporter HA;"
     )
     assert "publishes no" not in info.value.message
+    with pytest.raises(NotFoundError, match="lists 1 year of imports for reporter CD, 1995;"):
+        tasks.get_un_imports("CD", 2019)
 
 
 def test_a_discontinued_code_is_accepted_on_the_un_side(
@@ -1309,7 +1314,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     arguments: dict[str, object] = {"reporter_code": case[:2], "year": 2019}
     payload = await mcp_call(server, tool, arguments)
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == 200
     assert payload["note"] == (
         f"showing {shown} of {count} rows (cap: 200 rows or 65536 bytes); {UN_DATA_NOTE}"
     )

@@ -844,8 +844,9 @@ def _un_release_of(
     if not releases:
         reason = f"{operation} answered with no release"
     else:
+        years = "year" if len(listed) == 1 else "years"
         held = (
-            f"{operation} lists {len(listed)} years of {flow} for reporter {reporter_code}, "
+            f"{operation} lists {len(listed)} {years} of {flow} for reporter {reporter_code}, "
             f"{_years(listed)}"
             if listed
             else f"{operation} lists no year of {flow} for reporter {reporter_code}"

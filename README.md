@@ -41,12 +41,13 @@ releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-
 unknown code is refused, naming close codes (an ISO or GENC code leads to its partner
 code first: `"CHN"` names `CH` before `CN`) or pointing to `list_countries` when none is
 close. A code GATS discontinued (`discontinuedOn`, 26 of them) is refused by the Census
-tasks for a month after its last, naming the listed codes of the same name: `"SZ"` (Switzerland) ended in
-198712, so 2026-08 is refused and `SR` named, while 1987-06 passes. `month` is 1 to 12
-and `year` four digits; `hs10_code` keeps the products whose code starts with it, a full
-ten-digit code for one product or a prefix such as a chapter, applied after the one data
-request. `get_census_imports` takes the same arguments and adds five consumption and CIF
-fields per record; `get_census_reexports` answers the exports' record for US re-exports.
+tasks for a month after its last, naming the listed codes of the same name: `"SZ"`
+(Switzerland) ended in 198712, so 2026-08 is refused and `SR` named, while 1987-06
+passes. `month` is 1 to 12 and `year` four digits; `hs10_code` keeps the products whose
+code starts with it, a full ten-digit code for one product or a prefix such as a
+chapter, applied after the one data request. `get_census_imports` takes the same
+arguments and adds five consumption and CIF fields per record; `get_census_reexports`
+answers the exports' record for US re-exports.
 
 The customs-district forms answer the same partner-month by US customs district, one
 record per district and HS10 code, and take `customs_district_id` too, checked against
@@ -179,8 +180,8 @@ tools `customs_district_id` too; `usda_gats_list_hs6_commodities` names `search`
 `reporter_code` and `year` (3,796 reporter-years in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
 codes arrive whole. `usda_gats_get_census_release_dates`, which has no filter, returns
-the newest 200 months, more than sixteen years, with a note that says so. `--http` serves streamable
-HTTP instead of stdio.
+the newest 200 months, more than sixteen years, with a note that says so. `--http`
+serves streamable HTTP instead of stdio.
 
 ## Status
 
@@ -201,8 +202,8 @@ HTTP instead of stdio.
 | `GATSData_GetUNTradeImportDataReleaseInfo` (`UNTrade/data/imports/dataReleaseDates`) | `get_un_release_dates("M", reporter_code=None, year=None)`; read by the UN imports task too | `usda_gats_get_un_release_dates` | alpha |
 | `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
 | `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
-| `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks `partner_code` | `usda_gats_list_countries` | alpha |
-| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None)`, packaged as `reference/HS6Commodities.json` | `usda_gats_list_hs6_commodities` | alpha |
+| `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks the Census `partner_code` and the UN Trade `reporter_code` and `partner_code` filter | `usda_gats_list_countries` | alpha |
+| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None)`, packaged as `reference/HS6Commodities.json`, which checks a six-digit `hs6_code` | `usda_gats_list_hs6_commodities` | alpha |
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 

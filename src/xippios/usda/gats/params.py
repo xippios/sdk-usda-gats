@@ -1,14 +1,19 @@
 """Packaged GATS reference lists and the argument checks of the Census tasks (conventions §3).
 
-The countries list, ``GATSData_GetCountries``, ships inside the package under
-``reference/`` so that a partner code is checked without a network call; GATS answers an
-unknown code with an empty list (``errors.UnknownCode``). The other lists GATS publishes
-are not packaged yet. ``scripts/refresh_reference.py`` writes the file through the
-``api/`` wrapper, never by hand; ``reference/README.md`` carries its provenance. The file
-keeps upstream's records verbatim, under upstream's field names.
+Five of the lists GATS publishes, regions, countries, HS6 commodities, units of measure
+and customs districts, ship inside the package under ``reference/`` so that lookups and
+argument checks need no network call; GATS answers an unknown partner code with an empty
+list (``errors.UnknownCode``). ``scripts/refresh_reference.py`` writes the files through
+the ``api/`` wrappers, never by hand, and regenerates ``UnitOfMeasureId`` in
+``enums.py``; ``reference/README.md`` carries their provenance. Each file keeps
+upstream's records verbatim, under upstream's field names. The HS10 list is not
+packaged: ``tasks.list_commodities`` fetches it live.
 
-The other checks need no list: a four-digit year, a month from 1 to 12 and an HS10 code
-or prefix of 1 to 10 digits, all refused before any call.
+The checks built on them: a partner code against ``countries`` (``validate_partner_code``)
+and against its ``discontinuedOn`` month (``validate_partner_month``), and a customs
+district id against ``customsDistricts`` (``validate_customs_district_id``). The other
+checks need no list: a four-digit year, a month from 1 to 12 and an HS10 code or prefix
+of 1 to 10 digits. All of them run before any call.
 
 Refresh policy: ``/refresh-reference-data`` runs inside ``/release-prep``, and whenever
 a validation failure names a code the package lacks.
@@ -23,15 +28,17 @@ from typing import Any
 from xippios.core import InvalidRequestError, UpstreamModel, load_json
 
 from xippios.usda.gats._client import SOURCE
-from xippios.usda.gats.errors import UnknownCode
+from xippios.usda.gats.errors import PARTNER_REASON, UnknownCode
 
 __all__ = [
     "PACKAGED_LISTS",
     "PackagedList",
     "packaged_values",
+    "validate_customs_district_id",
     "validate_hs10_code",
     "validate_month",
     "validate_partner_code",
+    "validate_partner_month",
     "validate_year",
 ]
 
@@ -56,6 +63,7 @@ PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'
 """Two partner codes from the packaged list, for messages that name no close code."""
 
 _HS10 = re.compile(r"[0-9]{1,10}")
+_THREE = re.compile(r"[A-Z0-9]{3}")
 
 
 class PackagedList(UpstreamModel):
@@ -94,14 +102,56 @@ def _codes(name: str, code_field: str, name_field: str) -> tuple[str, dict[str, 
     return packaged.fetched.isoformat(), codes
 
 
-def _closest(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
-    """Up to three known codes close to ``value``, by code first, then by upstream name.
+@functools.cache
+def _countries() -> dict[str, dict[str, Any]]:
+    """The packaged ``countries`` records by ``countryCode``, in upstream order."""
+    packaged = packaged_values("countries")
+    if packaged is None:  # pragma: no cover - the list ships with the package
+        raise KeyError("countries")
+    return {str(record["countryCode"]): record for record in packaged.records}
 
-    sdk-usda-psd's matching: an agent may pass ``"ch"`` for ``"CH"`` or ``"China"`` for
-    ``"CH"``; both lead to the code. Two-character codes are close only when they differ
-    in case, so a code that shares one character with a known one (``"ZZ"``) gets none.
+
+@functools.cache
+def _three_letter_codes() -> dict[str, list[str]]:
+    """``{isO3Code or gencCode: [countryCode, ...]}``: current codes first, then upstream order.
+
+    ``isO3Code`` repeats (``"CHE"`` is ``SZ``, discontinued in 198712, and ``SR``, both
+    Switzerland), so a three-letter code may lead to several partner codes; one without a
+    ``discontinuedOn`` comes first.
     """
-    matches = difflib.get_close_matches(value.upper(), list(codes), n=3)
+    by_code: dict[str, list[str]] = {}
+    for code, record in _countries().items():
+        for field in ("isO3Code", "gencCode"):
+            three = record[field]
+            if isinstance(three, str) and _THREE.fullmatch(three):
+                listed = by_code.setdefault(three, [])
+                if code not in listed:
+                    listed.append(code)
+    current = {code for code, record in _countries().items() if not record["discontinuedOn"]}
+    return {
+        three: sorted(codes, key=lambda code: code not in current)
+        for three, codes in by_code.items()
+    }
+
+
+def _closest(
+    value: str, codes: dict[str, str], three_letter: dict[str, list[str]] | None = None
+) -> list[tuple[str, str]]:
+    """Up to three known codes close to ``value``: a three-letter code, then code, then name.
+
+    sdk-usda-psd's matching, with GATS's ISO and GENC codes in front of it: an agent may
+    pass ``"CHN"`` (``isO3Code`` and ``gencCode``) for ``"CH"``, ``"ch"`` for ``"CH"`` or
+    ``"China"`` for ``"CH"``; each leads to the code. An exact three-letter match comes
+    first, so ``"CHN"`` names ``CH`` (China) before ``CN`` (Comoros), which difflib finds
+    close by its letters. Two-character codes are close only when they differ in case, so
+    a code that shares one character with a known one (``"ZZ"``) gets none.
+    """
+    matches = list((three_letter or {}).get(value.upper(), []))
+    matches += [
+        code
+        for code in difflib.get_close_matches(value.upper(), list(codes), n=3)
+        if code not in matches
+    ]
     by_name = {name.lower(): code for code, name in codes.items()}
     matches += [
         by_name[name]
@@ -116,8 +166,9 @@ def validate_partner_code(partner_code: str) -> str:
 
     GATS answers an unknown code with HTTP 200 and ``[]``, the same as a listed partner
     without trade (``unknown_partner.json``, ``no_data_valid_partner.json``), so the
-    check runs before any upstream call. Every listed code passes, the 26 with a
-    ``discontinuedOn`` month included: the months before it may hold their trade.
+    check runs before any upstream call. Every listed code passes here, the 26 with a
+    ``discontinuedOn`` month included; ``validate_partner_month`` then refuses one for a
+    month after it.
 
     Args:
         partner_code: Two characters, as ``GATSData_GetCountries`` lists them, e.g.
@@ -129,18 +180,20 @@ def validate_partner_code(partner_code: str) -> str:
     Raises:
         InvalidRequestError: When the code is not text.
         UnknownCode: When the list lacks the code, naming up to three close codes with
-            their upstream names, or two examples when none is close.
+            their upstream names (an ISO or GENC code such as ``"CHN"`` leads to its
+            partner code first), or two examples and ``list_countries`` when none is
+            close.
     """
     fetched, codes = _codes("countries", "countryCode", "countryName")
     if not isinstance(partner_code, str):
         raise InvalidRequestError(
             f"partner_code must be a two-character GATS country code as text, such as "
-            f"{PARTNER_EXAMPLES}, got {partner_code!r}.",
+            f"{PARTNER_EXAMPLES}, got {partner_code!r}. list_countries lists them.",
             source=SOURCE,
         )
     if partner_code in codes:
         return partner_code
-    closest = _closest(partner_code, codes)
+    closest = _closest(partner_code, codes, _three_letter_codes())
     raise UnknownCode(
         "partner_code",
         partner_code,
@@ -151,8 +204,112 @@ def validate_partner_code(partner_code: str) -> str:
         if closest
         else (
             "GATS's partner codes are its own, two characters, as GATSData_GetCountries "
-            f"lists them, e.g. {PARTNER_EXAMPLES}."
+            f"lists them, e.g. {PARTNER_EXAMPLES}; list_countries lists every one and "
+            "searches them by name, ISO or GENC code."
         ),
+        reason=PARTNER_REASON,
+    )
+
+
+def validate_partner_month(partner_code: str, year: int, month: int) -> str:
+    """Check a partner code, a year and a month, and that the code was current in that month.
+
+    Runs ``validate_partner_code``, ``validate_year`` and ``validate_month``, then the
+    code's ``discontinuedOn``: 26 codes of the packaged ``countries`` list carry one, a
+    year and month as six digits (``SZ``, Switzerland, ``"198712"``), and GATS lists a
+    successor under the same name for most (``SR``, Switzerland). The package reads that
+    month as the code's last: a month at or before it passes, a later one is refused
+    before any call, naming the listed codes with the same ``countryName``. Months are
+    compared as six-digit text, as upstream writes them; ``YS`` (Yemen (Aden)) reads
+    ``"199091"``, so every month of 1990 passes for it and 1991-01 on is refused.
+
+    Args:
+        partner_code: GATS's two-character code, e.g. ``"SZ"`` (Switzerland, discontinued
+            198712), ``"CH"`` (China, current).
+        year: The calendar year, four digits, e.g. ``2026``, ``1987``.
+        month: The calendar month from 1 to 12, e.g. ``8``.
+
+    Returns:
+        The code, unchanged.
+
+    Raises:
+        UnknownCode: When the list lacks the code (``validate_partner_code``).
+        InvalidRequestError: When the year or the month is not valid, or the month is
+            after the code's ``discontinuedOn``, e.g. ``SZ`` for 2026-08.
+    """
+    validate_partner_code(partner_code)
+    validate_year(year)
+    validate_month(month)
+    record = _countries()[partner_code]
+    ended = record["discontinuedOn"]
+    asked = f"{year:04d}{month:02d}"
+    if not ended or asked <= ended:
+        return partner_code
+    name = record["countryName"]
+    fetched, _ = _codes("countries", "countryCode", "countryName")
+    same = [
+        f"{code} (discontinued {other['discontinuedOn']})" if other["discontinuedOn"] else code
+        for code, other in _countries().items()
+        if other["countryName"] == name and code != partner_code
+    ]
+    instead = (
+        f"Listed under the same name: {', '.join(same)}."
+        if same
+        else f"No other listed code carries the name {name!r}; list_countries searches them."
+    )
+    raise InvalidRequestError(
+        f"partner_code {partner_code!r} ({name}) was discontinued in {ended} "
+        f"(discontinuedOn in GATS's countries list, packaged, fetched {fetched}): it holds "
+        f"no trade after that month, so {year:04d}-{month:02d} ({asked}) is refused. "
+        f"{instead}",
+        source=SOURCE,
+    )
+
+
+def _nearest(value: int, codes: dict[str, str]) -> list[tuple[str, str]]:
+    """Up to three listed integer ids nearest to ``value``, nearest first, the lower on a tie."""
+    ids = sorted((abs(int(code) - value), int(code)) for code in codes)
+    return [(str(ident), codes[str(ident)]) for _, ident in ids[:3]]
+
+
+def validate_customs_district_id(customs_district_id: int) -> int:
+    """Check a customs district id against the packaged ``customsDistricts`` list.
+
+    The customs-district operations take no district: a task keeps the records of one
+    after the call, so an id the list lacks would select nothing. The check runs before
+    any upstream call.
+
+    Args:
+        customs_district_id: An integer, as ``GATSData_GetCustomsDistricts`` lists it,
+            e.g. ``10`` (NEW YORK, N.Y.), ``30`` (SEATTLE, WASH.), ``52`` (MIAMI, FLA.),
+            ``0`` (Z UNKNOW CDIST CODES).
+
+    Returns:
+        The id, unchanged.
+
+    Raises:
+        InvalidRequestError: When the id is not an integer (``True`` is not ``1``).
+        UnknownCode: When the list lacks the id, naming the three nearest listed ids with
+            their upstream names.
+    """
+    if isinstance(customs_district_id, bool) or not isinstance(customs_district_id, int):
+        raise InvalidRequestError(
+            "customs_district_id must be an integer id such as 10 (NEW YORK, N.Y.), got "
+            f"{customs_district_id!r}. list_customs_districts lists them.",
+            source=SOURCE,
+        )
+    fetched, codes = _codes("customsDistricts", "customsDistrictId", "customsDistrictName")
+    if str(customs_district_id) in codes:
+        return customs_district_id
+    raise UnknownCode(
+        "customs_district_id",
+        customs_district_id,
+        list_name="customsDistricts",
+        fetched=fetched,
+        closest=_nearest(customs_district_id, codes),
+        reason="The customs-district operations take no district; the task keeps this "
+        "district's records after the call, so an id the packaged list lacks would give an "
+        "empty result, and the package refuses it. list_customs_districts lists the ids.",
     )
 
 

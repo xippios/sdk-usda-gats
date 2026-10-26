@@ -15,9 +15,11 @@ from xippios.usda.gats.models import Country, UnitOfMeasure
 from xippios.usda.gats.params import (
     PACKAGED_LISTS,
     packaged_values,
+    validate_customs_district_id,
     validate_hs10_code,
     validate_month,
     validate_partner_code,
+    validate_partner_month,
     validate_year,
 )
 
@@ -122,7 +124,8 @@ def test_the_rendered_module_is_ascii() -> None:
 @pytest.mark.parametrize("code", ["CH", "MX", "BV", "01", "GE"])
 def test_listed_partner_codes_pass(code: str) -> None:
     """``BV`` (Bouvet Island) is listed without trade; ``GE`` was discontinued in 199009
-    and still passes: the months before it may hold its trade."""
+    and still passes here: the months before it may hold its trade, and
+    ``validate_partner_month`` refuses the months after it."""
     assert validate_partner_code(code) == code
 
 
@@ -145,6 +148,9 @@ def test_the_recorded_unknown_partner_is_refused_without_a_close_code() -> None:
         "'ZZ' is not a partner_code in GATS's countries list (packaged, fetched 2026-10-25)."
     )
     assert 'e.g. "CH" (China), "MX" (Mexico)' in error.message
+    assert "list_countries lists every one and searches them by name, ISO or GENC code" in (
+        error.message
+    )
     assert "Did you mean" not in error.message
     assert "GATS answers an unknown partner code with an empty result" in error.message
     assert "/refresh-reference-data" in error.message
@@ -162,10 +168,168 @@ def test_an_unknown_code_names_the_closest_known_ones(value: str, closest: tuple
     assert f"Did you mean {closest[0]} ({closest[1]})" in info.value.message
 
 
+@pytest.mark.parametrize(
+    ("value", "closest"),
+    [
+        ("CHN", [("CH", "China"), ("CN", "Comoros")]),
+        ("chn", [("CH", "China"), ("CN", "Comoros")]),
+        ("USA", [("US", "United States"), ("SA", "Saudi Arabia"), ("RS", "Russia")]),
+        ("DEU", [("GM", "Germany"), ("GE", "Germany, Federal Republic (Former)")]),
+        ("CHE", [("SR", "Switzerland"), ("SZ", "Switzerland"), ("CH", "China")]),
+    ],
+)
+def test_an_iso_or_genc_code_leads_to_its_partner_code_first(
+    value: str, closest: list[tuple[str, str]]
+) -> None:
+    """An exact ``isO3Code`` or ``gencCode`` match comes before difflib's: ``CHN`` names
+    ``CH`` (China) before ``CN`` (Comoros), which is close by its letters. ``CHE`` is the
+    ISO code of two Switzerland codes; the current one, ``SR``, comes before ``SZ``,
+    discontinued in 198712."""
+    with pytest.raises(UnknownCode) as info:
+        validate_partner_code(value)
+    assert info.value.closest == closest
+    first, name = closest[0]
+    assert f"Did you mean {first} ({name})" in info.value.message
+
+
+def test_three_blanks_are_no_iso_code() -> None:
+    """Three records carry ``isO3Code`` ``"   "``; three spaces lead to none of them."""
+    packaged = packaged_values("countries")
+    assert packaged is not None
+    blank = [r["countryCode"] for r in packaged.records if r["isO3Code"] == "   "]
+    assert blank == ["18", "MQ", "WQ"]
+    with pytest.raises(UnknownCode) as info:
+        validate_partner_code("   ")
+    assert not {code for code, _ in info.value.closest} & set(blank)
+
+
 @pytest.mark.parametrize("value", [1, None, ("CH",)])
 def test_a_partner_code_that_is_not_text_is_refused(value: object) -> None:
     with pytest.raises(InvalidRequestError, match="partner_code must be a two-character") as info:
         validate_partner_code(value)  # type: ignore[arg-type]
+    assert not isinstance(info.value, UnknownCode)
+    assert "list_countries lists them" in info.value.message
+
+
+def test_a_code_discontinued_before_the_month_is_refused() -> None:
+    """``SZ`` (Switzerland) reads ``discontinuedOn`` ``"198712"``: 2026-08 is refused,
+    naming ``SR``, the listed code of the same name."""
+    with pytest.raises(InvalidRequestError) as info:
+        validate_partner_month("SZ", 2026, 8)
+    error = info.value
+    assert not isinstance(error, UnknownCode), "the code is listed"
+    assert status_for(error) == 422
+    assert error.message == (
+        "partner_code 'SZ' (Switzerland) was discontinued in 198712 (discontinuedOn in "
+        "GATS's countries list, packaged, fetched 2026-10-25): it holds no trade after that "
+        "month, so 2026-08 (202608) is refused. Listed under the same name: SR."
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "year", "month"),
+    [("SZ", 1987, 12), ("SZ", 1987, 6), ("SZ", 1967, 1), ("CH", 2026, 8), ("SR", 1980, 1)],
+)
+def test_a_month_at_or_before_the_discontinuation_passes(code: str, year: int, month: int) -> None:
+    """The ``discontinuedOn`` month itself passes; a current code passes for any month."""
+    assert validate_partner_month(code, year, month) == code
+
+
+def test_the_codes_of_the_same_name_carry_their_own_discontinuation() -> None:
+    with pytest.raises(InvalidRequestError) as denmark:
+        validate_partner_month("D1", 1988, 1)
+    assert denmark.value.message.endswith(
+        "Listed under the same name: 9U, DA (discontinued 198712)."
+    )
+    with pytest.raises(InvalidRequestError) as germany:
+        validate_partner_month("GE", 1990, 10)
+    assert "discontinued in 199009" in germany.value.message
+    assert germany.value.message.endswith(
+        "No other listed code carries the name 'Germany, Federal Republic (Former)'; "
+        "list_countries searches them."
+    )
+
+
+def test_discontinuation_months_compare_as_upstream_writes_them() -> None:
+    """``YS`` (Yemen (Aden)) reads ``"199091"``, no month: as six-digit text it sorts after
+    every month of 1990 and before 1991's."""
+    assert validate_partner_month("YS", 1990, 12) == "YS"
+    with pytest.raises(InvalidRequestError, match=r"discontinued in 199091 .* 1991-01 \(199101\)"):
+        validate_partner_month("YS", 1991, 1)
+
+
+def test_validate_partner_month_checks_the_code_the_year_and_the_month_first() -> None:
+    with pytest.raises(UnknownCode):
+        validate_partner_month("ZZ", 2026, 8)
+    with pytest.raises(InvalidRequestError, match="four-digit year"):
+        validate_partner_month("SZ", 26, 8)
+    with pytest.raises(InvalidRequestError, match="month must be a whole number"):
+        validate_partner_month("SZ", 2026, 13)
+
+
+def test_every_discontinued_code_is_refused_after_its_month() -> None:
+    packaged = packaged_values("countries")
+    assert packaged is not None
+    ended = [
+        (r["countryCode"], r["discontinuedOn"]) for r in packaged.records if r["discontinuedOn"]
+    ]
+    assert len(ended) == 26
+    for code, month_code in ended:
+        year, month = int(month_code[:4]), min(int(month_code[4:]), 12)
+        assert validate_partner_month(code, year, month) == code, code
+        with pytest.raises(InvalidRequestError, match=f"discontinued in {month_code}"):
+            validate_partner_month(code, 2026, 8)
+
+
+@pytest.mark.parametrize("district", [0, 1, 10, 52, 99])
+def test_listed_customs_districts_pass(district: int) -> None:
+    assert validate_customs_district_id(district) == district
+
+
+@pytest.mark.parametrize(
+    ("district", "closest"),
+    [
+        (12, [("11", "PHILADELPHIA, PA."), ("13", "BALTIMORE, MD."), ("10", "NEW YORK, N.Y.")]),
+        (
+            100,
+            [
+                ("99", "MILITARY SHIPMENTS"),
+                ("80", "MAIL SHIPMENTS"),
+                ("70", "SHIPMENTS UNDER $251"),
+            ],
+        ),
+        (-1, [("0", "Z UNKNOW CDIST CODES"), ("1", "PORTLAND,MAINE"), ("2", "ST.ALBANS, VT.")]),
+    ],
+)
+def test_an_unknown_customs_district_names_the_nearest_ids(
+    district: int, closest: list[tuple[str, str]]
+) -> None:
+    """``UnknownCode``'s wording serves the district list too: the parameter, the list,
+    the nearest listed ids with their names, why it is refused."""
+    with pytest.raises(UnknownCode) as info:
+        validate_customs_district_id(district)
+    error = info.value
+    assert status_for(error) == 422
+    assert (error.param, error.value, error.list_name, error.fetched) == (
+        "customs_district_id",
+        district,
+        "customsDistricts",
+        "2026-10-26",
+    )
+    assert error.closest == closest
+    assert error.message.startswith(
+        f"{district} is not a customs_district_id in GATS's customsDistricts list (packaged, "
+        "fetched 2026-10-26). Did you mean "
+    )
+    assert "list_customs_districts lists the ids" in error.message
+    assert "partner code" not in error.message, "the partner reason is the countries list's"
+    assert "/refresh-reference-data" in error.message
+
+
+@pytest.mark.parametrize("district", [True, "10", 10.0, None])
+def test_a_customs_district_that_is_not_an_integer_is_refused(district: object) -> None:
+    with pytest.raises(InvalidRequestError, match="customs_district_id must be an integer") as info:
+        validate_customs_district_id(district)  # type: ignore[arg-type]
     assert not isinstance(info.value, UnknownCode)
 
 

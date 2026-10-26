@@ -19,7 +19,15 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from xippios.core import AsyncClient, AuthError, NotFoundError, RateLimitError, RetryPolicy
+from xippios.core import (
+    AsyncClient,
+    AuthError,
+    MemoryCache,
+    NotFoundError,
+    RateLimitError,
+    RetryPolicy,
+)
+from xippios.core.client import CachedResponse, cache_key
 from xippios.core.testing import ReplayFixture, load_fixture, sent_urls
 
 from xippios.usda.gats import api
@@ -27,15 +35,21 @@ from xippios.usda.gats._client import (
     API_KEY_ENV,
     BASE_URL,
     CACHED_PATHS,
+    COMMODITIES_PATH,
+    COMMODITIES_TTL,
     RATE_LIMIT,
+    RELEASE_DATES_PATHS,
     RELEASE_DATES_TTL,
+    PathCaches,
     auth,
     cache,
     cache_filter,
     classify,
     client,
+    commodities_cache,
     config,
     policy,
+    release_dates_cache,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -46,9 +60,10 @@ IMPORT_RELEASES = "/api/gats/census/data/imports/dataReleaseDates"
 
 @pytest.fixture(autouse=True)
 def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour (``_client.cache``): each
-    test starts and ends without an entry, so a list one test fetched never answers the
-    route the next test mounted, nor the refusal a quota test expects."""
+    """The client caches the release-date lists for an hour and the commodities list for
+    a day (``_client.cache``): each test starts and ends without an entry, so a list one
+    test fetched never answers the route the next test mounted, nor the refusal a quota
+    test expects."""
     cache.clear()
     yield
     cache.clear()
@@ -321,23 +336,89 @@ async def test_core_retries_a_429_only_within_its_backoff(
         assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
 
 
-def test_the_client_caches_the_census_release_date_lists_and_nothing_else() -> None:
-    """Core's cache, for one hour, on the two release-date paths only (ADR-0015's
-    ``cache_filter``): the data, the countries and every other path go to the wire."""
+def test_the_client_caches_three_paths_and_nothing_else() -> None:
+    """Core's cache on the two release-date paths, for an hour, and the commodities path,
+    for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per TTL behind
+    ``PathCaches``): the data, the countries and every other path go to the wire."""
     assert config.cache is cache
     assert config.cache_filter is cache_filter
-    assert cache.ttl == RELEASE_DATES_TTL == 3600.0
-    assert {EXPORT_RELEASES, IMPORT_RELEASES} == CACHED_PATHS
+    assert isinstance(cache, PathCaches)
+    assert release_dates_cache.ttl == RELEASE_DATES_TTL == 3600.0
+    assert commodities_cache.ttl == COMMODITIES_TTL == 86400.0
+    assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
+    assert COMMODITIES_PATH == "/api/gats/commodities"
+    assert {EXPORT_RELEASES, IMPORT_RELEASES, COMMODITIES_PATH} == CACHED_PATHS
+    assert cache.by_path == {
+        EXPORT_RELEASES: release_dates_cache,
+        IMPORT_RELEASES: release_dates_cache,
+        COMMODITIES_PATH: commodities_cache,
+    }
     for path, cached in [
         (EXPORT_RELEASES, True),
         (IMPORT_RELEASES, True),
+        (COMMODITIES_PATH, True),
         ("/api/gats/censusExports/partnerCode/CH/year/2026/month/8", False),
         ("/api/gats/censusImports/partnerCode/CH/year/2026/month/8", False),
+        ("/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8", False),
         ("/api/gats/countries", False),
+        ("/api/gats/HS6Commodities", False),
         ("/api/gats/UNTrade/data/exports/dataReleaseDates", False),
         (REGIONS, False),
     ]:
         assert cache_filter(httpx.Request("GET", f"{BASE_URL}{path}")) is cached, path
+
+
+def _entry(stored_at: float) -> CachedResponse:
+    return CachedResponse(status=200, headers=(), content=b"[]", stored_at=stored_at)
+
+
+def test_each_path_keeps_its_own_ttl() -> None:
+    """``PathCaches`` with clocks of its own: two hours on, the release list's entry has
+    expired and the commodities entry still answers; past a day, it has expired too. A
+    key of no path named, or of a named path with a query, is neither stored nor looked
+    up, and ``by_path`` cannot be changed under the routing."""
+    now = [1_000_000.0]
+    hourly = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8, clock=lambda: now[0])
+    daily = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1, clock=lambda: now[0])
+    caches = PathCaches({EXPORT_RELEASES: hourly, COMMODITIES_PATH: daily})
+    with pytest.raises(TypeError):
+        caches.by_path[REGIONS] = hourly  # type: ignore[index]
+    releases = cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}"))
+    commodities = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
+    other = cache_key("GET", httpx.URL(f"{BASE_URL}{REGIONS}"))
+    queried = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}", params={"a": "1"}))
+    for key in (releases, commodities, other, queried):
+        caches.set(key, _entry(now[0]))
+    assert (len(hourly), len(daily), len(caches)) == (1, 1, 2), "the other keys are dropped"
+    assert caches.get(other) is None
+    assert caches.get(queried) is None
+    now[0] += 2 * 3600
+    assert caches.get(releases) is None, "an hour has passed"
+    assert caches.get(commodities) is not None, "a day has not"
+    now[0] += COMMODITIES_TTL
+    assert caches.get(commodities) is None
+    caches.set(commodities, _entry(now[0]))
+    caches.clear()
+    assert len(caches) == 0
+
+
+@pytest.mark.anyio
+async def test_the_commodities_list_lands_in_the_daily_cache(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Through the real client: the commodities answer is stored in the day's cache, a
+    release list in the hour's, and the second commodities call sends nothing."""
+    commodities = replay_fixture("GATSData_GetCommodities", "all")
+    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    first, first_stored = await api.GATSData_GetCommodities()
+    await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
+    assert commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
+    again, stored = await api.GATSData_GetCommodities()
+    assert (first_stored, stored is not None) == (None, True)
+    assert len(again) == len(first) == 24936
+    assert commodities.call_count == 1
+    assert sent_urls(commodities) == [f"{BASE_URL}{COMMODITIES_PATH}"]
 
 
 @pytest.mark.anyio
@@ -348,13 +429,15 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     ``meta.retrieved_at`` (conventions §4); each flow's list is an entry of its own."""
     exports = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
     imports = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    before = datetime.now(UTC)
     first, first_stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    after = datetime.now(UTC)
+    assert exports.call_count == 1, "the first answer came from the wire"
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
+    assert entry is not None
     again, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    assert first_stored is None, "the first answer came from the wire"
+    assert first_stored is None, "and the wrapper says so"
     assert stored is not None
-    assert before <= stored <= after, "when the first answer was stored, as UTC"
+    assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
+    assert stored.tzinfo is UTC
     assert again == first
     assert exports.call_count == 1
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]

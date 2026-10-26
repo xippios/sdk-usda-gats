@@ -1,0 +1,77 @@
+{
+  "recorded_at": "2026-10-26T04:55:56.311807Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/customsDistricts"
+  },
+  "response": {
+    "body": "[{\"customsDistrictId\":0,\"customsDistrictName\":\"Z UNKNOW CDIST CODES\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":1,\"customsDistrictName\":\"PORTLAND,MAINE\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":2,\"customsDistrictName\":\"ST.ALBANS, VT.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":4,\"customsDistrictName\":\"BOSTON, MASS.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":5,\"customsDistrictName\":\"PROVIDENCE, R.I.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":6,\"customsDistrictName\":\"BRIDGEPORT, CONN.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":7,\"customsDistrictName\":\"OGDENSBURG, N.Y.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":9,\"customsDistrictName\":\"BUFFALO, N. Y.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":10,\"customsDistrictName\":\"NEW YORK, N.Y.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":11,\"customsDistrictName\":\"PHILADELPHIA, PA.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":13,\"customsDistrictName\":\"BALTIMORE, MD.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":14,\"customsDistrictName\":\"NORFOLK, VA.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":15,\"customsDistrictName\":\"CHARLOTTE, NC\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":16,\"customsDistrictName\":\"CHARLESTON, S.C.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":17,\"customsDistrictName\":\"SAVANNAH, GA.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":18,\"customsDistrictName\":\"TAMPA, FLA.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":19,\"customsDistrictName\":\"MOBILE, ALA.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":20,\"customsDistrictName\":\"NEW ORLEANS, LA.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":21,\"customsDistrictName\":\"PORT ARTHUR, TEX.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":22,\"customsDistrictName\":\"GALVESTON,TEX.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":23,\"customsDistrictName\":\"LAREDO, TEX.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":24,\"customsDistrictName\":\"EL PASO, TEX.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":25,\"customsDistrictName\":\"SAN DIEGO, CALIF.\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":26,\"customsDistrictName\":\"NOGALES, ARIZ.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":27,\"customsDistrictName\":\"LOS ANGELES, CALIF\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":28,\"customsDistrictName\":\"SAN FRANCISCO,CALIF.\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":29,\"customsDistrictName\":\"PORTLAND, OREG.\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":30,\"customsDistrictName\":\"SEATTLE, WASH.\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":31,\"customsDistrictName\":\"ANCHORAGE, ALASKA\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":32,\"customsDistrictName\":\"HONOLULU, HAWAII\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":33,\"customsDistrictName\":\"GREAT FALLS, MONT.\",\"customsDistrictRegionCode\":\"WC\",\"customsDistrictRegionName\":\"WEST COAST DISTRICTS\"},{\"customsDistrictId\":34,\"customsDistrictName\":\"PEMBINA, N.DAK.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":35,\"customsDistrictName\":\"MINNEAPOLIS, MINN.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":36,\"customsDistrictName\":\"DULUTH, MINN.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":37,\"customsDistrictName\":\"MILWAUKEE, WIS.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":38,\"customsDistrictName\":\"DETROIT, MICH.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":39,\"customsDistrictName\":\"CHICAGO, ILL.\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":41,\"customsDistrictName\":\"CLEVELAND, OHIO\",\"customsDistrictRegionCode\":\"GL\",\"customsDistrictRegionName\":\"GREAT LAKES DISTRICTS\"},{\"customsDistrictId\":45,\"customsDistrictName\":\"ST.LOUIS, MO.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":46,\"customsDistrictName\":\"NEWARK, NJ\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":47,\"customsDistrictName\":\"JAMAICA, NY\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":49,\"customsDistrictName\":\"SAN JUAN, P.R.\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":51,\"customsDistrictName\":\"VIRGIN ISLANDS\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":52,\"customsDistrictName\":\"MIAMI, FLA.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":53,\"customsDistrictName\":\"HOUSTON-GALVESTN,TEX\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":54,\"customsDistrictName\":\"WASHINGTON, D.C.\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":55,\"customsDistrictName\":\"DALLAS-FT.WORTH, TX.\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":58,\"customsDistrictName\":\"SAVANNAH/WILMINGTON\",\"customsDistrictRegionCode\":\"EC\",\"customsDistrictRegionName\":\"EAST COAST DISTRICTS\"},{\"customsDistrictId\":59,\"customsDistrictName\":\"NORFOLK,MOBILE,CHARL\",\"customsDistrictRegionCode\":\"GP\",\"customsDistrictRegionName\":\"GULF DISTRICTS\"},{\"customsDistrictId\":60,\"customsDistrictName\":\"VESSELS-POWER/AFLOAT\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":70,\"customsDistrictName\":\"SHIPMENTS UNDER $251\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":80,\"customsDistrictName\":\"MAIL SHIPMENTS\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"},{\"customsDistrictId\":99,\"customsDistrictName\":\"MILITARY SHIPMENTS\",\"customsDistrictRegionCode\":\"OP\",\"customsDistrictRegionName\":\"OTHER DISTRICTS\"}]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 04:55:55 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "0"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "vary",
+        "Accept-Encoding"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1eq8anmvut5820846gg"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "962"
+      ],
+      [
+        "x-vcap-request-id",
+        "4c1e99df-fa95-47f9-7919-c5316d0338d4"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

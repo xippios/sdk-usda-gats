@@ -9,12 +9,32 @@ from xippios.usda.gats._version import __version__
 from xippios.usda.gats.tasks import (
     get_census_exports,
     get_census_imports,
+    get_census_reexports,
     get_census_release_dates,
+    get_customs_district_exports,
+    get_customs_district_imports,
+    get_customs_district_reexports,
+    list_commodities,
+    list_countries,
+    list_customs_districts,
+    list_hs6_commodities,
+    list_regions,
+    list_units_of_measure,
 )
 
 __all__ = [
     "__version__",
     "get_census_exports",
     "get_census_imports",
+    "get_census_reexports",
     "get_census_release_dates",
+    "get_customs_district_exports",
+    "get_customs_district_imports",
+    "get_customs_district_reexports",
+    "list_commodities",
+    "list_countries",
+    "list_customs_districts",
+    "list_hs6_commodities",
+    "list_regions",
+    "list_units_of_measure",
 ]

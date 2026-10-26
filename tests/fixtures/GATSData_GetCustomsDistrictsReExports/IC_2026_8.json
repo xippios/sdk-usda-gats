@@ -1,0 +1,77 @@
+{
+  "recorded_at": "2026-10-26T04:57:11.584849Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/customsDistrictReExports/partnerCode/IC/year/2026/month/8"
+  },
+  "response": {
+    "body": "[{\"customsDistrictId\":1,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"1905901049\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":18018.0,\"quantity2\":0.0,\"value\":34257.0},{\"customsDistrictId\":10,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"0709202000\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":700.0,\"quantity2\":0.0,\"value\":5439.0},{\"customsDistrictId\":10,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"3924100002\",\"censusUOMId1\":95,\"censusUOMId2\":95,\"fasConvertedUOMId\":95,\"fasNonConvertedUOMId\":95,\"quantity1\":879.0,\"quantity2\":0.0,\"value\":4171.0},{\"customsDistrictId\":10,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"4202210000\",\"censusUOMId1\":78,\"censusUOMId2\":78,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":42.0,\"quantity2\":0.0,\"value\":80992.0},{\"customsDistrictId\":10,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"4202927000\",\"censusUOMId1\":78,\"censusUOMId2\":47,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":130.0,\"quantity2\":167.0,\"value\":14258.0},{\"customsDistrictId\":10,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6104430000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":1.0,\"quantity2\":1.0,\"value\":2724.0},{\"customsDistrictId\":20,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6210401000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":15.0,\"quantity2\":41.0,\"value\":3843.0},{\"customsDistrictId\":41,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"1301900190\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":866.0,\"quantity2\":0.0,\"value\":3790.0},{\"customsDistrictId\":41,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6201409000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":18.0,\"quantity2\":150.0,\"value\":6695.0},{\"customsDistrictId\":41,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6203493000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":11.0,\"quantity2\":19.0,\"value\":2698.0},{\"customsDistrictId\":52,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"4202210000\",\"censusUOMId1\":78,\"censusUOMId2\":78,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":3.0,\"quantity2\":0.0,\"value\":3368.0},{\"customsDistrictId\":52,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6110301070\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":3.0,\"quantity2\":11.0,\"value\":2565.0},{\"customsDistrictId\":52,\"date\":\"202608\",\"countryCode\":\"IC\",\"hS10Code\":\"6208911000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":22,\"fasNonConvertedUOMId\":47,\"quantity1\":2.0,\"quantity2\":11.0,\"value\":5133.0}]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 04:57:11 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "1"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "vary",
+        "Accept-Encoding"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1eq8tamoq9i9sd3iiag"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "958"
+      ],
+      [
+        "x-vcap-request-id",
+        "1a97840d-b451-46cb-770e-a65eb039093e"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

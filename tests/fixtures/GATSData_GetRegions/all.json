@@ -1,0 +1,77 @@
+{
+  "recorded_at": "2026-10-26T04:55:45.787654Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/regions"
+  },
+  "response": {
+    "body": "[{\"regionCode\":\"R05\",\"regionName\":\"North America\"},{\"regionCode\":\"R10\",\"regionName\":\"Caribbean\"},{\"regionCode\":\"R15\",\"regionName\":\"Central America\"},{\"regionCode\":\"R20\",\"regionName\":\"South America\"},{\"regionCode\":\"R25\",\"regionName\":\"European Union-27\"},{\"regionCode\":\"R30\",\"regionName\":\"Other Europe\"},{\"regionCode\":\"R35\",\"regionName\":\"Former Soviet Union-12\"},{\"regionCode\":\"R40\",\"regionName\":\"East Asia\"},{\"regionCode\":\"R45\",\"regionName\":\"Middle East\"},{\"regionCode\":\"R50\",\"regionName\":\"North Africa\"},{\"regionCode\":\"R55\",\"regionName\":\"Sub-Saharan Africa\"},{\"regionCode\":\"R60\",\"regionName\":\"South Asia\"},{\"regionCode\":\"R65\",\"regionName\":\"Southeast Asia\"},{\"regionCode\":\"R70\",\"regionName\":\"Oceania\"},{\"regionCode\":\"R99\",\"regionName\":\"Miscellaneous Designated Areas\"}]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 04:55:45 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "vary",
+        "Accept-Encoding"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "1"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1eq88a2uocljaac5r00"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "966"
+      ],
+      [
+        "x-vcap-request-id",
+        "f7aa673e-519d-400f-5bc7-bf6278606098"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

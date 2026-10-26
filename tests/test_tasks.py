@@ -5,10 +5,13 @@ the URLs the route received with credentials redacted, rather than keep a reques
 ``route.calls`` in its frame, where a failure or ``pytest -l`` would print it.
 """
 
+import argparse
 import inspect
 import json
+import sys
+from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -16,17 +19,29 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, NotFoundError
+from xippios.core import InvalidRequestError, NotFoundError, RateLimitError
 from xippios.core.client import cache_key
-from xippios.core.testing import ReplayFixture, load_fixture, mcp_call, sent_urls
+from xippios.core.mcp import build_parser, main
+from xippios.core.testing import (
+    FixtureResponse,
+    ReplayFixture,
+    load_fixture,
+    mcp_call,
+    sent_urls,
+)
 
 from xippios.usda.gats import __version__, tasks
 from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.errors import UnknownCode
-from xippios.usda.gats.mcp import server
+from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
+CLOCK_SLACK = timedelta(seconds=5)
+"""The slack on a comparison of two wall-clock readings: the WSL2 host these tests run on
+steps its clock back about two seconds every half minute, so a later reading can be the
+earlier one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by:
+a recording's time or a release's is hours or days away."""
 
 
 def test_package_has_a_version() -> None:
@@ -236,7 +251,14 @@ def test_the_release_list_is_fetched_once_for_two_task_calls(
     assert releases.call_count == 1
     assert data.call_count == 2
     assert sent_urls(data) == [CH_EXPORTS_URL, CH_EXPORTS_URL]
-    assert second.meta.retrieved_at >= first.meta.retrieved_at, "the data is fetched anew"
+    assert second.meta.retrieved_at >= first.meta.retrieved_at - CLOCK_SLACK, (
+        "the data is fetched anew, so its time is a reading of this call"
+    )
+    entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
+    assert entry is not None
+    assert second.meta.retrieved_at != datetime.fromtimestamp(entry.stored_at, UTC), (
+        "the data's own time, not the time the cached release list was stored"
+    )
 
 
 def test_release_dates_from_the_cache_carry_the_time_they_were_stored(
@@ -670,6 +692,7 @@ def test_get_census_release_dates(
     route = replay_fixture(fixture, "all")
     before = datetime.now(UTC)
     result = tasks.get_census_release_dates(product_type)
+    after = datetime.now(UTC)
     assert len(result.data) == 716
     assert result.data[0].statistical_year_month == "202608"
     assert result.data[-1].statistical_year_month == "196701"
@@ -677,7 +700,9 @@ def test_get_census_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {"product_type": product_type.value}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
-    assert result.meta.retrieved_at >= before, "fetched now, from the wire"
+    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
+        "fetched now, from the wire: the time of this call, not the recording's"
+    )
     assert sent_urls(route) == [url]
 
 
@@ -813,6 +838,717 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     )
     assert discontinued.status_code == 422
     assert discontinued.json()["title"] == "InvalidRequestError"
+
+
+SERIES_NOTE = (
+    "the rows run month by month, oldest first; filter by hs10_code, a full code or a "
+    "prefix such as the chapter '03', or ask for fewer months to see the rest"
+)
+RELEASED_2026_07 = "2026-09-03T08:00:00"
+"""``releaseTimeStamp`` of ``"202607"`` in both recorded release lists, as upstream wrote it."""
+IC_MONTHS = ("IC_2026_7", "IC_2026_8")
+SERIES_TASKS: list[Callable[..., Any]] = [
+    tasks.get_census_export_series,
+    tasks.get_census_import_series,
+    tasks.get_census_reexport_series,
+]
+
+
+def _ic_url(path: str, month: int) -> str:
+    return f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/2026/month/{month}"
+
+
+def _answering(
+    respx_mock: respx.MockRouter, method: str, host: str, answers: dict[str, FixtureResponse]
+) -> respx.Route:
+    """One route for ``method`` on ``host`` that answers each path of ``answers`` with its
+    recorded status, headers and body, as ``replay_fixture`` does; a path not in
+    ``answers`` matches no route and fails the test."""
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        response = answers[request.url.path]
+        return httpx.Response(response.status, headers=response.headers, content=response.content)
+
+    route = respx_mock.route(method=method, host=host, path__in=tuple(answers))
+    return route.mock(side_effect=answer)
+
+
+def _replay_months(respx_mock: respx.MockRouter, endpoint: str, *cases: str) -> respx.Route:
+    """Mount the recorded months ``cases`` of ``endpoint`` on one route, so that
+    ``sent_urls(route)`` lists a series' requests in the order they were sent.
+
+    ``replay_fixture`` mounts one route per fixture, which shows what each route received
+    but not the order across them. This route answers every request with the recorded
+    exchange of its path, for the recorded method, as ``replay_fixture`` does; a path
+    none of ``cases`` recorded matches no route and fails the test."""
+    recorded = [load_fixture(FIXTURES / endpoint / f"{case}.json") for case in cases]
+    answers = {httpx.URL(fixture.request.url).path: fixture.response for fixture in recorded}
+    ((method, host),) = {
+        (fixture.request.method, httpx.URL(fixture.request.url).host) for fixture in recorded
+    }
+    return _answering(respx_mock, method, host, answers)
+
+
+def _answer_months(
+    respx_mock: respx.MockRouter, endpoint: str, case: str, *urls: str
+) -> respx.Route:
+    """Mount ``urls`` on one route that answers each with the recorded exchange ``case``
+    of ``endpoint``, its status, headers and body, for the recorded method: the variant of
+    ``_replay_months`` for months nothing was recorded for.
+
+    NOT RECORDED for ``urls``: each gets the answer recorded for another request, e.g. the
+    empty list GATS sent for Bouvet Island (``BV``) in August 2026, so a test that uses it
+    says so. ``urls`` share the recorded request's host."""
+    fixture = load_fixture(FIXTURES / endpoint / f"{case}.json")
+    (host,) = {httpx.URL(url).host for url in (fixture.request.url, *urls)}
+    answers = {httpx.URL(url).path: fixture.response for url in urls}
+    return _answering(respx_mock, fixture.request.method, host, answers)
+
+
+def _months_recorded(endpoint: str, *cases: str) -> list[tuple[object, object]]:
+    """``(date, hS10Code)`` of every recorded record of ``cases``, in the order given."""
+    return [(r["date"], r["hS10Code"]) for case in cases for r in _recorded(endpoint, case)]
+
+
+@pytest.mark.parametrize(
+    ("task", "endpoint", "release_list", "release_url", "path", "counts"),
+    [
+        (
+            tasks.get_census_export_series,
+            EXPORTS,
+            EXPORT_RELEASES,
+            EXPORT_RELEASES_URL,
+            "censusExports",
+            (105, 92),
+        ),
+        (
+            tasks.get_census_import_series,
+            IMPORTS,
+            IMPORT_RELEASES,
+            IMPORT_RELEASES_URL,
+            "censusImports",
+            (83, 74),
+        ),
+        (
+            tasks.get_census_reexport_series,
+            RE_EXPORTS,
+            EXPORT_RELEASES,
+            EXPORT_RELEASES_URL,
+            "censusReExports",
+            (19, 12),
+        ),
+    ],
+    ids=["exports", "imports", "re_exports"],
+)
+def test_census_series_tasks(
+    replay_fixture: ReplayFixture,
+    respx_mock: respx.MockRouter,
+    task: Callable[..., Any],
+    endpoint: str,
+    release_list: str,
+    release_url: str,
+    path: str,
+    counts: tuple[int, int],
+) -> None:
+    """Iceland over July and August 2026: the release list once, then one request per
+    month, oldest first, and every record of both months in one list, in month order and
+    upstream order within a month. Only the right release list is mounted: the imports
+    list for imports, the exports list for exports and, by assumption, re-exports."""
+    releases = replay_fixture(release_list, "all")
+    data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
+    result = task("IC", 2026, 7, 2026, 8)
+    july, august = counts
+    assert len(result.data) == july + august == len(_months_recorded(endpoint, *IC_MONTHS))
+    assert [(r.date, r.hs10_code) for r in result.data] == _months_recorded(endpoint, *IC_MONTHS)
+    assert [r.date for r in result.data] == ["202607"] * july + ["202608"] * august
+    assert {r.country_code for r in result.data} == {"IC"}
+    assert isinstance(result.data[0].value, Decimal)
+    assert sent_urls(data) == [_ic_url(path, 7), _ic_url(path, 8)], "oldest month first"
+    assert (releases.call_count, data.call_count) == (1, 2)
+    assert sent_urls(releases) == [release_url]
+    assert result.meta.source == "usda-gats"
+    assert result.meta.endpoint == endpoint
+    assert result.meta.request == {
+        "partner_code": "IC",
+        "start_year": 2026,
+        "start_month": 7,
+        "end_year": 2026,
+        "end_month": 8,
+        "hs10_code": None,
+    }
+    newer = _release_time(release_list, "202608")
+    older = _release_time(release_list, "202607")
+    assert (older, newer) == (RELEASED_2026_07, RELEASED_2026_08)
+    assert result.meta.vintage == RELEASED_2026_08, "the newer of the two months' releases"
+    assert result.meta.published_at is None
+    assert result.meta.total is None
+
+
+def test_hs10_code_filters_every_month_of_a_series(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """Fish (chapter 03) from Iceland: 42 records in July, 43 in August; fillets (0304) 25
+    and 23. The filter applies to each month after its request and is never sent."""
+    replay_fixture(IMPORT_RELEASES, "all")
+    data = _replay_months(respx_mock, IMPORTS, *IC_MONTHS)
+    for hs10_code, expected in [
+        ("03", {"202607": 42, "202608": 43}),
+        ("0304", {"202607": 25, "202608": 23}),
+    ]:
+        result = tasks.get_census_import_series("IC", 2026, 7, 2026, 8, hs10_code=hs10_code)
+        assert [(r.date, r.hs10_code) for r in result.data] == [
+            pair
+            for pair in _months_recorded(IMPORTS, *IC_MONTHS)
+            if str(pair[1]).startswith(hs10_code)
+        ]
+        assert Counter(r.date for r in result.data) == expected
+        assert result.meta.request["hs10_code"] == hs10_code
+        assert result.meta.vintage == RELEASED_2026_08
+    none = tasks.get_census_import_series("IC", 2026, 7, 2026, 8, hs10_code="99")
+    assert none.data == []
+    assert none.meta.vintage == RELEASED_2026_08, "the months' releases, data or none"
+    sent = [_ic_url("censusImports", 7), _ic_url("censusImports", 8)]
+    assert sent_urls(data) == sent * 3, "the filter is not sent upstream"
+
+
+def test_a_one_month_series_answers_what_the_month_task_answers(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """A range of one month is the month task's records, endpoint and vintage; only
+    ``meta.request`` differs, by its parameters."""
+    cases: list[tuple[Callable[..., Any], Callable[..., Any], str, str, str]] = [
+        (tasks.get_census_export_series, tasks.get_census_exports, EXPORTS, EXPORT_RELEASES, "CH"),
+        (tasks.get_census_import_series, tasks.get_census_imports, IMPORTS, IMPORT_RELEASES, "CH"),
+        (
+            tasks.get_census_reexport_series,
+            tasks.get_census_reexports,
+            RE_EXPORTS,
+            EXPORT_RELEASES,
+            "IC",
+        ),
+    ]
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(IMPORT_RELEASES, "all")
+    for series_task, month_task, endpoint, release_list, partner in cases:
+        data = replay_fixture(endpoint, f"{partner}_2026_8")
+        series = series_task(partner, 2026, 8, 2026, 8)
+        month = month_task(partner, 2026, 8)
+        assert series.data == month.data
+        assert len(series.data) == len(_recorded(endpoint, f"{partner}_2026_8"))
+        assert series.meta.endpoint == month.meta.endpoint == endpoint
+        assert series.meta.vintage == month.meta.vintage == _release_time(release_list, "202608")
+        assert series.meta.published_at is None
+        assert series.meta.request == {
+            "partner_code": partner,
+            "start_year": 2026,
+            "start_month": 8,
+            "end_year": 2026,
+            "end_month": 8,
+            "hs10_code": None,
+        }
+        assert data.call_count == 2
+
+
+def test_a_series_vintage_is_the_newest_release_among_its_months(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """The annual revision re-released 2025-12 on 2026-06-24, after January's and
+    February's releases, so 2025-12 to 2026-02 carries the revision's time, not the end
+    month's; a month without trade adds nothing and is no error. NOT RECORDED: no answer
+    for Iceland in those months is recorded, so the data route serves each the recorded
+    empty answer of a listed partner without trade, Bouvet Island (``BV``) in August
+    2026, and the test checks what was sent, across the year's end, and the vintage."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    urls = [
+        f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2025/month/12",
+        f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2026/month/1",
+        f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2026/month/2",
+    ]
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
+    result = tasks.get_census_export_series("IC", 2025, 12, 2026, 2)
+    assert result.data == []
+    december = _release_time(EXPORT_RELEASES, "202512")
+    assert december == "2026-06-24T08:00:00"
+    assert _release_time(EXPORT_RELEASES, "202601") == "2026-03-12T08:00:00"
+    assert _release_time(EXPORT_RELEASES, "202602") == "2026-04-02T08:00:00"
+    assert result.meta.vintage == december
+    assert sent_urls(months) == urls
+
+
+@pytest.mark.parametrize("task", SERIES_TASKS, ids=[t.__name__ for t in SERIES_TASKS])
+def test_series_arguments_are_checked_before_any_request(
+    respx_mock: respx.MockRouter, task: Callable[..., Any]
+) -> None:
+    """respx is active with no routes mounted, so any upstream call would fail loudly."""
+    with pytest.raises(InvalidRequestError) as after:
+        task("IC", 2026, 8, 2026, 7)
+    assert after.value.message == (
+        "the range starts at 2026-08, after its end 2026-07: pass the earlier month as "
+        "start_year and start_month, e.g. start_year=2026, start_month=6, end_year=2026, "
+        "end_month=8."
+    )
+    with pytest.raises(InvalidRequestError) as span:
+        task("IC", 2021, 8, 2026, 8)
+    assert span.value.message.startswith(
+        "2021-08 to 2026-08 is 61 months, one request each; a series spans at most 60 months."
+    )
+    for start_month, end_month in [(0, 8), (6, 13)]:
+        with pytest.raises(InvalidRequestError, match="month must be a whole number from 1"):
+            task("IC", 2026, start_month, 2026, end_month)
+    with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 26"):
+        task("IC", 26, 6, 2026, 8)
+    with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 20260"):
+        task("IC", 2026, 6, 20260, 8)
+    with pytest.raises(InvalidRequestError) as inside:
+        task("SZ", 1987, 6, 1988, 1)
+    assert not isinstance(inside.value, UnknownCode)
+    assert inside.value.message.startswith(
+        "partner_code 'SZ' (Switzerland) was discontinued in 198712"
+    )
+    assert "so 1988-01 (198801) is refused" in inside.value.message
+    assert inside.value.message.endswith("Listed under the same name: SR.")
+    with pytest.raises(InvalidRequestError, match="so 2026-06 \\(202606\\) is refused"):
+        task("SZ", 2026, 6, 2026, 8)
+    with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
+        task("ZZ", 2026, 6, 2026, 8)
+    assert unknown.value.closest == []
+    with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
+        task("ISL", 2026, 6, 2026, 8)
+    with pytest.raises(InvalidRequestError, match="hs10_code must be 1 to 10 digits"):
+        task("IC", 2026, 6, 2026, 8, hs10_code="03.04")
+    assert respx_mock.calls.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("task", "endpoint", "release_list", "asked", "flow"),
+    [
+        (tasks.get_census_export_series, EXPORTS, EXPORT_RELEASES, "exports", "exports"),
+        (tasks.get_census_import_series, IMPORTS, IMPORT_RELEASES, "imports", "imports"),
+        (tasks.get_census_reexport_series, RE_EXPORTS, EXPORT_RELEASES, "re-exports", "exports"),
+    ],
+    ids=["exports", "imports", "re_exports"],
+)
+def test_a_series_with_a_month_not_released_is_refused_whole(
+    replay_fixture: ReplayFixture,
+    respx_mock: respx.MockRouter,
+    task: Callable[..., Any],
+    endpoint: str,
+    release_list: str,
+    asked: str,
+    flow: str,
+) -> None:
+    """The release lists end at 202608, so a range ending 2026-09 is refused before any
+    data request, naming 202609 and 202608, rather than trimmed to the months released.
+    The longest range, 60 months, passes the span check and meets the same refusal. A
+    range with several months missing is refused at the first: 2026-08 to 2026-10 at
+    202609, not its end 202610, and 1966-11 to 1967-02 at 196611, its start, since the
+    lists begin at 196701."""
+    releases = replay_fixture(release_list, "all")
+    data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
+    with pytest.raises(NotFoundError) as info:
+        task("IC", 2026, 7, 2026, 9)
+    message = info.value.message
+    assert message.startswith(
+        f"GATS has no Census {asked} for 202609, in the requested range 202607 to 202609: it "
+        f"is not released yet: the latest {flow} month released is 202608"
+    )
+    assert "A series is refused whole, never trimmed to the months released" in message
+    assert ("GATS publishes no release list for re-exports" in message) is (asked != flow)
+    assert "api.fas.usda.gov" not in message
+    with pytest.raises(NotFoundError) as longest:
+        task("IC", 2021, 10, 2026, 9)
+    assert "for 202609, in the requested range 202110 to 202609" in longest.value.message
+    assert "The release list was fetched at " in longest.value.message, "from the cache"
+    with pytest.raises(NotFoundError) as beyond:
+        task("IC", 2026, 8, 2026, 10)
+    assert beyond.value.message.startswith(
+        f"GATS has no Census {asked} for 202609, in the requested range 202608 to 202610: "
+        f"it is not released yet: the latest {flow} month released is 202608"
+    ), "the first month missing, not the end month"
+    with pytest.raises(NotFoundError) as before:
+        task("IC", 1966, 11, 1967, 2)
+    assert before.value.message.startswith(
+        f"GATS has no Census {asked} for 196611, in the requested range 196611 to 196702: "
+        f"the {flow} data starts at 196701"
+    ), "the first month missing, the start"
+    assert (releases.call_count, data.call_count) == (1, 0)
+    assert respx_mock.calls.call_count == 1, "the release list, then no data request"
+
+
+OVER_RATE_LIMIT = {
+    "error": {
+        "code": "OVER_RATE_LIMIT",
+        "message": (
+            "You have exceeded your rate limit. Try again later or contact us for "
+            "assistance: https://api.fas.usda.gov:443"
+        ),
+    }
+}
+"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway
+(``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), as ``test_client.py``
+builds it."""
+SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
+"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
+
+
+def test_a_quota_spent_mid_series_returns_none_of_its_months(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """Iceland's exports over July and August 2026: July answers as recorded, August with
+    a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
+    nothing, not July's 105 records. NOT RECORDED here: GATS has no recorded 429, so
+    August's answer is psd's, built as ``test_client.py`` builds it. Not marked
+    ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which the
+    plugin leaves on, not the quota policy's pause, which it turns off."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
+    august = respx_mock.get(_ic_url("censusExports", 8)).mock(
+        return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
+    )
+    with pytest.raises(RateLimitError) as info:
+        tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
+    assert info.value.retry_after == 3151.0
+    assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
+    assert sent_urls(july) == [_ic_url("censusExports", 7)]
+    assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"
+    assert releases.call_count == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tool", "endpoint", "release_list", "total", "cut"),
+    [
+        ("usda_gats_get_census_export_series", EXPORTS, EXPORT_RELEASES, 777, 200),
+        ("usda_gats_get_census_import_series", IMPORTS, IMPORT_RELEASES, 3294, 185),
+    ],
+    ids=["exports", "imports"],
+)
+async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
+    replay_fixture: ReplayFixture,
+    tool: str,
+    endpoint: str,
+    release_list: str,
+    total: int,
+    cut: int,
+) -> None:
+    """China in August 2026 alone over MCP: cut at the default cap with a note that says
+    the rows run oldest first and names ``hs10_code`` and fewer months (ADR-0016), at 200
+    exports rows and at 185 imports rows, where the 64 KB cap cuts the wider rows first,
+    as the month tools are cut; the chapter filter comes back whole."""
+    replay_fixture(release_list, "all")
+    data = replay_fixture(endpoint, "CH_2026_8")
+    arguments: dict[str, object] = {
+        "partner_code": "CH",
+        "start_year": 2026,
+        "start_month": 8,
+        "end_year": 2026,
+        "end_month": 8,
+    }
+    payload = await mcp_call(server, tool, arguments)
+    shown = len(payload["data"])
+    assert shown == cut
+    assert payload["note"] == (
+        f"showing {shown} of {total} rows (cap: 200 rows or 65536 bytes); {SERIES_NOTE}"
+    )
+    assert payload["meta"]["endpoint"] == endpoint
+    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert payload["meta"]["published_at"] is None
+    assert payload["meta"]["request"] == {**arguments, "hs10_code": None}
+    chapter = await mcp_call(server, tool, {**arguments, "hs10_code": "02"})
+    assert "note" not in chapter
+    assert {row["hs10_code"][:2] for row in chapter["data"]} == {"02"}
+    assert data.call_count == 2
+    with pytest.raises(
+        AssertionError, match="error: InvalidRequestError: 2021-08 to 2026-08 is 61"
+    ):
+        await mcp_call(server, tool, {**arguments, "start_year": 2021})
+
+
+@pytest.mark.anyio
+async def test_the_reexport_series_tool_end_to_end(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """Iceland's re-exports over July and August 2026, 31 rows, arrive whole and in month
+    order. No recorded re-export slice reaches the cap, so the cut is shown on the other
+    two series tools; this tool carries the same note."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    data = _replay_months(respx_mock, RE_EXPORTS, *IC_MONTHS)
+    arguments: dict[str, object] = {
+        "partner_code": "IC",
+        "start_year": 2026,
+        "start_month": 7,
+        "end_year": 2026,
+        "end_month": 8,
+    }
+    payload = await mcp_call(server, "usda_gats_get_census_reexport_series", arguments)
+    assert len(payload["data"]) == 31
+    assert "note" not in payload
+    assert [row["date"] for row in payload["data"]] == ["202607"] * 19 + ["202608"] * 12
+    first = _recorded(RE_EXPORTS, "IC_2026_7")[0]
+    assert payload["data"][0] == {
+        "date": "202607",
+        "country_code": "IC",
+        "hs10_code": first["hS10Code"],
+        "census_uom_id1": first["censusUOMId1"],
+        "census_uom_id2": first["censusUOMId2"],
+        "fas_converted_uom_id": first["fasConvertedUOMId"],
+        "fas_non_converted_uom_id": first["fasNonConvertedUOMId"],
+        "quantity1": first["quantity1"],
+        "quantity2": first["quantity2"],
+        "value": first["value"],
+    }, "Decimal values are JSON numbers (ADR-0008)"
+    assert isinstance(payload["data"][0]["value"], float)
+    assert payload["meta"]["endpoint"] == RE_EXPORTS
+    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert sent_urls(data) == [_ic_url("censusReExports", 7), _ic_url("censusReExports", 8)]
+    for name in (
+        "get_census_export_series",
+        "get_census_import_series",
+        "get_census_reexport_series",
+    ):
+        cap = tasks.MCP_CAPS[name]
+        assert (cap.max_rows, cap.max_bytes, cap.note) == (200, 65536, SERIES_NOTE)
+    with pytest.raises(AssertionError, match="error: NotFoundError: GATS has no Census re-exports"):
+        await mcp_call(
+            server, "usda_gats_get_census_reexport_series", {**arguments, "end_month": 9}
+        )
+
+
+def test_the_series_over_http(replay_fixture: ReplayFixture, respx_mock: respx.MockRouter) -> None:
+    """The router serves a series as a GET route with its six parameters: values are JSON
+    numbers, a 61-month range is a 422 problem, an unreleased month a 404."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.usda.gats.http import router
+
+    replay_fixture(EXPORT_RELEASES, "all")
+    _replay_months(respx_mock, EXPORTS, *IC_MONTHS)
+    app = FastAPI()
+    app.include_router(router)
+    http = TestClient(app)
+    params: dict[str, str | int] = {
+        "partner_code": "IC",
+        "start_year": 2026,
+        "start_month": 7,
+        "end_year": 2026,
+        "end_month": 8,
+    }
+    response = http.get("/usda-gats/get_census_export_series", params={**params, "hs10_code": "03"})
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]
+    assert [(row["date"], row["hs10_code"]) for row in rows] == [
+        pair for pair in _months_recorded(EXPORTS, *IC_MONTHS) if str(pair[1]).startswith("03")
+    ]
+    assert all(isinstance(row["value"], float) for row in rows)
+    assert response.json()["meta"]["vintage"] == RELEASED_2026_08
+    span = http.get("/usda-gats/get_census_export_series", params={**params, "start_year": 2021})
+    assert span.status_code == 422
+    assert span.json()["title"] == "InvalidRequestError"
+    unreleased = http.get("/usda-gats/get_census_export_series", params={**params, "end_month": 9})
+    assert unreleased.status_code == 404
+    assert unreleased.json()["title"] == "NotFoundError"
+
+
+SERIES_TOOLS = [
+    "usda_gats_get_census_export_series",
+    "usda_gats_get_census_import_series",
+    "usda_gats_get_census_reexport_series",
+]
+CEILING_REFUSAL = (
+    "the series ceiling, --series-months on the MCP server, must be a whole number of "
+    "months from 1 to 60, got {!r}."
+)
+
+
+def _ic_export_urls(start_year: int, start_month: int, count: int) -> list[str]:
+    """The exports URLs of ``count`` months for Iceland from the start month on, in order."""
+    first = start_year * 12 + start_month - 1
+    months = [(index // 12, index % 12 + 1) for index in range(first, first + count)]
+    return [
+        f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/{year}/month/{month}"
+        for year, month in months
+    ]
+
+
+@pytest.fixture
+def restore_series_ceiling() -> Iterator[None]:
+    """The series ceiling is process-wide: a test that sets it leaves the Python API's,
+    ``SERIES_MAX_MONTHS``, for the tests after it."""
+    yield
+    tasks.set_series_ceiling(tasks.SERIES_MAX_MONTHS)
+
+
+def test_the_series_ceilings_and_the_option() -> None:
+    """60 months for the Python API and the HTTP router, the ceiling in force while no MCP
+    server applied its options; ``--series-months`` on core's parser, 24 by default."""
+    assert (tasks.SERIES_MAX_MONTHS, tasks.MCP_SERIES_MAX_MONTHS) == (60, 24)
+    assert tasks.series_ceiling() == 60
+    parser = build_parser(server.name, add_options=tasks.mcp_add_options)
+    assert parser.parse_args([]).series_months == 24
+    assert parser.parse_args(["--series-months", "36"]).series_months == 36
+    assert parser.parse_args(["--series-months", "61"]).series_months == 61, (
+        "the range is checked when the option is applied, then exit status 2"
+    )
+    assert (
+        "--series-months MONTHS most months one series tool call spans, 1 to 60 (default 24); "
+        "one request per month, so 60 months take about a minute of calls"
+    ) in " ".join(parser.format_help().split())
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+@pytest.mark.parametrize("months", [1, 24, 60])
+def test_set_series_ceiling_takes_1_to_60(months: int) -> None:
+    tasks.set_series_ceiling(months)
+    assert tasks.series_ceiling() == months
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+@pytest.mark.parametrize("months", [0, 61, -24, True, "24", 24.0, None])
+def test_set_series_ceiling_refuses_anything_else(months: object) -> None:
+    """Never above 60, never below 1, never a bool, a text or a float; the ceiling in
+    force stays."""
+    tasks.set_series_ceiling(36)
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.set_series_ceiling(months)  # type: ignore[arg-type]
+    assert info.value.message == CEILING_REFUSAL.format(months)
+    assert info.value.source == "usda-gats"
+    assert tasks.series_ceiling() == 36
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("restore_series_ceiling")
+async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_request(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """``mcp_apply_options`` with the default, 24, returns the server itself and sets the
+    ceiling: a 25-month call to each series tool is refused before any request (respx is
+    active with no route mounted), naming 24 and ``--series-months``; the ceiling is
+    process-wide, so a Python call in the same process meets it too. 24 months pass.
+    NOT RECORDED: no answer for Iceland in those 24 months is recorded, so each is served
+    the recorded empty answer of a listed partner without trade, Bouvet Island (``BV``)
+    in August 2026; the test checks the span check and what was sent."""
+    assert tasks.mcp_apply_options(argparse.Namespace(series_months=24), server) is server
+    assert tasks.series_ceiling() == 24
+    arguments: dict[str, object] = {
+        "partner_code": "IC",
+        "start_year": 2024,
+        "start_month": 8,
+        "end_year": 2026,
+        "end_month": 8,
+    }
+    refusal = (
+        "2024-08 to 2026-08 is 25 months, one request each; a series spans at most 24 months, "
+        "the ceiling set for this process (the MCP server starts with 24 by default; "
+        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
+        "ranges of at most 24 months one after another."
+    )
+    for tool in SERIES_TOOLS:
+        with pytest.raises(AssertionError) as info:
+            await mcp_call(server, tool, arguments)
+        assert str(info.value) == f"error: InvalidRequestError: {refusal}", tool
+    with pytest.raises(InvalidRequestError) as python:
+        await tasks.get_census_export_series.async_fn("IC", 2024, 8, 2026, 8)
+    assert python.value.message == refusal
+    assert respx_mock.calls.call_count == 0, "refused before any request"
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    urls = _ic_export_urls(2024, 9, 24)
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
+    payload = await mcp_call(
+        server, "usda_gats_get_census_export_series", {**arguments, "start_month": 9}
+    )
+    assert payload["data"] == []
+    assert (releases.call_count, sent_urls(months)) == (1, urls)
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_a_ceiling_set_from_python_is_refused_in_the_same_words(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A Python caller that calls ``set_series_ceiling(12)``, with no MCP server in the
+    process, meets the refusal the MCP server gives: the ceiling set for this process, the
+    MCP server's default and ``--series-months``, each true for that caller too. Refused
+    before any request (respx is active with no route mounted)."""
+    tasks.set_series_ceiling(12)
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_census_import_series("IC", 2025, 8, 2026, 8)
+    assert info.value.message == (
+        "2025-08 to 2026-08 is 13 months, one request each; a series spans at most 12 months, "
+        "the ceiling set for this process (the MCP server starts with 24 by default; "
+        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
+        "ranges of at most 12 months one after another."
+    )
+    assert respx_mock.calls.call_count == 0, "refused before any request"
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_the_python_api_spans_60_months(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """With no MCP options applied, and with ``--series-months 60``, a 60-month Python call
+    passes the span check and sends one request per month, oldest first, and 61 months
+    are refused with the Python API's message, which names no MCP server. NOT RECORDED:
+    the months are served the recorded empty answer of ``BV`` in August 2026, as above."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    urls = _ic_export_urls(2021, 9, 60)
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
+    for namespace in (None, argparse.Namespace(series_months=60)):
+        if namespace is not None:
+            assert tasks.mcp_apply_options(namespace, server) is server
+        assert tasks.series_ceiling() == 60
+        result = tasks.get_census_export_series("IC", 2021, 9, 2026, 8)
+        assert result.data == []
+        assert result.meta.vintage == RELEASED_2026_08
+        with pytest.raises(InvalidRequestError) as longer:
+            tasks.get_census_export_series("IC", 2021, 8, 2026, 8)
+        assert longer.value.message == (
+            "2021-08 to 2026-08 is 61 months, one request each; a series spans at most 60 "
+            "months. Ask for a shorter range, or for consecutive ranges of at most 60 months "
+            "one after another."
+        )
+    assert sent_urls(months) == urls * 2
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_the_entry_point_applies_series_months_or_exits_with_status_2(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``mcp.run`` hands the hooks to core's ``main``: ``--series-months 36`` sets the
+    ceiling before the server runs, on stdio; 61 or 0 ends the process with exit status 2
+    and the refusal on stderr, before anything is served, the ceiling unchanged; a value
+    that is no integer is argparse's own exit status 2. The server's ``run`` is replaced,
+    so nothing is served. The direct call to ``main`` lets mypy check the hooks against
+    its signature."""
+    served: list[dict[str, object]] = []
+    monkeypatch.setattr(server, "run", lambda **kwargs: served.append(kwargs))
+    monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", "36"])
+    run()
+    assert served == [{"transport": "stdio"}]
+    assert tasks.series_ceiling() == 36
+    for value in ("61", "0"):
+        monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", value])
+        with pytest.raises(SystemExit) as exit_info:
+            run()
+        assert exit_info.value.code == 2
+        assert capsys.readouterr().err.endswith(f"error: {CEILING_REFUSAL.format(int(value))}\n")
+    monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", "two"])
+    with pytest.raises(SystemExit) as not_int:
+        run()
+    assert not_int.value.code == 2
+    assert "--series-months: invalid int value: 'two'" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as direct:
+        main(
+            server,
+            ["--series-months", "61"],
+            add_options=tasks.mcp_add_options,
+            apply_options=tasks.mcp_apply_options,
+        )
+    assert direct.value.code == 2
+    assert capsys.readouterr().err.endswith(f"error: {CEILING_REFUSAL.format(61)}\n")
+    assert served == [{"transport": "stdio"}], "nothing served after a refusal"
+    assert tasks.series_ceiling() == 36
+    with pytest.raises(InvalidRequestError, match="got 61"):
+        tasks.mcp_apply_options(argparse.Namespace(series_months=61), server)
 
 
 UN_EXPORTS = "GATSData_GetUNTradeExports"

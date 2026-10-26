@@ -1,0 +1,77 @@
+{
+  "recorded_at": "2026-10-26T07:30:34.475797Z",
+  "request": {
+    "body": null,
+    "body_base64": false,
+    "content_type": null,
+    "method": "GET",
+    "url": "https://api.fas.usda.gov/api/gats/censusReExports/partnerCode/IC/year/2026/month/7"
+  },
+  "response": {
+    "body": "[{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"0811909000\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":14400.0,\"quantity2\":0.0,\"value\":36000.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"1515500000\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":744.0,\"quantity2\":0.0,\"value\":7396.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"1902400000\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":74,\"quantity1\":1592.0,\"quantity2\":0.0,\"value\":5509.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"2001906500\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":4707.0,\"quantity2\":0.0,\"value\":13503.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"2005996550\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":14103.0,\"quantity2\":0.0,\"value\":24771.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"2103909090\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":11788.0,\"quantity2\":0.0,\"value\":30050.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"2106906798\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":340.0,\"quantity2\":0.0,\"value\":40448.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"4202110000\",\"censusUOMId1\":78,\"censusUOMId2\":78,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":1.0,\"quantity2\":0.0,\"value\":7646.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"4202210000\",\"censusUOMId1\":78,\"censusUOMId2\":78,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":3.0,\"quantity2\":0.0,\"value\":11443.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"4202220000\",\"censusUOMId1\":78,\"censusUOMId2\":47,\"fasConvertedUOMId\":78,\"fasNonConvertedUOMId\":78,\"quantity1\":235.0,\"quantity2\":111.0,\"value\":4943.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"5109100000\",\"censusUOMId1\":47,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":70,\"quantity1\":131.0,\"quantity2\":0.0,\"value\":6854.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6103392000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":17.0,\"quantity2\":81.0,\"value\":6807.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6105200000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":187.0,\"quantity2\":426.0,\"value\":7434.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6110201010\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":13.0,\"quantity2\":61.0,\"value\":3092.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6110303070\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":352.0,\"quantity2\":1437.0,\"value\":13918.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6201409000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":13.0,\"quantity2\":106.0,\"value\":5725.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6201909000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":3.0,\"quantity2\":30.0,\"value\":5985.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"6203293000\",\"censusUOMId1\":37,\"censusUOMId2\":47,\"fasConvertedUOMId\":70,\"fasNonConvertedUOMId\":47,\"quantity1\":9.0,\"quantity2\":80.0,\"value\":4100.0},{\"date\":\"202607\",\"countryCode\":\"IC\",\"hS10Code\":\"8708941000\",\"censusUOMId1\":95,\"censusUOMId2\":95,\"fasConvertedUOMId\":95,\"fasNonConvertedUOMId\":95,\"quantity1\":320.0,\"quantity2\":0.0,\"value\":3255.0}]",
+    "body_base64": false,
+    "headers": [
+      [
+        "date",
+        "Mon, 26 Oct 2026 07:30:32 GMT"
+      ],
+      [
+        "content-type",
+        "application/json; charset=utf-8"
+      ],
+      [
+        "access-control-allow-headers",
+        "X-Api-Key"
+      ],
+      [
+        "access-control-allow-origin",
+        "*"
+      ],
+      [
+        "age",
+        "0"
+      ],
+      [
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains; preload"
+      ],
+      [
+        "vary",
+        "Accept-Encoding"
+      ],
+      [
+        "via",
+        "https/1.1 api-umbrella (ApacheTrafficServer [cMsSf ])"
+      ],
+      [
+        "x-api-umbrella-request-id",
+        "d1esf3ohq2t0lqqpp3q0"
+      ],
+      [
+        "x-cache",
+        "MISS"
+      ],
+      [
+        "x-content-type-options",
+        "nosniff"
+      ],
+      [
+        "x-ratelimit-limit",
+        "1000"
+      ],
+      [
+        "x-ratelimit-remaining",
+        "957"
+      ],
+      [
+        "x-vcap-request-id",
+        "945f35fd-2387-4831-4c89-3785a74ca131"
+      ],
+      [
+        "x-frame-options",
+        "DENY"
+      ]
+    ],
+    "status": 200
+  }
+}

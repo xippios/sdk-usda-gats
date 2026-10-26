@@ -27,4 +27,8 @@ server = build_server(
 
 def run() -> None:
     """Run the server: stdio by default, ``--http`` for streamable HTTP."""
-    main(server)
+    main(
+        server,
+        add_options=getattr(tasks, "mcp_add_options", None),
+        apply_options=getattr(tasks, "mcp_apply_options", None),
+    )

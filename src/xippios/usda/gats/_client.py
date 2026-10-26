@@ -96,7 +96,9 @@ Each Census data task (``tasks.get_census_exports`` and the five others) first f
 flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
 ``GATSData_GetCensusImportDataReleaseInfo``, to check that the month is released, so
 every task call would cost one extra request against api.data.gov's 1,000 per hour; from
-the cache it costs one per flow per ``RELEASE_DATES_TTL``. A list is one record per
+the cache it costs one per flow per ``RELEASE_DATES_TTL``. The three series tasks
+(``tasks.get_census_export_series`` and the two others) read the list once for all
+their months. A list is one record per
 statistical month and changes only when a month is released or revised: as recorded
 (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), 2026-08 was
 released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released

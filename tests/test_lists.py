@@ -12,7 +12,7 @@ empties the cache around every test.
 import json
 from collections import Counter
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Any
 
@@ -55,6 +55,11 @@ WHOLE = ["list_regions", "list_countries", "list_units_of_measure", "list_custom
 countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
 CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
+CLOCK_SLACK = timedelta(seconds=5)
+"""The slack on a comparison of wall-clock readings: the WSL2 host these tests run on steps
+its clock back about two seconds every half minute, so a later reading can be the earlier
+one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by: the
+packaged fetch date or a recording's time is hours or days away."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"
 HS6_NOTE = (
     "filter by search, on the code, the name and the description, e.g. '0201' or "
@@ -121,7 +126,9 @@ async def test_list_answers_the_recorded_records_without_a_call(
     assert result.meta.published_at is None
     assert result.meta.total is None
     assert result.meta.request == request_
-    assert before <= result.meta.retrieved_at <= after, "retrieved_at is when the task answered"
+    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
+        "retrieved_at is when the task answered, not when the list was packaged"
+    )
 
 
 @pytest.mark.anyio

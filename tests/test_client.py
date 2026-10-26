@@ -56,6 +56,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 REGIONS = "/api/gats/regions"
 EXPORT_RELEASES = "/api/gats/census/data/exports/dataReleaseDates"
 IMPORT_RELEASES = "/api/gats/census/data/imports/dataReleaseDates"
+UN_EXPORT_RELEASES = "/api/gats/UNTrade/data/exports/dataReleaseDates"
+UN_IMPORT_RELEASES = "/api/gats/UNTrade/data/imports/dataReleaseDates"
 
 
 @pytest.fixture(autouse=True)
@@ -146,6 +148,9 @@ def test_the_client_asks_for_json() -> None:
         ("GATSData_GetCensusExports", "unknown_partner", "965"),
         ("GATSData_GetCensusExports", "month_13", "964"),
         ("GATSData_GetCensusImport", "CH_2026_8", "965"),
+        ("GATSData_GetUNTradeExportDataReleaseInfo", "all", "992"),
+        ("GATSData_GetUNTradeExports", "IC_2019", "991"),
+        ("GATSData_GetUNTradeExports", "year_text", "985"),
     ],
 )
 def test_keyed_gats_answers_carry_the_hourly_quota(
@@ -336,33 +341,41 @@ async def test_core_retries_a_429_only_within_its_backoff(
         assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
 
 
-def test_the_client_caches_three_paths_and_nothing_else() -> None:
-    """Core's cache on the two release-date paths, for an hour, and the commodities path,
-    for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per TTL behind
-    ``PathCaches``): the data, the countries and every other path go to the wire."""
+def test_the_client_caches_five_paths_and_nothing_else() -> None:
+    """Core's cache on the four release-date paths, Census and UN Trade, for an hour, and
+    the commodities path, for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per
+    TTL behind ``PathCaches``): the data, the countries and every other path go to the
+    wire."""
     assert config.cache is cache
     assert config.cache_filter is cache_filter
     assert isinstance(cache, PathCaches)
     assert release_dates_cache.ttl == RELEASE_DATES_TTL == 3600.0
     assert commodities_cache.ttl == COMMODITIES_TTL == 86400.0
-    assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
+    releases = {EXPORT_RELEASES, IMPORT_RELEASES, UN_EXPORT_RELEASES, UN_IMPORT_RELEASES}
+    assert releases == RELEASE_DATES_PATHS
     assert COMMODITIES_PATH == "/api/gats/commodities"
-    assert {EXPORT_RELEASES, IMPORT_RELEASES, COMMODITIES_PATH} == CACHED_PATHS
+    assert {*releases, COMMODITIES_PATH} == CACHED_PATHS
     assert cache.by_path == {
         EXPORT_RELEASES: release_dates_cache,
         IMPORT_RELEASES: release_dates_cache,
+        UN_EXPORT_RELEASES: release_dates_cache,
+        UN_IMPORT_RELEASES: release_dates_cache,
         COMMODITIES_PATH: commodities_cache,
     }
     for path, cached in [
         (EXPORT_RELEASES, True),
         (IMPORT_RELEASES, True),
+        (UN_EXPORT_RELEASES, True),
+        (UN_IMPORT_RELEASES, True),
         (COMMODITIES_PATH, True),
         ("/api/gats/censusExports/partnerCode/CH/year/2026/month/8", False),
         ("/api/gats/censusImports/partnerCode/CH/year/2026/month/8", False),
         ("/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8", False),
+        ("/api/gats/UNTradeExports/reporterCode/IC/year/2019", False),
+        ("/api/gats/UNTradeImports/reporterCode/TP/year/2019", False),
+        ("/api/gats/UNTradeReExports/reporterCode/MC/year/2019", False),
         ("/api/gats/countries", False),
         ("/api/gats/HS6Commodities", False),
-        ("/api/gats/UNTrade/data/exports/dataReleaseDates", False),
         (REGIONS, False),
     ]:
         assert cache_filter(httpx.Request("GET", f"{BASE_URL}{path}")) is cached, path
@@ -451,6 +464,44 @@ async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> Non
     route = replay_fixture("GATSData_GetCensusExports", "CH_2026_8")
     await api.GATSData_GetCensusExports("CH", 2026, 8)
     await api.GATSData_GetCensusExports("CH", 2026, 8)
+    assert route.call_count == 2
+    assert len(cache) == 0
+
+
+@pytest.mark.anyio
+async def test_the_un_release_lists_land_in_the_release_dates_store(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Through the real client: each UN Trade list is an entry of the hour's store, beside
+    the Census lists, never the day's; the second call sends nothing and says when the
+    entry was stored."""
+    exports = replay_fixture("GATSData_GetUNTradeExportDataReleaseInfo", "all")
+    imports = replay_fixture("GATSData_GetUNTradeImportDataReleaseInfo", "all")
+    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    first, first_stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    _, imports_stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert (first_stored, imports_stored) == (None, None), "both from the wire"
+    assert (len(release_dates_cache), len(commodities_cache)) == (3, 0)
+    for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
+        key = cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
+        assert release_dates_cache.get(key) is not None, path
+        assert commodities_cache.get(key) is None, path
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
+    assert entry is not None
+    again, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert again == first
+    assert (exports.call_count, imports.call_count) == (1, 1)
+    assert sent_urls(exports) == [f"{BASE_URL}{UN_EXPORT_RELEASES}"]
+    assert sent_urls(imports) == [f"{BASE_URL}{UN_IMPORT_RELEASES}"]
+
+
+@pytest.mark.anyio
+async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
+    route = replay_fixture("GATSData_GetUNTradeReExports", "MC_2019")
+    await api.GATSData_GetUNTradeReExports("MC", "2019")
+    await api.GATSData_GetUNTradeReExports("MC", "2019")
     assert route.call_count == 2
     assert len(cache) == 0
 

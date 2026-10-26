@@ -1,4 +1,4 @@
-"""Packaged GATS reference lists and the argument checks of the Census tasks (conventions §3).
+"""Packaged GATS reference lists and the argument checks of the data tasks (conventions §3).
 
 Five of the lists GATS publishes, regions, countries, HS6 commodities, units of measure
 and customs districts, ship inside the package under ``reference/`` so that lookups and
@@ -9,11 +9,16 @@ the ``api/`` wrappers, never by hand, and regenerates ``UnitOfMeasureId`` in
 upstream's records verbatim, under upstream's field names. The HS10 list is not
 packaged: ``tasks.list_commodities`` fetches it live.
 
-The checks built on them: a partner code against ``countries`` (``validate_partner_code``)
-and against its ``discontinuedOn`` month (``validate_partner_month``), and a customs
-district id against ``customsDistricts`` (``validate_customs_district_id``). The other
-checks need no list: a four-digit year, a month from 1 to 12 and an HS10 code or prefix
-of 1 to 10 digits. All of them run before any call.
+The checks built on them: a country code against ``countries`` (``validate_country_code``,
+named by its parameter: ``validate_partner_code`` for the Census partner,
+``validate_reporter_code`` for the UN Trade reporter), a Census partner against its
+``discontinuedOn`` month as well (``validate_partner_month``), a customs district id
+against ``customsDistricts`` (``validate_customs_district_id``) and a full HS6 code
+against ``HS6Commodities`` (``validate_hs6_code``). The UN Trade tasks check membership
+only: their data keeps codes the countries list marks discontinued in 1987, such as
+``AS`` (Australia), for 2019. The other checks need no list: a four-digit year, a month
+from 1 to 12, an HS10 code or prefix of 1 to 10 digits and an HS6 prefix of 1 to 5. All
+of them run before any call.
 
 Refresh policy: ``/refresh-reference-data`` runs inside ``/release-prep``, and whenever
 a validation failure names a code the package lacks.
@@ -28,17 +33,20 @@ from typing import Any
 from xippios.core import InvalidRequestError, UpstreamModel, load_json
 
 from xippios.usda.gats._client import SOURCE
-from xippios.usda.gats.errors import PARTNER_REASON, UnknownCode
+from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON, UnknownCode
 
 __all__ = [
     "PACKAGED_LISTS",
     "PackagedList",
     "packaged_values",
+    "validate_country_code",
     "validate_customs_district_id",
+    "validate_hs6_code",
     "validate_hs10_code",
     "validate_month",
     "validate_partner_code",
     "validate_partner_month",
+    "validate_reporter_code",
     "validate_year",
 ]
 
@@ -63,6 +71,7 @@ PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'
 """Two partner codes from the packaged list, for messages that name no close code."""
 
 _HS10 = re.compile(r"[0-9]{1,10}")
+_HS6 = re.compile(r"[0-9]{1,6}")
 _THREE = re.compile(r"[A-Z0-9]{3}")
 
 
@@ -161,14 +170,70 @@ def _closest(
     return [(code, codes[code]) for code in matches[:3]]
 
 
+def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON) -> str:
+    """Check a country code against the packaged ``countries`` list; messages name ``param``.
+
+    The membership check of every code a task takes from that list: the Census
+    ``partner_code`` (``validate_partner_code``), the UN Trade ``reporter_code``
+    (``validate_reporter_code``) and the UN Trade ``partner_code`` filter. Every listed
+    code passes, the 26 with a ``discontinuedOn`` month included; only the Census tasks
+    check that month too (``validate_partner_month``).
+
+    Args:
+        code: Two characters, as ``GATSData_GetCountries`` lists them, e.g. ``"CH"``
+            (China), ``"IC"`` (Iceland), ``"01"`` (Caribbean,nes), ``"AS"`` (Australia,
+            discontinued 198712).
+        param: The parameter the code was given as, for the messages, e.g.
+            ``"partner_code"``, ``"reporter_code"``.
+        reason: Why an unknown code is refused, the end of ``UnknownCode``'s message,
+            e.g. ``errors.PARTNER_REASON``, ``errors.REPORTER_REASON``.
+
+    Returns:
+        The code, unchanged.
+
+    Raises:
+        InvalidRequestError: When the code is not text.
+        UnknownCode: When the list lacks the code, naming up to three close codes with
+            their upstream names (an ISO or GENC code such as ``"CHN"`` leads to its
+            country code first, a current code before a discontinued one), or two
+            examples and ``list_countries`` when none is close.
+    """
+    fetched, codes = _codes("countries", "countryCode", "countryName")
+    if not isinstance(code, str):
+        raise InvalidRequestError(
+            f"{param} must be a two-character GATS country code as text, such as "
+            f"{PARTNER_EXAMPLES}, got {code!r}. list_countries lists them.",
+            source=SOURCE,
+        )
+    if code in codes:
+        return code
+    closest = _closest(code, codes, _three_letter_codes())
+    raise UnknownCode(
+        param,
+        code,
+        list_name="countries",
+        fetched=fetched,
+        closest=closest,
+        hint=None
+        if closest
+        else (
+            "GATS's country codes are its own, two characters, as GATSData_GetCountries "
+            f"lists them, e.g. {PARTNER_EXAMPLES}; list_countries lists every one and "
+            "searches them by name, ISO or GENC code."
+        ),
+        reason=reason,
+    )
+
+
 def validate_partner_code(partner_code: str) -> str:
-    """Check a partner code against the packaged ``countries`` list.
+    """Check a Census partner code against the packaged ``countries`` list.
 
     GATS answers an unknown code with HTTP 200 and ``[]``, the same as a listed partner
     without trade (``unknown_partner.json``, ``no_data_valid_partner.json``), so the
     check runs before any upstream call. Every listed code passes here, the 26 with a
     ``discontinuedOn`` month included; ``validate_partner_month`` then refuses one for a
-    month after it.
+    month after it. ``validate_country_code`` with ``"partner_code"`` and
+    ``errors.PARTNER_REASON``.
 
     Args:
         partner_code: Two characters, as ``GATSData_GetCountries`` lists them, e.g.
@@ -184,31 +249,37 @@ def validate_partner_code(partner_code: str) -> str:
             partner code first), or two examples and ``list_countries`` when none is
             close.
     """
-    fetched, codes = _codes("countries", "countryCode", "countryName")
-    if not isinstance(partner_code, str):
-        raise InvalidRequestError(
-            f"partner_code must be a two-character GATS country code as text, such as "
-            f"{PARTNER_EXAMPLES}, got {partner_code!r}. list_countries lists them.",
-            source=SOURCE,
-        )
-    if partner_code in codes:
-        return partner_code
-    closest = _closest(partner_code, codes, _three_letter_codes())
-    raise UnknownCode(
-        "partner_code",
-        partner_code,
-        list_name="countries",
-        fetched=fetched,
-        closest=closest,
-        hint=None
-        if closest
-        else (
-            "GATS's partner codes are its own, two characters, as GATSData_GetCountries "
-            f"lists them, e.g. {PARTNER_EXAMPLES}; list_countries lists every one and "
-            "searches them by name, ISO or GENC code."
-        ),
-        reason=PARTNER_REASON,
-    )
+    return validate_country_code(partner_code, "partner_code", reason=PARTNER_REASON)
+
+
+def validate_reporter_code(reporter_code: str) -> str:
+    """Check a UN Trade reporter code against the packaged ``countries`` list, membership only.
+
+    GATS answers an unknown reporter with HTTP 200 and ``[]``
+    (``tests/fixtures/GATSData_GetUNTradeExports/unknown_reporter.json``, ``ZZ``, 2019),
+    as it answers a year without data, so the check runs before any upstream call. Every
+    reporter of the recorded UN Trade release lists is a listed code. No
+    ``discontinuedOn`` check: the UN Trade data keeps codes the countries list marks
+    discontinued long before (``AS``, Australia, ``"198712"``, reports exports to 2016
+    and imports to 2018) and never their same-name successors (``A2``), so the Census
+    rule would refuse the codes the data uses. ``validate_country_code`` with
+    ``"reporter_code"`` and ``errors.REPORTER_REASON``.
+
+    Args:
+        reporter_code: Two characters, as ``GATSData_GetCountries`` lists them, e.g.
+            ``"IC"`` (Iceland), ``"TP"`` (Sao Tome and Principe), ``"MC"`` (Macau),
+            ``"AS"`` (Australia).
+
+    Returns:
+        The code, unchanged.
+
+    Raises:
+        InvalidRequestError: When the code is not text.
+        UnknownCode: When the list lacks the code, naming up to three close codes with
+            their upstream names (``"ISL"`` leads to ``IC``), or two examples and
+            ``list_countries`` when none is close.
+    """
+    return validate_country_code(reporter_code, "reporter_code", reason=REPORTER_REASON)
 
 
 def validate_partner_month(partner_code: str, year: int, month: int) -> str:
@@ -316,13 +387,15 @@ def validate_customs_district_id(customs_district_id: int) -> int:
 def validate_year(year: int) -> int:
     """Check that a year is a four-digit integer.
 
-    The snapshot types ``year`` as ``int32`` and states no range, so none is invented
-    beyond four digits. The Census release lists start at ``"196701"``
-    (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``); a task checks
-    the month against its list after this.
+    The snapshot types the Census ``year`` as ``int32`` and the UN Trade ``year`` as a
+    string, and states no range for either, so none is invented beyond four digits. The
+    Census release lists start at ``"196701"``
+    (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), the UN Trade
+    lists at ``"1989"`` (``.../GATSData_GetUNTradeExportDataReleaseInfo/all.json``); a
+    task checks the month, or the reporter-year, against its list after this.
 
     Args:
-        year: The calendar year, e.g. ``2026``, ``1967``.
+        year: The calendar or statistical year, e.g. ``2026``, ``1967``, ``2019``.
 
     Returns:
         The year, unchanged.
@@ -334,7 +407,7 @@ def validate_year(year: int) -> int:
     if isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= 9999:
         raise InvalidRequestError(
             f"year must be a four-digit year such as 2026, got {year!r}. GATS's Census "
-            "data starts in January 1967.",
+            "data starts in January 1967, its UN Trade data in 1989.",
             source=SOURCE,
         )
     return year
@@ -392,3 +465,65 @@ def validate_hs10_code(hs10_code: str) -> str:
             source=SOURCE,
         )
     return hs10_code
+
+
+def _sharing_digits(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
+    """Up to three listed codes sharing the most leading digits with ``value``, nearest first.
+
+    HS codes nest by their leading digits, chapter, heading and subheading, so a listed
+    code of the same heading is closer than one that matches more digits elsewhere:
+    ``"020119"`` names ``020110``, ``020120`` and ``020130``, the codes of heading 0201.
+    Within the same shared length the numerically nearest come first, the lower on a tie.
+    """
+    target = int(value)
+
+    def shared(code: str) -> int:
+        return next((i for i, (a, b) in enumerate(zip(value, code, strict=False)) if a != b), 6)
+
+    ranked = sorted(codes, key=lambda code: (-shared(code), abs(int(code) - target), code))
+    return [(code, codes[code]) for code in ranked[:3]]
+
+
+def validate_hs6_code(hs6_code: str) -> str:
+    """Check an HS6 filter: 1 to 6 ASCII digits as text, a full code only if it is packaged.
+
+    The UN Trade records carry ``hS6Code`` as six digits as text (``"070700"``), every
+    recorded one a code of the packaged ``HS6Commodities`` list. The filter keeps the
+    records whose code starts with it: a shorter one is a prefix, e.g. the chapter
+    ``"03"`` or the heading ``"0304"``, accepted as digits; a full six-digit code must be
+    in the packaged list, since one it lacks would select nothing. Digits only: a dot or
+    a space would match nothing.
+
+    Args:
+        hs6_code: E.g. ``"030444"`` (Codlet Fillets Frh/Ch, one product), ``"0304"`` (an
+            HS heading), ``"03"`` (chapter 03).
+
+    Returns:
+        The filter, unchanged.
+
+    Raises:
+        InvalidRequestError: When it is not text of 1 to 6 digits from 0 to 9.
+        UnknownCode: When it is a six-digit code the packaged list lacks, naming up to
+            three listed codes that share the most leading digits with it, with their
+            upstream names.
+    """
+    if not isinstance(hs6_code, str) or _HS6.fullmatch(hs6_code) is None:
+        raise InvalidRequestError(
+            "hs6_code must be 1 to 6 digits as text: a full HS6 code such as "
+            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. '
+            "list_hs6_commodities lists the codes.",
+            source=SOURCE,
+        )
+    if len(hs6_code) < 6:
+        return hs6_code
+    fetched, codes = _codes("HS6Commodities", "hS6Code", "commodityName")
+    if hs6_code in codes:
+        return hs6_code
+    raise UnknownCode(
+        "hs6_code",
+        hs6_code,
+        list_name="HS6Commodities",
+        fetched=fetched,
+        closest=_sharing_digits(hs6_code, codes),
+        reason=HS6_REASON,
+    )

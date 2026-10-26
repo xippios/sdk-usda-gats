@@ -24,7 +24,7 @@ from xippios.usda.gats import __version__, tasks
 from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.errors import UnknownCode
 from xippios.usda.gats.mcp import server
-from xippios.usda.gats.models import DataReleaseInfo, ProductType
+from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
 
 TASKS = [getattr(tasks, name) for name in tasks.__all__]
 
@@ -598,7 +598,7 @@ async def test_the_district_tools_name_both_filters_when_cut(
         {"partner_code": "CH", "year": 2026, "month": 8},
     )
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == 200
     assert payload["note"] == (
         f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
@@ -700,7 +700,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     arguments: dict[str, object] = {"partner_code": "CH", "year": 2026, "month": 8}
     payload = await mcp_call(server, "usda_gats_get_census_exports", arguments)
     shown = len(payload["data"])
-    assert 0 < shown <= 200
+    assert shown == 200
     assert payload["note"] == (
         f"showing {shown} of 777 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
     )
@@ -736,7 +736,10 @@ async def test_the_imports_tool_names_the_filter_too(replay_fixture: ReplayFixtu
     payload = await mcp_call(
         server, "usda_gats_get_census_imports", {"partner_code": "CH", "year": 2026, "month": 8}
     )
-    assert payload["note"].endswith(f"of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}")
+    assert len(payload["data"]) == 185, "the 64 KB cap cuts these wider rows before 200"
+    assert payload["note"] == (
+        f"showing 185 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+    )
 
 
 @pytest.mark.anyio
@@ -810,3 +813,601 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     )
     assert discontinued.status_code == 422
     assert discontinued.json()["title"] == "InvalidRequestError"
+
+
+UN_EXPORTS = "GATSData_GetUNTradeExports"
+UN_IMPORTS = "GATSData_GetUNTradeImports"
+UN_RE_EXPORTS = "GATSData_GetUNTradeReExports"
+UN_EXPORT_RELEASES = "GATSData_GetUNTradeExportDataReleaseInfo"
+UN_IMPORT_RELEASES = "GATSData_GetUNTradeImportDataReleaseInfo"
+UN_EXPORT_RELEASES_URL = f"{BASE_URL}/api/gats/UNTrade/data/exports/dataReleaseDates"
+UN_IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/UNTrade/data/imports/dataReleaseDates"
+IC_UN_EXPORTS_URL = f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/IC/year/2019"
+TP_UN_IMPORTS_URL = f"{BASE_URL}/api/gats/UNTradeImports/reporterCode/TP/year/2019"
+MC_UN_RE_EXPORTS_URL = f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/MC/year/2019"
+UN_DATA_NOTE = (
+    "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
+    "prefix such as the chapter '03', to see the rest"
+)
+UN_RELEASE_DATES_NOTE = (
+    "the list runs newest year first, one row per reporter and year; filter by "
+    "reporter_code, e.g. 'IC' (Iceland), or by year, e.g. 2019, to see the rest"
+)
+IC_2019_EXPORTS_RELEASED = "2020-06-03T05:50:46"
+"""``releaseTimeStamp`` of Iceland's 2019 in the recorded UN exports list, as upstream wrote it."""
+UN_TASKS: list[Callable[..., Any]] = [
+    tasks.get_un_exports,
+    tasks.get_un_imports,
+    tasks.get_un_reexports,
+]
+
+
+def _un_release_time(endpoint: str, reporter_code: str, year: str) -> object:
+    """The reporter-year's ``releaseTimeStamp`` in a recorded UN list, the text upstream sent."""
+    (record,) = [
+        r
+        for r in _recorded(endpoint, "all")
+        if (r["reporterCode"], r["statisticalYear"]) == (reporter_code, year)
+    ]
+    return record["releaseTimeStamp"]
+
+
+def _partners_and_codes(records: list[Any]) -> list[tuple[str, str]]:
+    return [(r.partner_country_code, r.hs6_code) for r in records]
+
+
+@pytest.mark.parametrize(
+    ("task", "endpoint", "case", "release_list", "release_url", "url", "count", "first"),
+    [
+        (
+            tasks.get_un_exports,
+            UN_EXPORTS,
+            "IC_2019",
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            IC_UN_EXPORTS_URL,
+            3980,
+            ("15", "070700", Decimal("73524.0"), Decimal("29051.0")),
+        ),
+        (
+            tasks.get_un_imports,
+            UN_IMPORTS,
+            "TP_2019",
+            UN_IMPORT_RELEASES,
+            UN_IMPORT_RELEASES_URL,
+            TP_UN_IMPORTS_URL,
+            2377,
+            ("15", "100630", Decimal("31.0"), Decimal("15.0")),
+        ),
+        (
+            tasks.get_un_reexports,
+            UN_RE_EXPORTS,
+            "MC_2019",
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            MC_UN_RE_EXPORTS_URL,
+            421,
+            ("AS", "220421", Decimal("114863.0"), Decimal("0.0")),
+        ),
+    ],
+    ids=["exports_IC", "imports_TP", "re_exports_MC"],
+)
+def test_un_data_tasks(
+    replay_fixture: ReplayFixture,
+    task: Callable[..., Any],
+    endpoint: str,
+    case: str,
+    release_list: str,
+    release_url: str,
+    url: str,
+    count: int,
+    first: tuple[str, str, Decimal, Decimal],
+) -> None:
+    """One reporter-year across every partner and HS6 code, whole and in upstream order.
+    Only the right release list is mounted: the imports list for imports, the exports list
+    for exports and, by assumption, re-exports; a request for the other would fail."""
+    reporter_code = case[:2]
+    releases = replay_fixture(release_list, "all")
+    data = replay_fixture(endpoint, case)
+    result = task(reporter_code, 2019)
+    assert len(result.data) == count
+    head = result.data[0]
+    assert (head.partner_country_code, head.hs6_code, head.value, head.quantity1) == first
+    assert isinstance(head.value, Decimal)
+    assert _partners_and_codes(result.data) == [
+        (r["partnerCountryCode"], r["hS6Code"]) for r in _recorded(endpoint, case)
+    ], "every record, in upstream order"
+    assert {(r.year, r.reporter_country_code) for r in result.data} == {("2019", reporter_code)}
+    assert result.meta.source == "usda-gats"
+    assert result.meta.endpoint == endpoint
+    assert result.meta.request == {
+        "reporter_code": reporter_code,
+        "year": 2019,
+        "partner_code": None,
+        "hs6_code": None,
+    }
+    assert result.meta.vintage == _un_release_time(release_list, reporter_code, "2019")
+    assert result.meta.published_at is None
+    assert result.meta.total is None
+    assert sent_urls(releases) == [release_url]
+    assert sent_urls(data) == [url]
+
+
+def test_the_un_vintages_are_the_recorded_release_times() -> None:
+    """The three reporter-years' ``releaseTimeStamp`` texts, from the recorded lists: the
+    re-exports' is the exports list's, the only list they have."""
+    assert _un_release_time(UN_EXPORT_RELEASES, "IC", "2019") == IC_2019_EXPORTS_RELEASED
+    assert _un_release_time(UN_IMPORT_RELEASES, "TP", "2019") == "2020-07-16T01:15:37"
+    assert _un_release_time(UN_EXPORT_RELEASES, "MC", "2019") == "2020-06-03T05:51:31"
+    assert _un_release_time(UN_IMPORT_RELEASES, "MC", "2019") == "2020-06-05T01:25:43", (
+        "not the re-exports' vintage"
+    )
+
+
+@pytest.mark.parametrize("endpoint", [UN_EXPORT_RELEASES, UN_IMPORT_RELEASES])
+def test_isoformat_gives_back_every_recorded_un_release_time(endpoint: str) -> None:
+    """``vintage`` claims upstream's own text for the UN lists too: every record's parsed
+    time written back with ``isoformat()`` is the text upstream sent."""
+    records = _recorded(endpoint, "all")
+    assert len(records) in (3796, 3832)
+    for record in records:
+        parsed = UNTradeDataReleaseInfo.model_validate(record).release_time_stamp
+        assert parsed.tzinfo is None
+        assert parsed.isoformat() == record["releaseTimeStamp"]
+
+
+@pytest.mark.parametrize(
+    ("partner_code", "hs6_code", "expected"),
+    [
+        ("US", None, 298),
+        ("NO", None, 142),
+        (None, "03", 1024),
+        (None, "0304", 304),
+        (None, "030444", 26),
+        ("US", "0304", 16),
+        ("US", "030444", 1),
+        ("US", "99", 0),
+    ],
+    ids=[
+        "partner",
+        "discontinued_partner",
+        "chapter",
+        "heading",
+        "full_code",
+        "partner_and_heading",
+        "partner_and_code",
+        "no_match",
+    ],
+)
+def test_partner_code_and_hs6_code_select_after_the_one_request(
+    replay_fixture: ReplayFixture,
+    partner_code: str | None,
+    hs6_code: str | None,
+    expected: int,
+) -> None:
+    """Iceland's 2019 exports: ``partner_code`` keeps one partner, ``hs6_code`` the codes it
+    starts (a chapter, a heading, a full code); neither is sent upstream. ``NO`` (Norway)
+    was discontinued in 198712 by the countries list and is a partner of 2019 here."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    data = replay_fixture(UN_EXPORTS, "IC_2019")
+    result = tasks.get_un_exports("IC", 2019, partner_code=partner_code, hs6_code=hs6_code)
+    recorded = [
+        r
+        for r in _recorded(UN_EXPORTS, "IC_2019")
+        if (partner_code is None or r["partnerCountryCode"] == partner_code)
+        and (hs6_code is None or str(r["hS6Code"]).startswith(hs6_code))
+    ]
+    assert len(result.data) == len(recorded) == expected
+    assert _partners_and_codes(result.data) == [
+        (r["partnerCountryCode"], r["hS6Code"]) for r in recorded
+    ]
+    assert (result.meta.request["partner_code"], result.meta.request["hs6_code"]) == (
+        partner_code,
+        hs6_code,
+    )
+    assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
+    assert sent_urls(data) == [IC_UN_EXPORTS_URL], "the filters are not sent upstream"
+
+
+def test_the_un_release_list_is_fetched_once_for_two_task_calls(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The client caches the UN lists like the Census ones: the second call sends only its
+    data request, and the re-exports task reads the exports list from the same entry."""
+    releases = replay_fixture(UN_EXPORT_RELEASES, "all")
+    exports = replay_fixture(UN_EXPORTS, "IC_2019")
+    re_exports = replay_fixture(UN_RE_EXPORTS, "MC_2019")
+    tasks.get_un_exports("IC", 2019)
+    tasks.get_un_exports("IC", 2019, hs6_code="03")
+    tasks.get_un_reexports("MC", 2019)
+    assert releases.call_count == 1
+    assert sent_urls(exports) == [IC_UN_EXPORTS_URL, IC_UN_EXPORTS_URL]
+    assert sent_urls(re_exports) == [MC_UN_RE_EXPORTS_URL]
+
+
+def test_a_listed_reporter_year_without_re_exports_is_an_empty_result(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Recorded: Iceland's 2019 re-exports answer 200 with ``[]``. The exports list has
+    Iceland's 2019 and the code is listed, so empty means empty, with the exports'
+    release time as ``vintage``."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    data = replay_fixture(UN_RE_EXPORTS, "IC_2019")
+    result = tasks.get_un_reexports("IC", 2019)
+    assert result.data == []
+    assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
+    assert result.meta.published_at is None
+    assert result.meta.endpoint == UN_RE_EXPORTS
+    assert sent_urls(data) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
+
+
+def test_a_reporter_year_the_list_lacks_is_not_found(replay_fixture: ReplayFixture) -> None:
+    """GATS answers Iceland's 2020 with 200 ``[]`` (``unreleased_year.json``); the exports
+    list holds Iceland's 1989 to 2019 and no year after 2019 for anyone, so the task refuses
+    it without the data request, naming both."""
+    releases = replay_fixture(UN_EXPORT_RELEASES, "all")
+    data = replay_fixture(UN_EXPORTS, "unreleased_year")
+    with pytest.raises(NotFoundError) as info:
+        tasks.get_un_exports("IC", 2020)
+    message = info.value.message
+    assert message == (
+        "GATS has no UN Trade exports for reporter IC in 2020: "
+        "GATSData_GetUNTradeExportDataReleaseInfo lists 31 years of exports for reporter IC, "
+        "1989 to 2019; the latest year it lists for any reporter is 2019, and its newest "
+        "release time is 2021-01-18T01:25:58. GATS answers a reporter-year it has not "
+        "released with an empty list, so the package checks the release list first."
+    )
+    assert "api.fas.usda.gov" not in message
+    assert (releases.call_count, data.call_count) == (1, 0)
+
+
+def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Macau's exports skip 2000 to 2014, 2017 and 2018; Chad (``CD``) is only in the
+    imports list; the re-exports' refusal says which list stood in; a refusal from the
+    cached list says when it was fetched."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    future = replay_fixture(UN_EXPORTS, "future_year")
+    with pytest.raises(NotFoundError) as gap:
+        tasks.get_un_exports("MC", 2017)
+    assert "lists 12 years of exports for reporter MC, 1991 to 1999, 2015, 2016, 2019;" in (
+        gap.value.message
+    )
+    assert "fetched at" not in gap.value.message, "the first read is from the wire"
+    with pytest.raises(NotFoundError) as none:
+        tasks.get_un_reexports("CD", 2019)
+    message = none.value.message
+    assert message.startswith(
+        "GATS has no UN Trade re-exports for reporter CD in 2019: "
+        "GATSData_GetUNTradeExportDataReleaseInfo lists no year of exports for reporter CD; "
+        "the latest year it lists for any reporter is 2019"
+    )
+    assert "GATS publishes no UN Trade release list for re-exports: the package checks the " in (
+        message
+    )
+    assert "The release list was fetched at " in message, "the second read is cached"
+    assert " UTC and is kept for an hour" in message
+    with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
+        tasks.get_un_exports("IC", 2035)
+    assert future.call_count == 0, "GATS's 200 [] for 2035 is never asked for"
+
+
+def test_an_imports_reporter_year_is_checked_against_the_imports_list(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Haiti (``HA``) is in the exports list only; Chad (``CD``) lists one year of imports."""
+    replay_fixture(UN_IMPORT_RELEASES, "all")
+    with pytest.raises(NotFoundError) as info:
+        tasks.get_un_imports("HA", 2019)
+    assert info.value.message.startswith(
+        "GATS has no UN Trade imports for reporter HA in 2019: "
+        "GATSData_GetUNTradeImportDataReleaseInfo lists no year of imports for reporter HA;"
+    )
+    assert "publishes no" not in info.value.message
+    with pytest.raises(NotFoundError, match="lists 1 year of imports for reporter CD, 1995;"):
+        tasks.get_un_imports("CD", 2019)
+
+
+def test_a_discontinued_code_is_accepted_on_the_un_side(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """The countries list marks ``AS`` (Australia) discontinued in 198712, and the Census
+    tasks refuse it for 2019; the UN Trade data keeps it. As a partner it selects Macau's
+    27 re-export records of 2019 (recorded); as a reporter it passes the check and meets
+    the release list, which lists its imports to 2018 and its exports to 2016. NOT
+    RECORDED: no answer for Australia's 2018 imports is recorded, so the data route answers
+    ``[]`` and the test checks what was sent and the reporter-year's release time."""
+    with pytest.raises(InvalidRequestError, match="partner_code 'AS' \\(Australia\\) was disc"):
+        tasks.get_census_exports("AS", 2019, 1)
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_RE_EXPORTS, "MC_2019")
+    australia = tasks.get_un_reexports("MC", 2019, partner_code="AS")
+    assert len(australia.data) == 27
+    assert {r.partner_country_code for r in australia.data} == {"AS"}
+    assert australia.data[0].hs6_code == "220421"
+    releases = replay_fixture(UN_IMPORT_RELEASES, "all")
+    url = f"{BASE_URL}/api/gats/UNTradeImports/reporterCode/AS/year/2018"
+    data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
+    reported = tasks.get_un_imports("AS", 2018)
+    assert reported.data == []
+    assert reported.meta.vintage == _un_release_time(UN_IMPORT_RELEASES, "AS", "2018")
+    assert reported.meta.vintage == "2020-06-04T13:12:54"
+    assert sent_urls(releases) == [UN_IMPORT_RELEASES_URL]
+    assert sent_urls(data) == [url]
+    with pytest.raises(NotFoundError, match="lists 28 years of exports for reporter AS, 1989 to"):
+        tasks.get_un_exports("AS", 2019)
+
+
+def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) -> None:
+    """respx is active with no routes mounted, so any upstream call would fail loudly."""
+    for task in UN_TASKS:
+        with pytest.raises(UnknownCode, match="'ZZ' is not a reporter_code") as unknown:
+            task("ZZ", 2019)
+        assert unknown.value.closest == []
+        assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
+        assert "GATS answers an unknown reporter code with an empty result" in (
+            unknown.value.message
+        )
+        with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
+            task("ISL", 2019)
+        with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as partner:
+            task("IC", 2019, partner_code="ZZ")
+        assert "The UN Trade operations take no partner" in partner.value.message
+        with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 19"):
+            task("IC", 19)
+        with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got '2019'"):
+            task("IC", "2019")
+        with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits") as seven:
+            task("IC", 2019, hs6_code="0304441")
+        assert not isinstance(seven.value, UnknownCode)
+        with pytest.raises(UnknownCode) as absent:
+            task("IC", 2019, hs6_code="020119")
+        assert absent.value.closest[0] == ("020110", "Bovine Carcass Fr/Ch")
+        assert absent.value.message.startswith(
+            "'020119' is not a hs6_code in GATS's HS6Commodities list"
+        )
+    with pytest.raises(InvalidRequestError, match='product_type must be "X" \\(exports\\)'):
+        tasks.get_un_release_dates("R")  # type: ignore[arg-type]
+    with pytest.raises(UnknownCode, match="'ZZ' is not a reporter_code"):
+        tasks.get_un_release_dates(ProductType.X, reporter_code="ZZ")
+    with pytest.raises(InvalidRequestError, match="four-digit year"):
+        tasks.get_un_release_dates(ProductType.M, year=19)
+    assert respx_mock.calls.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("product_type", "endpoint", "url", "count", "reporters", "first"),
+    [
+        (
+            ProductType.X,
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            3796,
+            206,
+            ("2019", "AC", datetime(2020, 10, 11, 1, 15, 48)),
+        ),
+        (
+            ProductType.M,
+            UN_IMPORT_RELEASES,
+            UN_IMPORT_RELEASES_URL,
+            3832,
+            207,
+            ("2019", "AC", datetime(2020, 10, 11, 1, 15, 44)),
+        ),
+    ],
+    ids=["X", "M"],
+)
+def test_get_un_release_dates(
+    replay_fixture: ReplayFixture,
+    product_type: ProductType,
+    endpoint: str,
+    url: str,
+    count: int,
+    reporters: int,
+    first: tuple[str, str, datetime],
+) -> None:
+    """The whole list from the wire, then from the cache with the entry's stored time as
+    ``retrieved_at`` (conventions §4), proved by the route's call count."""
+    route = replay_fixture(endpoint, "all")
+    result = tasks.get_un_release_dates(product_type)
+    assert len(result.data) == count
+    head = result.data[0]
+    assert (head.statistical_year, head.reporter_code, head.release_time_stamp) == first
+    assert {r.product_type for r in result.data} == {product_type}
+    assert len({r.reporter_code for r in result.data}) == reporters
+    assert {r.statistical_year for r in result.data} == {str(y) for y in range(1989, 2020)}
+    assert max(r.release_time_stamp for r in result.data).date().isoformat() == "2021-01-18"
+    assert result.meta.endpoint == endpoint
+    assert result.meta.request == {
+        "product_type": product_type.value,
+        "reporter_code": None,
+        "year": None,
+    }
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    assert result.meta.retrieved_at.tzinfo is not None
+    entry = cache.get(cache_key("GET", httpx.URL(url)))
+    assert entry is not None
+    again = tasks.get_un_release_dates(product_type, year=2019)
+    assert route.call_count == 1
+    assert again.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert len(again.data) == 32
+    assert sent_urls(route) == [url]
+
+
+def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixture) -> None:
+    """``reporter_code`` keeps one reporter's years, newest first, ``year`` one year's
+    reporters in code order; a listed reporter and a year it lacks selects nothing."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_IMPORT_RELEASES, "all")
+    iceland = tasks.get_un_release_dates(ProductType.X, reporter_code="IC")
+    assert [r.statistical_year for r in iceland.data] == [str(y) for y in range(2019, 1988, -1)]
+    assert {r.reporter_code for r in iceland.data} == {"IC"}
+    assert iceland.data[0].release_time_stamp.isoformat() == IC_2019_EXPORTS_RELEASED
+    assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC", "year": None}
+    latest = tasks.get_un_release_dates(ProductType.M, year=2019)
+    codes = [r.reporter_code for r in latest.data]
+    assert len(codes) == 32
+    assert codes == sorted(codes)
+    assert "TP" in codes
+    assert latest.meta.request == {"product_type": "M", "reporter_code": None, "year": 2019}
+    (one,) = tasks.get_un_release_dates("M", reporter_code="TP", year=2019).data  # type: ignore[arg-type]
+    assert one.release_time_stamp.isoformat() == "2020-07-16T01:15:37"
+    assert tasks.get_un_release_dates(ProductType.X, reporter_code="AS", year=2018).data == []
+    assert len(tasks.get_un_release_dates(ProductType.M, reporter_code="AS", year=2018).data) == 1
+    assert tasks.get_un_release_dates(ProductType.X, reporter_code="CD").data == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tool", "endpoint", "case", "release_list", "count", "narrow", "narrowed"),
+    [
+        (
+            "usda_gats_get_un_exports",
+            UN_EXPORTS,
+            "IC_2019",
+            UN_EXPORT_RELEASES,
+            3980,
+            {"partner_code": "US", "hs6_code": "0304"},
+            16,
+        ),
+        (
+            "usda_gats_get_un_imports",
+            UN_IMPORTS,
+            "TP_2019",
+            UN_IMPORT_RELEASES,
+            2377,
+            {"hs6_code": "1006"},
+            20,
+        ),
+        (
+            "usda_gats_get_un_reexports",
+            UN_RE_EXPORTS,
+            "MC_2019",
+            UN_EXPORT_RELEASES,
+            421,
+            {"partner_code": "AS"},
+            27,
+        ),
+    ],
+    ids=["exports", "imports", "re_exports"],
+)
+async def test_the_un_data_tools_name_both_filters_when_cut(
+    replay_fixture: ReplayFixture,
+    tool: str,
+    endpoint: str,
+    case: str,
+    release_list: str,
+    count: int,
+    narrow: dict[str, str],
+    narrowed: int,
+) -> None:
+    """Over MCP each reporter-year is cut at the default cap with a note naming
+    ``partner_code`` and ``hs6_code`` (ADR-0016); a filtered call comes back whole."""
+    replay_fixture(release_list, "all")
+    data = replay_fixture(endpoint, case)
+    url = {
+        UN_EXPORTS: IC_UN_EXPORTS_URL,
+        UN_IMPORTS: TP_UN_IMPORTS_URL,
+        UN_RE_EXPORTS: MC_UN_RE_EXPORTS_URL,
+    }[endpoint]
+    arguments: dict[str, object] = {"reporter_code": case[:2], "year": 2019}
+    payload = await mcp_call(server, tool, arguments)
+    shown = len(payload["data"])
+    assert shown == 200
+    assert payload["note"] == (
+        f"showing {shown} of {count} rows (cap: 200 rows or 65536 bytes); {UN_DATA_NOTE}"
+    )
+    first = _recorded(endpoint, case)[0]
+    assert payload["data"][0] == {
+        "year": "2019",
+        "reporter_country_code": case[:2],
+        "partner_country_code": first["partnerCountryCode"],
+        "hs6_code": first["hS6Code"],
+        "census_uom_id1": 0,
+        "census_uom_id2": 0,
+        "fas_converted_uom_id": 47,
+        "fas_non_converted_uom_id": first["fasNonConvertedUOMId"],
+        "quantity1": first["quantity1"],
+        "quantity2": first["quantity2"],
+        "value": first["value"],
+    }, "Decimal values are JSON numbers (ADR-0008)"
+    assert isinstance(payload["data"][0]["value"], float)
+    assert payload["meta"]["endpoint"] == endpoint
+    assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
+    assert payload["meta"]["published_at"] is None
+    whole = await mcp_call(server, tool, {**arguments, **narrow})
+    assert len(whole["data"]) == narrowed
+    assert "note" not in whole
+    assert whole["meta"]["request"] == {
+        "reporter_code": case[:2],
+        "year": 2019,
+        "partner_code": narrow.get("partner_code"),
+        "hs6_code": narrow.get("hs6_code"),
+    }
+    assert sent_urls(data) == [url, url], "the filters are not sent upstream"
+    with pytest.raises(AssertionError, match="error: UnknownCode: 'ZZ' is not a reporter_code"):
+        await mcp_call(server, tool, {**arguments, "reporter_code": "ZZ"})
+    with pytest.raises(AssertionError, match="error: NotFoundError: GATS has no UN Trade"):
+        await mcp_call(server, tool, {**arguments, "year": 2020})
+
+
+@pytest.mark.anyio
+async def test_the_un_release_dates_tool_names_its_filters_when_cut(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """3,796 reporter-years over MCP: cut at 200 rows, 2019's 32, 2018's 80 and 88 of
+    2017's, with a note naming ``reporter_code`` and ``year``; one reporter comes back
+    whole."""
+    route = replay_fixture(UN_EXPORT_RELEASES, "all")
+    payload = await mcp_call(server, "usda_gats_get_un_release_dates", {"product_type": "X"})
+    assert len(payload["data"]) == 200
+    assert payload["data"][0] == {
+        "statistical_year": "2019",
+        "product_type": "X",
+        "reporter_code": "AC",
+        "release_time_stamp": "2020-10-11T01:15:48",
+    }
+    assert payload["data"][-1]["statistical_year"] == "2017"
+    assert payload["note"] == (
+        f"showing 200 of 3796 rows (cap: 200 rows or 65536 bytes); {UN_RELEASE_DATES_NOTE}"
+    )
+    iceland = await mcp_call(
+        server, "usda_gats_get_un_release_dates", {"product_type": "X", "reporter_code": "IC"}
+    )
+    assert len(iceland["data"]) == 31
+    assert "note" not in iceland
+    assert iceland["meta"]["request"] == {"product_type": "X", "reporter_code": "IC", "year": None}
+    assert sent_urls(route) == [UN_EXPORT_RELEASES_URL]
+
+
+def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
+    """The router serves the UN tasks as GET routes: values are JSON numbers, an unknown
+    reporter is a 422 problem, an unlisted reporter-year a 404."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.usda.gats.http import router
+
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_EXPORTS, "IC_2019")
+    app = FastAPI()
+    app.include_router(router)
+    http = TestClient(app)
+    params: dict[str, str | int] = {"reporter_code": "IC", "year": 2019, "partner_code": "US"}
+    response = http.get("/usda-gats/get_un_exports", params={**params, "hs6_code": "030444"})
+    assert response.status_code == 200, response.text
+    (row,) = response.json()["data"]
+    assert (row["hs6_code"], row["value"]) == ("030444", 104692323.0)
+    assert response.json()["meta"]["vintage"] == IC_2019_EXPORTS_RELEASED
+    rejected = http.get("/usda-gats/get_un_exports", params={**params, "reporter_code": "ZZ"})
+    assert rejected.status_code == 422
+    assert rejected.json()["title"] == "UnknownCode"
+    unlisted = http.get("/usda-gats/get_un_exports", params={**params, "year": 2020})
+    assert unlisted.status_code == 404
+    assert unlisted.json()["title"] == "NotFoundError"
+    releases = http.get(
+        "/usda-gats/get_un_release_dates", params={"product_type": "X", "year": 2019}
+    )
+    assert releases.status_code == 200
+    assert len(releases.json()["data"]) == 32

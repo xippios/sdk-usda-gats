@@ -9,12 +9,13 @@ one, waiting within ``RetryPolicy.backoff_max`` or refusing without sending (ADR
 ADR-0015); and ``classify`` maps the gateway's ``API_KEY_*`` answers to ``AuthError``,
 its 429 to ``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``.
 
-Core's response cache keeps three answers and nothing else (``cache``, ``cache_filter``,
-``CACHED_PATHS``): the Census release-date lists for an hour, since every Census data task
-fetches its flow's list before the data and would otherwise cost two requests against the
-hourly quota, and the HS10 commodities list for a day, 7.6 MB that ``tasks.list_commodities``
-fetches whole for every search. Core's ``MemoryCache`` has one TTL, so ``cache`` is a
-``CacheBackend`` of the package's own over two of them, ``PathCaches``.
+Core's response cache keeps five answers and nothing else (``cache``, ``cache_filter``,
+``CACHED_PATHS``): the Census and UN Trade release-date lists for an hour, since every
+Census data task fetches its flow's list before the data and would otherwise cost two
+requests against the hourly quota, and the HS10 commodities list for a day, 7.6 MB that
+``tasks.list_commodities`` fetches whole for every search. Core's ``MemoryCache`` has one
+TTL, so ``cache`` is a ``CacheBackend`` of the package's own over two of them,
+``PathCaches``.
 
 The gateway handling here (``HeaderKeyAuth("X-Api-Key", ...)``, the ``QuotaPolicy`` on
 ``x-ratelimit-*``, the ``API_KEY_*``, ``OVER_RATE_LIMIT`` and ``NOT_FOUND`` mappings with
@@ -85,9 +86,11 @@ RELEASE_DATES_PATHS: frozenset[str] = frozenset(
     {
         "/api/gats/census/data/exports/dataReleaseDates",
         "/api/gats/census/data/imports/dataReleaseDates",
+        "/api/gats/UNTrade/data/exports/dataReleaseDates",
+        "/api/gats/UNTrade/data/imports/dataReleaseDates",
     }
 )
-"""The Census release-date lists, cached for ``RELEASE_DATES_TTL``.
+"""The Census and UN Trade release-date lists, cached for ``RELEASE_DATES_TTL``.
 
 Each Census data task (``tasks.get_census_exports`` and the five others) first fetches its
 flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
@@ -97,8 +100,15 @@ the cache it costs one per flow per ``RELEASE_DATES_TTL``. A list is one record 
 statistical month and changes only when a month is released or revised: as recorded
 (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), 2026-08 was
 released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released
-2023-01 to 2025-12 on 2026-06-24. The UN Trade release-date lists join this set when
-their wrappers do.
+2023-01 to 2025-12 on 2026-06-24.
+
+The UN Trade lists, ``GATSData_GetUNTradeExportDataReleaseInfo`` and
+``GATSData_GetUNTradeImportDataReleaseInfo``, are one record per reporter and statistical
+year, about 400 KB of JSON each, and as recorded on 2026-10-26 they end with 2019, last
+released on 2021-01-18
+(``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json``); they are cached
+alike, so that a task that reads one before the data costs one request per flow per
+``RELEASE_DATES_TTL`` too.
 """
 
 COMMODITIES_PATH = "/api/gats/commodities"
@@ -186,8 +196,8 @@ class PathCaches:
 
 
 release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)
-"""The release-date lists' cache: two entries of about 81 KB of JSON each, so eight are
-plenty."""
+"""The release-date lists' cache: four entries, the Census lists of about 81 KB of JSON
+each and the UN Trade lists of about 400 KB, so eight are plenty."""
 
 commodities_cache = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1)
 """The HS10 commodities list's cache: its one entry, about 7.6 MB, kept for a day."""

@@ -32,6 +32,15 @@ from xippios.usda.gats.api.GATSData_GetCustomsDistrictsReExports import (
 from xippios.usda.gats.api.GATSData_GetHS6Commodities import GATSData_GetHS6Commodities
 from xippios.usda.gats.api.GATSData_GetRegions import GATSData_GetRegions
 from xippios.usda.gats.api.GATSData_GetUnitsOfMeasure import GATSData_GetUnitsOfMeasure
+from xippios.usda.gats.api.GATSData_GetUNTradeExportDataReleaseInfo import (
+    GATSData_GetUNTradeExportDataReleaseInfo,
+)
+from xippios.usda.gats.api.GATSData_GetUNTradeExports import GATSData_GetUNTradeExports
+from xippios.usda.gats.api.GATSData_GetUNTradeImportDataReleaseInfo import (
+    GATSData_GetUNTradeImportDataReleaseInfo,
+)
+from xippios.usda.gats.api.GATSData_GetUNTradeImports import GATSData_GetUNTradeImports
+from xippios.usda.gats.api.GATSData_GetUNTradeReExports import GATSData_GetUNTradeReExports
 
 __all__ = [
     "GATSData_GetCensusExportDataReleaseInfo",
@@ -47,5 +56,10 @@ __all__ = [
     "GATSData_GetCustomsDistrictsReExports",
     "GATSData_GetHS6Commodities",
     "GATSData_GetRegions",
+    "GATSData_GetUNTradeExportDataReleaseInfo",
+    "GATSData_GetUNTradeExports",
+    "GATSData_GetUNTradeImportDataReleaseInfo",
+    "GATSData_GetUNTradeImports",
+    "GATSData_GetUNTradeReExports",
     "GATSData_GetUnitsOfMeasure",
 ]

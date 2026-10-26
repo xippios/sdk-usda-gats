@@ -20,8 +20,9 @@ docstring; every field is an assumption from that fixture, recorded 2026-10-25 o
 snake_cased as they read: ``hS10Code`` is ``hs10_code``, ``hS6Code`` ``hs6_code``,
 ``isO3Code`` ``iso3_code``, ``censusUOMId1`` ``census_uom_id1``, ``isAgCommodity``
 ``is_ag_commodity``; upstream's ``endDtate`` is ``end_dtate``, its spelling kept.
-Year-month codes (``"202608"``) stay text: upstream sends them as digit strings without a
-day, and nothing is combined into a date here. Quantities and values arrive as JSON
+Year-month codes (``"202608"``) and the UN Trade years (``"2019"``) stay text: upstream
+sends them as digit strings, a year-month without a day, and nothing is combined into a
+date here. Quantities and values arrive as JSON
 numbers and become ``Decimal`` (ADR-0008); unit-of-measure and customs-district ids stay
 plain ``int``.
 """
@@ -45,6 +46,8 @@ __all__ = [
     "HS6Commodity",
     "ProductType",
     "Region",
+    "UNTradeDataReleaseInfo",
+    "UNTradeRecord",
     "UnitOfMeasure",
 ]
 
@@ -62,14 +65,23 @@ __all__ = [
 # ``GATSData_GetCensusExportDataReleaseInfo`` (``census/data/exports/dataReleaseDates``),
 # ``M`` ``GATSData_GetCensusImportDataReleaseInfo``
 # (``census/data/imports/dataReleaseDates``). Re-exports have no release-date operation in
-# the snapshot, so there is no member for them. The UN Trade release lists are not
-# recorded; whether they carry the same codes is not established. The enum names the known
-# codes only: ``DataReleaseInfo.product_type`` stays ``str``, so a code upstream adds
-# later parses instead of failing the answer.
+# the snapshot, so there is no member for them. The UN Trade release lists carry the same
+# two codes: every record of
+# ``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json`` ``"X"`` (3,796),
+# every record of ``tests/fixtures/GATSData_GetUNTradeImportDataReleaseInfo/all.json``
+# ``"M"`` (3,832, recorded 2026-10-26); ``X`` selects
+# ``GATSData_GetUNTradeExportDataReleaseInfo``, ``M``
+# ``GATSData_GetUNTradeImportDataReleaseInfo``, and the snapshot has no UN re-export
+# release list either. Both release-dates tools take the enum, so the class docstring
+# names both programs. The enum names the known codes only:
+# ``DataReleaseInfo.product_type`` and ``UNTradeDataReleaseInfo.product_type`` stay
+# ``str``, so a code upstream adds later parses instead of failing the answer.
 class ProductType(StrEnum):
-    """Which US Census release-date list: ``X`` the exports list, ``M`` the imports list.
+    """Which release-date list: ``X`` the exports list, ``M`` the imports list.
 
-    These are upstream's ``productType`` codes. Re-exports have no release-date list.
+    Upstream's ``productType`` codes, the same for the US Census release lists (one
+    record per month) and the UN Trade release lists (one record per reporter and
+    year). Re-exports have no release-date list on either side.
     """
 
     X = "X"
@@ -278,7 +290,8 @@ class DataReleaseInfo(UpstreamModel):
     ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``: 716 records each,
     one per statistical month from ``"196701"`` to ``"202608"``, newest first, no month
     twice, ``reporterCode`` ``"US"`` in every record. A record is per month, not per
-    partner. The UN Trade lists are not recorded and may differ.
+    partner. The UN Trade lists answer another record, one per reporter and year
+    (``UNTradeDataReleaseInfo``).
 
     Attributes:
         statistical_year_month: ``statisticalYearMonth``, a year and month as six digits,
@@ -463,6 +476,98 @@ class CustomsDistrictImport(UpstreamModel):
     date: str = Field(validation_alias="date")
     country_code: str = Field(validation_alias="countryCode")
     hs10_code: str = Field(validation_alias="hS10Code")
+    census_uom_id1: int = Field(validation_alias="censusUOMId1")
+    census_uom_id2: int = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
+    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    quantity1: Decimal = Field(validation_alias="quantity1")
+    quantity2: Decimal = Field(validation_alias="quantity2")
+    value: Decimal = Field(validation_alias="value")
+
+
+class UNTradeDataReleaseInfo(UpstreamModel):
+    """One record of the UN Trade release-date lists.
+
+    ``GATSData_GetUNTradeExportDataReleaseInfo``
+    (``GET /api/gats/UNTrade/data/exports/dataReleaseDates``) and
+    ``GATSData_GetUNTradeImportDataReleaseInfo``
+    (``GET /api/gats/UNTrade/data/imports/dataReleaseDates``) answer the same record. Shape
+    from ``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json`` (3,796
+    records, 206 reporters) and
+    ``tests/fixtures/GATSData_GetUNTradeImportDataReleaseInfo/all.json`` (3,832 records,
+    207 reporters), recorded 2026-10-26: every record with all four fields, none ``null``,
+    one per reporter and statistical year, no pair twice, years ``"1989"`` to ``"2019"``,
+    newest year first and reporters in code order within a year. It differs from the
+    Census ``DataReleaseInfo`` in its first field, ``statisticalYear`` for
+    ``statisticalYearMonth``, and in being per reporter. Every ``reporterCode`` is a code
+    of ``GATSData_GetCountries``; eleven are codes the countries list marks discontinued,
+    and nine of those are listed for years after their ``discontinuedOn`` (``"NO"``,
+    Norway, ``"198712"``, listed to ``"2018"``), their same-name successors (``"N3"``)
+    never. The newest ``releaseTimeStamp`` is ``2021-01-18T01:25:58`` in the exports list
+    and ``2021-01-18T01:27:44`` in the imports list.
+
+    Attributes:
+        statistical_year: ``statisticalYear``, the year as four digits, e.g. ``"2019"``;
+            the same form as ``UNTradeRecord.year``.
+        product_type: ``productType``, ``"X"`` in every exports record and ``"M"`` in
+            every imports record, the codes ``ProductType`` names; text, so that an
+            unknown code does not fail the answer.
+        reporter_code: ``reporterCode``, a GATS country code, e.g. ``"IC"`` (Iceland).
+        release_time_stamp: ``releaseTimeStamp``, e.g. ``2020-06-03T05:50:46``: a date
+            and a time to the second without a time zone, kept naive as upstream sends it.
+    """
+
+    statistical_year: str = Field(validation_alias="statisticalYear")
+    product_type: str = Field(validation_alias="productType")
+    reporter_code: str = Field(validation_alias="reporterCode")
+    release_time_stamp: datetime = Field(validation_alias="releaseTimeStamp")
+
+
+class UNTradeRecord(UpstreamModel):
+    """One record of the UN Trade exports, imports and re-exports.
+
+    ``GATSData_GetUNTradeExports``, ``GATSData_GetUNTradeImports`` and
+    ``GATSData_GetUNTradeReExports`` (``UNTrade{Exports|Imports|ReExports}/reporterCode/
+    {reporterCode}/year/{year}``) answer the same record, the same eleven fields in the
+    same order, every record with all of them and none ``null``. Shape from
+    ``tests/fixtures/GATSData_GetUNTradeExports/IC_2019.json`` (3,980 records, Iceland,
+    2019), ``tests/fixtures/GATSData_GetUNTradeImports/TP_2019.json`` (2,377 records, Sao
+    Tome and Principe) and ``tests/fixtures/GATSData_GetUNTradeReExports/MC_2019.json``
+    (421 records, Macau), recorded 2026-10-26. The snapshot: "a list of records of
+    Commodity Export data as reported by UN COMTrade for a given year. UN COMTrade reports
+    data on a yearly basis at a HS6 Code Level." A record names its year, reporter,
+    partner and HS6 code and four unit-of-measure ids; one record per partner and HS6
+    code, no pair twice, in partner and then HS6 code order. The codes are GATS's own,
+    nothing here is UN Comtrade's: every reporter and partner code recorded is a code of
+    ``GATSData_GetCountries``, among them codes the countries list marks discontinued
+    long before the year (``"NO"``, Norway, ``"198712"``) and never their same-name
+    successors, and every HS6 code is a code of ``GATSData_GetHS6Commodities``, which
+    reaches beyond HS chapters 01 to 24 (``"611011"``, ``"Sweaters & Simil. Articles,
+    Knit/crochet Of Wool"``, in Iceland's exports). Which quantity is in which unit is not
+    documented; in every recorded record both Census unit ids are ``0`` (``"NONE"``) and
+    ``fasConvertedUOMId`` is ``47`` (``"KG"``).
+
+    Attributes:
+        year: ``year``, the year as four digits, e.g. ``"2019"``.
+        reporter_country_code: ``reporterCountryCode``, the reporter, e.g. ``"IC"``.
+        partner_country_code: ``partnerCountryCode``, the partner, e.g. ``"15"``
+            (``"Areas, not elsewhere specified"``), ``"US"``.
+        hs6_code: ``hS6Code``, six digits as text, e.g. ``"070700"``.
+        census_uom_id1: ``censusUOMId1``, a unit-of-measure id; ``0`` in every recorded
+            record.
+        census_uom_id2: ``censusUOMId2``; ``0`` in every recorded record.
+        fas_converted_uom_id: ``fasConvertedUOMId``; ``47`` in every recorded record.
+        fas_non_converted_uom_id: ``fasNonConvertedUOMId``, e.g. ``47``, ``78``, ``95``.
+        quantity1: ``quantity1``, e.g. ``Decimal("29051.0")``; fractions occur
+            (``Decimal("582.3")``).
+        quantity2: ``quantity2``, e.g. ``Decimal("29051.0")``.
+        value: ``value``, e.g. ``Decimal("73524.0")``; the snapshot names no currency.
+    """
+
+    year: str = Field(validation_alias="year")
+    reporter_country_code: str = Field(validation_alias="reporterCountryCode")
+    partner_country_code: str = Field(validation_alias="partnerCountryCode")
+    hs6_code: str = Field(validation_alias="hS6Code")
     census_uom_id1: int = Field(validation_alias="censusUOMId1")
     census_uom_id2: int = Field(validation_alias="censusUOMId2")
     fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")

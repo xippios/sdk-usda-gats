@@ -78,8 +78,9 @@ its release times, which `get_census_release_dates` returns as upstream states t
 
 ### Month series
 
-The three series tasks answer one partner over a range of months, at most 60, as one
-flat list in month order; every record carries its month in `date`:
+The three series tasks answer one partner over a range of months, at most 60 in Python
+and over HTTP (the [MCP server](#mcp) starts with 24), as one flat list in month order;
+every record carries its month in `date`:
 
 ```python
 from xippios.usda.gats import get_census_import_series
@@ -218,6 +219,15 @@ names `search`, `usda_gats_list_commodities` its three filters. The UN Trade dat
 codes arrive whole. `usda_gats_get_census_release_dates`, which has no filter, returns
 the newest 200 months, more than sixteen years, with a note that says so. `--http`
 serves streamable HTTP instead of stdio.
+
+`--series-months MONTHS` sets the most months one series tool call spans, a whole number
+from 1 to 60. The server starts with 24: two years, 24 requests, about 24 seconds at the
+client's pace of one request per second. The Python API and the HTTP router allow 60, five
+years and about a minute (`tasks.SERIES_MAX_MONTHS`). A longer range is refused before
+any request, with a message that names the ceiling in force and `--series-months`; a value
+outside 1 to 60 stops the server at start with exit status 2. For five-year series over
+MCP, append `"--series-months", "60"` to the `args` above. The ceiling is process-wide
+(`tasks.series_ceiling()`, `tasks.set_series_ceiling(months)`): one MCP server per process.
 
 ## Status
 

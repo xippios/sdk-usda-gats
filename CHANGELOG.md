@@ -160,3 +160,13 @@ All notable changes to this project are documented here. The format follows
   month, a month without trade adding nothing. `meta.vintage` is the newest release time
   among the range's months, as upstream states it; `meta.published_at` stays `None`.
   Over MCP 200 rows or 64 KB with a note naming `hs10_code` and fewer months.
+- The series ceiling over MCP: the MCP server starts with 24 months
+  (`tasks.MCP_SERIES_MAX_MONTHS`), and `--series-months MONTHS`, 1 to 60, sets another;
+  the Python API and the HTTP router keep 60 (`tasks.SERIES_MAX_MONTHS`). The option
+  reaches core's `main` through the hooks `tasks.mcp_add_options` and
+  `tasks.mcp_apply_options` (ADR-0014), which `mcp.py` passes as it passes `MCP_CAPS`.
+  The ceiling is process-wide, one MCP server per process: `tasks.series_ceiling()` reads
+  it, `tasks.set_series_ceiling(months)` sets it and refuses anything but a whole number
+  from 1 to 60 as `InvalidRequestError`, which stops the server at start with exit status
+  2. A longer range is refused before any request, naming the ceiling in force and, below
+  60, that `--series-months` raises it.

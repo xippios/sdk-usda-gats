@@ -5,13 +5,14 @@ never a request kept from ``route.calls``.
 """
 
 import json
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
 import httpx
 import pytest
+import respx
 from xippios.core import NotFoundError
 from xippios.core.testing import ReplayFixture, load_fixture, sent_urls
 
@@ -197,12 +198,30 @@ async def test_imports_carry_every_export_field_and_five_more() -> None:
     assert set(CensusExport.model_fields) < set(CensusImport.model_fields)
 
 
-async def test_the_partner_code_is_quoted_into_the_path(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture(EXPORTS, "unknown_partner")
-    assert await api.GATSData_GetCensusExports("ZZ", 2026, 8) == []
-    assert sent_urls(route) == [
-        f"{BASE_URL}/api/gats/censusExports/partnerCode/ZZ/year/2026/month/8"
-    ]
+@pytest.mark.parametrize(
+    ("wrapper", "path"),
+    [
+        (api.GATSData_GetCensusExports, "censusExports"),
+        (api.GATSData_GetCensusImport, "censusImports"),
+    ],
+    ids=["exports", "imports"],
+)
+async def test_the_partner_code_is_quoted_into_the_path(
+    respx_mock: respx.MockRouter,
+    wrapper: Callable[[str, int, int], Awaitable[object]],
+    path: str,
+) -> None:
+    """A slash in the partner code is sent as ``%2F``, so it stays one path segment.
+
+    No GATS code holds a slash, and a task refuses one before any call
+    (``params.validate_partner_code``); this checks the wrapper alone, so the route answers
+    ``[]`` and no fixture is needed. respx matches the decoded path, which an unquoted
+    slash would match too: ``sent_urls`` is what shows the quoting.
+    """
+    url = f"{BASE_URL}/api/gats/{path}/partnerCode/C%2FH/year/2026/month/8"
+    route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
+    assert await wrapper("C/H", 2026, 8) == []
+    assert sent_urls(route) == [url]
 
 
 @pytest.mark.parametrize(

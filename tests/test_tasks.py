@@ -317,7 +317,7 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
         tasks.get_census_imports("CH", 2026, 8, hs10_code="01039100001")
     with pytest.raises(InvalidRequestError, match='product_type must be "X" \\(exports\\)'):
         tasks.get_census_release_dates("Q")  # type: ignore[arg-type]
-    assert not respx_mock.calls
+    assert respx_mock.calls.call_count == 0
 
 
 @pytest.mark.parametrize(

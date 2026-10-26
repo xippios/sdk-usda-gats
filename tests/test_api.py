@@ -67,9 +67,9 @@ def units(record: CensusExport | CustomsDistrictExport) -> tuple[int, int, int, 
 
 @pytest.fixture(autouse=True)
 def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour (``_client.cache``): each
-    test starts and ends without an entry, so a list one test fetched never answers the
-    route the next test mounted."""
+    """The client caches the release-date lists for an hour and the commodities list for
+    a day (``_client.cache``): each test starts and ends without an entry, so a list one
+    test fetched never answers the route the next test mounted."""
     cache.clear()
     yield
     cache.clear()
@@ -136,7 +136,8 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
     in the family. Product types ``T`` and ``B`` carry seven digits padded with three
     spaces, kept as sent; code, product type and start month are unique together."""
     route = replay_fixture("GATSData_GetCommodities", "all")
-    records = await api.GATSData_GetCommodities()
+    records, stored = await api.GATSData_GetCommodities()
+    assert stored is None, "from the wire, not from the cache"
     assert len(records) == 24936
     by_key = {(r.hs10_code, r.product_type, r.start_date): r for r in records}
     assert len(by_key) == 24936, "code, product type and start month are unique together"

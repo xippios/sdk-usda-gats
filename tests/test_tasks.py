@@ -63,9 +63,9 @@ RELEASED_2026_08 = "2026-10-06T08:00:00"
 
 @pytest.fixture(autouse=True)
 def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour (``_client.cache``): each
-    test starts and ends without an entry, so a list one test fetched never answers the
-    route the next test mounted."""
+    """The client caches the release-date lists for an hour and the commodities list for
+    a day (``_client.cache``): each test starts and ends without an entry, so a list one
+    test fetched never answers the route the next test mounted."""
     cache.clear()
     yield
     cache.clear()

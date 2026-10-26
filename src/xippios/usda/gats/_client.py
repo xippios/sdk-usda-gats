@@ -9,10 +9,12 @@ one, waiting within ``RetryPolicy.backoff_max`` or refusing without sending (ADR
 ADR-0015); and ``classify`` maps the gateway's ``API_KEY_*`` answers to ``AuthError``,
 its 429 to ``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``.
 
-Core's response cache keeps the Census release-date lists, and nothing else, for an hour
-(``cache``, ``cache_filter``, ``CACHED_PATHS``): every Census data task fetches its
-flow's list before the data, so without it each task call would cost two requests
-against the hourly quota.
+Core's response cache keeps three answers and nothing else (``cache``, ``cache_filter``,
+``CACHED_PATHS``): the Census release-date lists for an hour, since every Census data task
+fetches its flow's list before the data and would otherwise cost two requests against the
+hourly quota, and the HS10 commodities list for a day, 7.6 MB that ``tasks.list_commodities``
+fetches whole for every search. Core's ``MemoryCache`` has one TTL, so ``cache`` is a
+``CacheBackend`` of the package's own over two of them, ``PathCaches``.
 
 The gateway handling here (``HeaderKeyAuth("X-Api-Key", ...)``, the ``QuotaPolicy`` on
 ``x-ratelimit-*``, the ``API_KEY_*``, ``OVER_RATE_LIMIT`` and ``NOT_FOUND`` mappings with
@@ -25,6 +27,7 @@ or a month without data are not mapped here: what they are is recorded under
 """
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import httpx
@@ -40,6 +43,7 @@ from xippios.core import (
     RateLimitError,
     XippiosError,
 )
+from xippios.core.client import CachedResponse, cache_key
 from xippios.core.errors import parse_retry_after
 
 from xippios.usda.gats._version import __version__
@@ -76,26 +80,37 @@ developer manual: "The block will automatically be lifted by waiting an hour".
 ``policy.snapshot()`` reads the quota as the last answer reported it.
 """
 
-CACHED_PATHS: frozenset[str] = frozenset(
+RELEASE_DATES_PATHS: frozenset[str] = frozenset(
     {
         "/api/gats/census/data/exports/dataReleaseDates",
         "/api/gats/census/data/imports/dataReleaseDates",
     }
 )
-"""The only paths the client caches: the Census release-date lists.
+"""The Census release-date lists, cached for ``RELEASE_DATES_TTL``.
 
-Each Census data task (``tasks.get_census_exports``, ``tasks.get_census_imports``) first
-fetches its flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
+Each Census data task (``tasks.get_census_exports`` and the five others) first fetches its
+flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
 ``GATSData_GetCensusImportDataReleaseInfo``, to check that the month is released, so
 every task call would cost one extra request against api.data.gov's 1,000 per hour; from
 the cache it costs one per flow per ``RELEASE_DATES_TTL``. A list is one record per
 statistical month and changes only when a month is released or revised: as recorded
 (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), 2026-08 was
 released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released
-2023-01 to 2025-12 on 2026-06-24. The data answers, the countries list and every other
-path are never cached. The UN Trade release-date lists join this set when their wrappers
-do.
+2023-01 to 2025-12 on 2026-06-24. The UN Trade release-date lists join this set when
+their wrappers do.
 """
+
+COMMODITIES_PATH = "/api/gats/commodities"
+"""``GATSData_GetCommodities``, the HS10 commodities list, cached for ``COMMODITIES_TTL``.
+
+One answer of 24,936 records and about 7.6 MB of JSON, the largest in the family, which
+``tasks.list_commodities`` fetches whole and filters itself; from the cache a search costs
+no request for a day.
+"""
+
+CACHED_PATHS: frozenset[str] = RELEASE_DATES_PATHS | {COMMODITIES_PATH}
+"""The only paths the client caches; the data answers, the countries list and every other
+path are never cached."""
 
 RELEASE_DATES_TTL = 3600.0
 """Seconds a cached release-date list answers: one hour.
@@ -105,12 +120,78 @@ month Census has just released, as not released yet, until the entry expires. It
 ``NotFoundError`` then says when the list was fetched.
 """
 
-cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)
-"""Core's in-memory response cache, shared by every caller of ``client`` in the process.
+COMMODITIES_TTL = 86400.0
+"""Seconds the cached HS10 commodities list answers: one day.
 
-Only HTTP 200 answers are stored, and only for ``CACHED_PATHS`` (``cache_filter``); the
-two lists are about 81 KB of JSON each, so eight entries are plenty. A hit sends nothing,
-so the rate limiter and the quota policy never see it (ADR-0015).
+The list names codes, their start months and their units, which change with the HS
+revisions and Census's schedule changes, not from hour to hour; a day keeps a code added
+upstream out of a search for at most a day, and ``meta.retrieved_at`` says when the list
+was fetched.
+"""
+
+
+class PathCaches:
+    """Core's ``CacheBackend`` over one ``MemoryCache`` per path: a TTL per path.
+
+    Core's ``MemoryCache`` keeps one TTL for every entry, and a client takes one backend
+    (``ClientConfig.cache``); this backend routes each entry to the ``MemoryCache`` of its
+    path. The client keys an entry by ``cache_key("GET", url)`` of the request as built
+    from ``BASE_URL`` and the path (``CacheBackend``'s contract), so the keys of the
+    paths named here are known in advance; an entry under any other key is neither
+    looked up nor stored. ``cache_filter`` already lets only ``CACHED_PATHS`` through,
+    so that never happens; it keeps the backend from caching anything it was not given.
+
+    Args:
+        caches: Path, as ``CACHED_PATHS`` names it, to the cache that keeps its answer,
+            e.g. ``{"/api/gats/commodities": MemoryCache(ttl=86400.0, maxsize=1)}``.
+    """
+
+    def __init__(self, caches: Mapping[str, MemoryCache]) -> None:
+        self.by_path: dict[str, MemoryCache] = dict(caches)
+        self._by_key = {
+            cache_key("GET", httpx.URL(f"{BASE_URL}{path}")): store
+            for path, store in caches.items()
+        }
+
+    def get(self, key: str) -> CachedResponse | None:
+        """The live entry for ``key`` from its path's cache, or ``None``."""
+        store = self._by_key.get(key)
+        return None if store is None else store.get(key)
+
+    def set(self, key: str, value: CachedResponse) -> None:
+        """Store ``value`` in its path's cache; a key of no path named here is dropped."""
+        store = self._by_key.get(key)
+        if store is not None:
+            store.set(key, value)
+
+    def clear(self) -> None:
+        """Drop every entry of every cache."""
+        for store in {id(store): store for store in self.by_path.values()}.values():
+            store.clear()
+
+    def __len__(self) -> int:
+        stores = {id(store): store for store in self.by_path.values()}.values()
+        return sum(len(store) for store in stores)
+
+
+release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)
+"""The release-date lists' cache: two entries of about 81 KB of JSON each, so eight are
+plenty."""
+
+commodities_cache = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1)
+"""The HS10 commodities list's cache: its one entry, about 7.6 MB, kept for a day."""
+
+cache = PathCaches(
+    {
+        **dict.fromkeys(sorted(RELEASE_DATES_PATHS), release_dates_cache),
+        COMMODITIES_PATH: commodities_cache,
+    }
+)
+"""Core's response cache, shared by every caller of ``client`` in the process.
+
+Only HTTP 200 answers are stored, and only for ``CACHED_PATHS`` (``cache_filter``): the
+release-date lists for an hour, the commodities list for a day. A hit sends nothing, so
+the rate limiter and the quota policy never see it (ADR-0015).
 """
 
 
@@ -258,15 +339,21 @@ __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
     "CACHED_PATHS",
+    "COMMODITIES_PATH",
+    "COMMODITIES_TTL",
     "RATE_LIMIT",
+    "RELEASE_DATES_PATHS",
     "RELEASE_DATES_TTL",
     "SOURCE",
+    "PathCaches",
     "auth",
     "cache",
     "cache_filter",
     "classify",
     "client",
+    "commodities_cache",
     "config",
     "policy",
+    "release_dates_cache",
     "stored_at",
 ]

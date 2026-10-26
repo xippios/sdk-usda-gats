@@ -939,8 +939,8 @@ async def get_un_exports_async(
     2026-10-26; ``get_un_release_dates`` lists every reporter-year. Two requests: the
     exports release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the
     client for an hour) to check that the reporter-year is listed, then the year
-    (``GATSData_GetUNTradeExports``), one answer of up to tens of MB (India's 2016
-    exports: 75,919 records). The arguments are checked before either: an unknown
+    (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
+    75,919 records, about 17 MB). The arguments are checked before either: an unknown
     reporter or partner code raises ``InvalidRequestError`` naming up to three close codes
     (``"ISL"`` leads to ``"IC"``; ``"AUS"`` names ``"A2"`` before ``"AS"``, which is the
     code the UN data uses), or pointing to ``list_countries``; the Census tasks'
@@ -984,12 +984,12 @@ async def get_un_imports_async(
 
     Upstream: "Commodity Import data as reported by UN COMTrade for a given year", at the
     HS6 level. One record per partner and HS6 code, the eleven fields of an export record
-    (``get_un_exports``), the partner the country of origin as upstream reports it; 2,377
-    records for Sao Tome and Principe (``"TP"``) in 2019, 1,026 HS6 codes from 58
-    partners, 957 of them from Portugal (``"PO"``). A large reporter answers far more:
-    Iceland's 2019 imports are 23,396 records, about 5.2 MB of JSON. The codes are GATS's
-    own, not UN Comtrade's, as for the exports. The data is frozen at statistical year
-    2019, last released on 2021-01-18, as recorded on 2026-10-26. Two requests: the
+    (``get_un_exports``); 2,377 records for Sao Tome and Principe (``"TP"``) in 2019,
+    1,026 HS6 codes and 58 partners, 957 of the records with Portugal (``"PO"``) as
+    partner. A large reporter answers far more: Iceland's 2019 imports are 23,396
+    records, about 5.2 MB of JSON. The codes are GATS's own, not UN Comtrade's, as for
+    the exports. The data is frozen at statistical year 2019, last released on
+    2021-01-18, as recorded on 2026-10-26. Two requests: the
     imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
     for an hour), then the year (``GATSData_GetUNTradeImports``). The imports list is not
     the exports list: 68 reporter-years are listed only for imports, 32 only for exports.
@@ -1083,8 +1083,8 @@ async def get_un_release_dates_async(
     release as upstream states it, without a time zone (``2020-06-03T05:50:46`` for
     Iceland's 2019 exports). As recorded on 2026-10-26 the lists cover 1989 to 2019:
     3,796 exports records for 206 reporters and 3,832 imports records for 207, 32
-    reporters for 2019 in each; the newest release is 2021-01-18 (the Netherlands' 2014,
-    re-released), so the UN Trade data has had no newer year since. The two lists differ:
+    reporters for 2019 in each; the newest release time is 2021-01-18 (the Netherlands'
+    2014), and no reporter-year has been released since. The two lists differ:
     32 reporter-years are listed only for exports, 68 only for imports. The three UN data
     tasks check a reporter-year against this list and give its time as ``meta.vintage``,
     the re-exports task the exports list's, since re-exports have no list of their own.

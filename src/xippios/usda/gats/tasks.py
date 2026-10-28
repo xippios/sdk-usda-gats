@@ -80,11 +80,11 @@ source's codes (ADR-0003). Before the call they check the arguments, the two cou
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
 list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
-frozen. A refused ISO or GENC code that several listed codes share (``"AUS"``: ``A2``,
-``AS``) is refused after that list is read, naming first the codes it holds as reporters
-(``AS``), since the recorded lists follow no rule on the codes themselves
-(``_un_ranked``); every other refusal comes before any request. GATS answers an unknown
-reporter, a year far ahead and
+frozen. An ISO or GENC code that several listed codes share (``"AUS"``: ``A2``, ``AS``),
+given as a country code, is refused after that list is read, naming first the codes it
+holds as reporters (``AS``), since the recorded lists follow no rule on the codes
+themselves (``_un_ranked``); every other refusal comes before any request. GATS answers
+an unknown reporter, a year far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
 ``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
@@ -1613,9 +1613,8 @@ async def get_un_imports_async(
     The arguments are checked as for ``get_un_exports``, membership only and before
     either request, but for an ISO code several listed codes share, refused once the
     imports list is read, its reporters named first (``"NOR"`` names ``"NO"`` before
-    ``"N3"``). A reporter-year the imports list lacks
-    raises ``NotFoundError`` naming the reporter's listed years; a listed reporter-year
-    without imports gives an empty list.
+    ``"N3"``). A reporter-year the imports list lacks raises ``NotFoundError`` naming the
+    reporter's listed years; a listed reporter-year without imports gives an empty list.
     ``meta.vintage`` is the reporter-year's release time from that list
     (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at`` is
     that time, naive (``meta.published_at_naive``).
@@ -1668,9 +1667,8 @@ async def get_un_reexports_async(
     not one the re-exports state. The arguments are checked as for ``get_un_exports``,
     membership only and before either request, but for an ISO code several listed codes
     share, refused once the exports list is read, its reporters named first. A listed
-    reporter-year without re-exports gives
-    an empty list; ``meta.published_at`` is the release time, naive
-    (``meta.published_at_naive``).
+    reporter-year without re-exports gives an empty list; ``meta.published_at`` is the
+    release time, naive (``meta.published_at_naive``).
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as

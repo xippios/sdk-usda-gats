@@ -954,8 +954,8 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
     replay_fixture: ReplayFixture,
 ) -> None:
     """The exports release list, 716 months, over MCP: cut at the default 200 rows, with a
-    note of its own that says the rows shown are the newest months and names no filter,
-    since the tool has none (ADR-0016)."""
+    note of its own that says the rows shown are the newest months and names the tool's
+    one filter, ``statistical_year`` (ADR-0016)."""
     route = replay_fixture(EXPORT_RELEASES, "all")
     payload = await mcp_call(server, "usda_gats_get_census_release_dates", {"product_type": "X"})
     assert len(payload["data"]) == 200

@@ -358,36 +358,156 @@ DISTRICT_TASKS = DATA_TASKS[3:]
 
 
 @pytest.mark.parametrize("task", DATA_TASKS, ids=[t.__name__ for t in DATA_TASKS])
-def test_a_discontinued_code_is_refused_after_its_month_before_any_request(
+def test_a_discontinued_leaf_is_refused_after_its_month_before_any_request(
     respx_mock: respx.MockRouter, task: Callable[..., Any]
 ) -> None:
-    """``SZ`` (Switzerland) was discontinued in 198712: 2026-08 is refused by every Census
-    task without a request, naming ``SR``, the current code of the same name."""
+    """``D1`` (Denmark) was discontinued in 198712 and is no other code's parent: 2026-08
+    is refused by every Census task without a request, naming ``9U`` and ``DA``, the
+    codes of the same name."""
     with pytest.raises(InvalidRequestError) as info:
-        task("SZ", 2026, 8)
+        task("D1", 2026, 8)
     assert not isinstance(info.value, UnknownCode)
-    assert info.value.message.startswith(
-        "partner_code 'SZ' (Switzerland) was discontinued in 198712"
-    )
-    assert info.value.message.endswith("Listed under the same name: SR.")
+    assert info.value.message.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
+    assert info.value.message.endswith("Listed under the same name: 9U, DA (discontinued 198712).")
     assert respx_mock.calls.call_count == 0
 
 
-def test_a_discontinued_code_passes_for_a_month_before_its_end(
+def test_a_discontinued_leaf_passes_for_a_month_before_its_end(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """``SZ`` for 1987-06, before its 198712: the check passes, the recorded exports list
-    (from 196701) has the month, and the data request goes out. NOT RECORDED: no answer
-    for Switzerland in 1987 is recorded, so the data route answers ``[]`` and the test
-    checks what was sent and the month's release time."""
+    """``D1`` (Denmark) for 1987-06, before its 198712: the check passes, the recorded
+    exports list (from 196701) has the month, and the data request goes out. NOT
+    RECORDED: no answer for Denmark in 1987 is recorded, so the data route answers ``[]``
+    and the test checks what was sent and the month's release time."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
-    url = f"{BASE_URL}/api/gats/censusExports/partnerCode/SZ/year/1987/month/6"
+    url = f"{BASE_URL}/api/gats/censusExports/partnerCode/D1/year/1987/month/6"
     data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    result = tasks.get_census_exports("SZ", 1987, 6)
+    result = tasks.get_census_exports("D1", 1987, 6)
     assert result.data == []
     assert result.meta.vintage == _release_time(EXPORT_RELEASES, "198706")
     assert sent_urls(releases) == [EXPORT_RELEASES_URL]
     assert sent_urls(data) == [url]
+
+
+def _exports_url(code: str) -> str:
+    return f"{BASE_URL}/api/gats/censusExports/partnerCode/{code}/year/2026/month/8"
+
+
+@pytest.mark.parametrize(
+    ("code", "count"),
+    [("AS", 669), ("A2", 669), ("Y1", 597), ("AC", 253)],
+    ids=["parent_AS", "child_A2", "parent_Y1", "child_AC"],
+)
+def test_a_parent_and_its_child_answer_for_a_current_month(
+    replay_fixture: ReplayFixture, code: str, count: int
+) -> None:
+    """Recorded 2026-10-28 for 2026-08: ``AS`` (Australia, discontinued 198712) and ``Y1``
+    (Leeward-Windward Islands, discontinued 198801) are parents and pass the check, as do
+    their children ``A2`` (Australia) and ``AC`` (Antigua and Barbuda); GATS answers each
+    under its own code, with the month's release as for any partner."""
+    case = f"{code}_2026_8"
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, case)
+    result = tasks.get_census_exports(code, 2026, 8)
+    assert len(result.data) == count
+    assert {r.country_code for r in result.data} == {code}
+    assert {r.date for r in result.data} == {"202608"}
+    assert [r.hs10_code for r in result.data] == [r["hS10Code"] for r in _recorded(EXPORTS, case)]
+    assert result.meta.source == "usda-gats"
+    assert result.meta.endpoint == "GATSData_GetCensusExports"
+    assert result.meta.request == {"partner_code": code, "year": 2026, "month": 8}
+    assert result.meta.vintage == RELEASED_2026_08
+    _published_naive(result.meta)
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL]
+    assert sent_urls(data) == [_exports_url(code)]
+
+
+def test_a_parent_answers_the_aggregate_of_its_children(replay_fixture: ReplayFixture) -> None:
+    """As recorded for 2026-08: ``Y1`` holds every HS10 code of ``AC``, one of its nine
+    islands, at no lower a value or quantity, and more in all; ``AS`` answers the records
+    of ``A2``, its child of the same name, apart from the code, while ``NF`` (Norfolk
+    Island), another child, answers ``[]``."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    for code in ("Y1", "AC", "AS", "A2", "NF"):
+        replay_fixture(EXPORTS, f"{code}_2026_8")
+    islands = {r.hs10_code: r for r in tasks.get_census_exports("Y1", 2026, 8).data}
+    antigua = tasks.get_census_exports("AC", 2026, 8).data
+    assert {r.hs10_code for r in antigua} <= set(islands)
+    for record in antigua:
+        whole = islands[record.hs10_code]
+        assert record.value <= whole.value, record.hs10_code
+        assert record.quantity1 <= whole.quantity1, record.hs10_code
+    assert sum(r.value for r in antigua) < sum(r.value for r in islands.values())
+    australia = tasks.get_census_exports("AS", 2026, 8).data
+    child = tasks.get_census_exports("A2", 2026, 8).data
+    assert [r.model_dump(exclude={"country_code"}) for r in australia] == [
+        r.model_dump(exclude={"country_code"}) for r in child
+    ], "the same records apart from the code"
+    assert tasks.get_census_exports("NF", 2026, 8).data == []
+
+
+@pytest.mark.parametrize(
+    "code", ["NF", "18", "01"], ids=["child_NF", "numbered_ASEAN", "numbered_Caribbean"]
+)
+def test_a_child_or_numbered_code_without_exports_is_an_empty_result(
+    replay_fixture: ReplayFixture, code: str
+) -> None:
+    """Recorded for 2026-08: ``NF`` (Norfolk Island, a child of ``AS``), ``18`` (ASEAN)
+    and ``01`` (Caribbean,nes), two-digit codes of region ``R99``, answer HTTP 200 with
+    ``[]``. The codes are listed and the month is released, so empty means no data, as
+    for any listed partner without trade, and nothing is refused."""
+    case = f"{code}_2026_8"
+    assert load_fixture(FIXTURES / EXPORTS / f"{case}.json").response.status == 200
+    assert _recorded(EXPORTS, case) == []
+    replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, case)
+    result = tasks.get_census_exports(code, 2026, 8)
+    assert result.data == []
+    assert result.meta.request == {"partner_code": code, "year": 2026, "month": 8}
+    assert result.meta.vintage == RELEASED_2026_08, "the month's release, data or none"
+    _published_naive(result.meta)
+    assert sent_urls(data) == [_exports_url(code)]
+
+
+def test_a_discontinued_leaf_is_refused_where_upstream_answers_empty(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """``GC`` (Germany, Democratic Republic, discontinued 199009) is a leaf, a child of
+    ``GM`` (Germany); GATS answered 2026-08 with ``[]`` as recorded, and the task refuses
+    the month before either request, naming the parent."""
+    assert _recorded(EXPORTS, "GC_2026_8") == []
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, "GC_2026_8")
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_census_exports("GC", 2026, 8)
+    assert not isinstance(info.value, UnknownCode)
+    assert info.value.message.startswith(
+        "partner_code 'GC' (Germany, Democratic Republic) was discontinued in 199009"
+    )
+    assert "Its parent code GM (Germany) is accepted for every month." in info.value.message
+    assert sent_urls(releases) == []
+    assert sent_urls(data) == []
+
+
+@pytest.mark.anyio
+async def test_a_parent_code_over_mcp_end_to_end(replay_fixture: ReplayFixture) -> None:
+    """``Y1`` (Leeward-Windward Islands, a parent discontinued 198801) through the MCP tool
+    for 2026-08: its 597 rows are cut at the default cap with the filter note, every row
+    under ``Y1``."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, "Y1_2026_8")
+    arguments: dict[str, object] = {"partner_code": "Y1", "year": 2026, "month": 8}
+    payload = await mcp_call(server, "usda_gats_get_census_exports", arguments)
+    shown = len(payload["data"])
+    assert payload["note"] == (
+        f"showing {shown} of 597 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+    )
+    assert {row["country_code"] for row in payload["data"]} == {"Y1"}
+    assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
+    assert payload["meta"]["request"] == arguments
+    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert payload["meta"]["published_at_naive"] is True
+    assert sent_urls(data) == [_exports_url("Y1")]
 
 
 def test_an_iso_code_leads_to_the_partner_code_before_any_request(
@@ -646,9 +766,9 @@ async def test_the_district_and_re_export_tools_end_to_end(
             "usda_gats_get_customs_district_reexports",
             {**arguments, "customs_district_id": 12},
         )
-    with pytest.raises(AssertionError, match="error: InvalidRequestError: partner_code 'SZ'"):
+    with pytest.raises(AssertionError, match="error: InvalidRequestError: partner_code 'GC'"):
         await mcp_call(
-            server, "usda_gats_get_census_reexports", {**arguments, "partner_code": "SZ"}
+            server, "usda_gats_get_census_reexports", {**arguments, "partner_code": "GC"}
         )
 
 
@@ -822,7 +942,7 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     assert unknown.status_code == 422
     assert unknown.json()["title"] == "UnknownCode"
     discontinued = http.get(
-        "/usda-gats/get_census_exports", params={**params, "partner_code": "SZ"}
+        "/usda-gats/get_census_exports", params={**params, "partner_code": "GC"}
     )
     assert discontinued.status_code == 422
     assert discontinued.json()["title"] == "InvalidRequestError"
@@ -1105,15 +1225,15 @@ def test_series_arguments_are_checked_before_any_request(
     with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 20260"):
         task("IC", 2026, 6, 20260, 8)
     with pytest.raises(InvalidRequestError) as inside:
-        task("SZ", 1987, 6, 1988, 1)
+        task("D1", 1987, 6, 1988, 1)
     assert not isinstance(inside.value, UnknownCode)
-    assert inside.value.message.startswith(
-        "partner_code 'SZ' (Switzerland) was discontinued in 198712"
-    )
+    assert inside.value.message.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
     assert "so 1988-01 (198801) is refused" in inside.value.message
-    assert inside.value.message.endswith("Listed under the same name: SR.")
+    assert inside.value.message.endswith(
+        "Listed under the same name: 9U, DA (discontinued 198712)."
+    )
     with pytest.raises(InvalidRequestError, match="so 2026-06 \\(202606\\) is refused"):
-        task("SZ", 2026, 6, 2026, 8)
+        task("D1", 2026, 6, 2026, 8)
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         task("ZZ", 2026, 6, 2026, 8)
     assert unknown.value.closest == ()
@@ -1876,14 +1996,15 @@ def test_an_imports_reporter_year_is_checked_against_the_imports_list(
 def test_a_discontinued_code_is_accepted_on_the_un_side(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """The countries list marks ``AS`` (Australia) discontinued in 198712, and the Census
-    tasks refuse it for 2019; the UN Trade data keeps it. As a partner it selects Macau's
-    27 re-export records of 2019 (recorded); as a reporter it passes the check and meets
-    the release list, which lists its imports to 2018 and its exports to 2016. NOT
-    RECORDED: no answer for Australia's 2018 imports is recorded, so the data route answers
-    ``[]`` and the test checks what was sent and the reporter-year's release time."""
-    with pytest.raises(InvalidRequestError, match="partner_code 'AS' \\(Australia\\) was disc"):
-        tasks.get_census_exports("AS", 2019, 1)
+    """The countries list marks ``AS`` (Australia) and ``DA`` (Denmark) discontinued in
+    198712; the Census tasks refuse ``DA``, a leaf, for 2019, and accept ``AS``, a parent;
+    the UN Trade data keeps both. As a partner ``AS`` selects Macau's 27 re-export records
+    of 2019 (recorded); as a reporter it passes the check and meets the release list,
+    which lists its imports to 2018 and its exports to 2016. NOT RECORDED: no answer for
+    Australia's 2018 imports is recorded, so the data route answers ``[]`` and the test
+    checks what was sent and the reporter-year's release time."""
+    with pytest.raises(InvalidRequestError, match="partner_code 'DA' \\(Denmark\\) was disc"):
+        tasks.get_census_exports("DA", 2019, 1)
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")
     australia = tasks.get_un_reexports("MC", 2019, partner_code="AS")

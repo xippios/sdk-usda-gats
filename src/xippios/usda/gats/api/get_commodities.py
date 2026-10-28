@@ -22,7 +22,9 @@ entry, or from none, is parsed and replaces the slot. The slot holds the entry i
 and compares it by identity: a new entry is a new object, whether the day's entry
 expired, the cache was cleared (core's test plugin clears it around every offline test)
 or the answer was too large to store, so a slot never answers for another entry and
-nothing clears it by hand.
+nothing clears it by hand. The slot keeps the parsed records (about 32 MB for the 24,936
+models, measured with ``tracemalloc``) and the entry's 7.6 MB body alive until the next
+call replaces them, also after the cache's entry has expired or been cleared.
 """
 
 from datetime import datetime

@@ -40,6 +40,12 @@ All notable changes to this project are documented here. The format follows
   `.github/scripts/check-siblings.sh`, which finds the siblings on PyPI itself;
   `scripts/check-siblings.sh` is gone. `CLAUDE.md` imports the family rules from
   `.claude/family.md`.
+- The nineteen endpoint wrappers and their fixture directories take the upstream
+  operation name in snake case, without the `GATSData_` prefix every operation shares
+  (conventions 1.22 §2, §10): `api.GATSData_GetCensusImport` is `api.get_census_import`
+  in `api/get_census_import.py`, and `tests/fixtures/GATSData_GetUNTradeExports/` is
+  `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
+  are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id.
 
 ## [0.1.0] - 2026-10-26
 

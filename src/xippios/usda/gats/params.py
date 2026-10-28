@@ -214,13 +214,13 @@ def validate_partner_code(partner_code: str) -> str:
     check runs before any upstream call. Every listed code passes here, the 26 with a
     ``discontinuedOn`` month included; ``validate_partner_month`` then refuses the 7 that
     are no other code's parent for a month after it. A parent code, one another record
-    names as its ``countryParentCode`` (``list_countries`` shows it), stands for the
+    names as its ``countryParentCode`` (``list_countries`` shows it), is taken for the
     aggregate of its children: as recorded for 2026-08, ``Y1`` (Leeward-Windward Islands)
     answers every HS10 code of ``AC`` (Antigua and Barbuda), one of its nine islands, at
-    no lower a value (``Y1_2026_8.json``, ``AC_2026_8.json``). The numbered codes ``01``
-    to ``18``, region ``R99`` and nobody's parent, are Census residual and grouping codes
-    (``01`` Caribbean,nes, ``18`` ASEAN); both answered 2026-08 with ``[]`` as recorded,
-    and an empty answer means no data, as for any listed partner without trade.
+    no lower a value (``Y1_2026_8.json``, ``AC_2026_8.json``). The two-digit codes of
+    region ``R99``, ``01`` (Caribbean,nes) to ``18`` (ASEAN), are nobody's parent and
+    pass as well; ``01`` and ``18`` answered 2026-08 with ``[]`` as recorded, and an empty
+    answer means no data, as for any listed partner without trade.
     ``validate_country_code`` with ``"partner_code"`` and ``errors.PARTNER_REASON``.
 
     Args:
@@ -279,22 +279,22 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
     code's ``discontinuedOn`` if the code is no other code's parent. 26 codes of the
     packaged ``countries`` list carry one, a year and month as six digits (``"198712"``).
     19 of them are parents, codes another record names as its ``countryParentCode``
-    (``SZ``, Switzerland, the parent of ``SR`` Switzerland and ``LS`` Liechtenstein), and
-    GATS still answers them for current months with the aggregate of their children, so
-    a parent passes for every month. As recorded for 2026-08: ``Y1`` (Leeward-Windward
-    Islands, discontinued 198801) answers every HS10 code of ``AC`` (Antigua and Barbuda),
-    one of its nine islands, at no lower a value; ``AS`` (Australia, discontinued
-    198712) answers the same 669 records as ``A2`` (Australia), its child of the same
-    name, while ``NF`` (Norfolk Island), another child, answers ``[]``. The other 7 are
-    leaves, nobody's parent: ``D1`` and ``DA`` (Denmark), ``GC`` and ``GE`` (the two
-    former Germanys), ``RB`` (Serbia and Kosovo), ``YE`` and ``YS`` (the two former
-    Yemens). The package reads a leaf's month as its last: a month at or before it passes,
-    a later one is refused before any call, naming the leaf's own parent where it has
-    one (``GM``, Germany, for ``GC`` and ``GE``; ``YM``, Yemen, for ``YE`` and ``YS``) and
-    the listed codes with the same ``countryName``; ``GC`` answered 2026-08 with ``[]``
-    as recorded. Months are compared as six-digit text, as upstream writes them; ``YS``
-    (Yemen (Aden)) reads ``"199091"``, so every month of 1990 passes for it and 1991-01 on
-    is refused.
+    (``SZ``, Switzerland, the parent of ``SR`` Switzerland and ``LS`` Liechtenstein). Two
+    were recorded for 2026-08: ``Y1`` (Leeward-Windward Islands, discontinued 198801)
+    answers every HS10 code of ``AC`` (Antigua and Barbuda), one of its nine islands, at
+    no lower a value, as the sum of its children would; ``AS`` (Australia, discontinued
+    198712) answers the 669 records of ``A2`` (Australia), its child of the same name,
+    apart from the code, while ``NF`` (Norfolk Island), another child, answers ``[]``. On
+    that evidence the package accepts every parent for every month, by decision: the
+    other parents were not recorded. The remaining 7 of the 26 are leaves, nobody's parent:
+    ``D1`` and ``DA`` (Denmark), ``GC`` and ``GE`` (the two former Germanys), ``RB`` (Serbia
+    and Kosovo), ``YE`` and ``YS`` (the two former Yemens). The package reads a leaf's month
+    as its last: a month at or before it passes, a later one is refused before any call,
+    naming the leaf's own parent where it has one (``GM``, Germany, for ``GC`` and ``GE``;
+    ``YM``, Yemen, for ``YE`` and ``YS``) and the listed codes with the same
+    ``countryName``; ``GC`` answered 2026-08 with ``[]`` as recorded. Months are compared as
+    six-digit text, as upstream writes them; ``YS`` (Yemen (Aden)) reads ``"199091"``, so
+    every month of 1990 passes for it and 1991-01 on is refused.
 
     Args:
         partner_code: GATS's two-character code, e.g. ``"GE"`` (Germany, Federal Republic

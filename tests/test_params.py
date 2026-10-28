@@ -277,8 +277,11 @@ def test_a_leaf_refusal_names_no_parent_the_list_does_not_hold(
 @pytest.mark.parametrize("code", ["SZ", "AS", "Y1"])
 def test_a_discontinued_parent_passes_for_a_current_month(code: str) -> None:
     """``SZ`` (Switzerland, 198712), ``AS`` (Australia, 198712) and ``Y1``
-    (Leeward-Windward Islands, 198801) are parents: GATS answers them for 2026-08 with the
-    aggregate of their children (``AS_2026_8.json``, ``Y1_2026_8.json``)."""
+    (Leeward-Windward Islands, 198801) are parents and pass for 2026-08: the rule accepts
+    every parent by decision. Two were recorded: ``Y1`` as the sum of its children would
+    answer (``Y1_2026_8.json``, holding every HS10 code of ``AC_2026_8.json`` at no lower
+    a value), ``AS`` with the records of ``A2`` apart from the code while ``NF`` was
+    empty; ``SZ`` was not."""
     assert validate_partner_month(code, 2026, 8) == code
 
 

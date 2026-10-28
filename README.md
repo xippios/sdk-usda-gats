@@ -47,20 +47,20 @@ listed codes of the same name and the code's own parent where it has one: `"D1"`
 (Denmark) ended in 198712, so 2026-08 is refused and `9U` and `DA` named, while 1987-06
 passes. The other 19 are parents, codes other records name as their `countryParentCode`
 (`"SZ"` Switzerland, the parent of `SR` and `LS`), and pass for every month, as do the
-numbered codes `"01"` to `"18"`, Census residual and grouping codes such as `"01"`
-(Caribbean,nes) and `"18"` (ASEAN). `month` is 1 to 12 and `year` four digits;
-`hs10_code` keeps the products whose code starts with it, a full ten-digit code for one
-product or a prefix such as a chapter, applied after the one data request.
-`get_census_imports` takes the same arguments and adds five consumption and CIF fields
-per record; `get_census_reexports` answers the exports' record for US re-exports.
+two-digit codes of region `R99`, `"01"` (Caribbean,nes) to `"18"` (ASEAN). `month` is 1 to
+12 and `year` four digits; `hs10_code` keeps the products whose code starts with it, a full
+ten-digit code for one product or a prefix such as a chapter, applied after the one data
+request. `get_census_imports` takes the same arguments and adds five consumption and CIF
+fields per record; `get_census_reexports` answers the exports' record for US re-exports.
 
-A parent code answers under its own code with the aggregate of its children, as
-recorded for 2026-08: `"Y1"` (Leeward-Windward Islands, discontinued 198801) holds every
-HS10 code of `"AC"` (Antigua and Barbuda), one of its nine islands, at no lower a value,
-and `"AS"` (Australia, discontinued 198712) the same 669 records as its child `"A2"`,
-while `"NF"` (Norfolk Island), another child, answered none. `"18"` and `"01"` answered
-an empty list, which means no data, as for any listed partner without trade; the package
-assumes no member list for them.
+Two parents were recorded for 2026-08, each answering under its own code: `"Y1"`
+(Leeward-Windward Islands, discontinued 198801) holds every HS10 code of `"AC"` (Antigua
+and Barbuda), one of its nine islands, at no lower a value, as the sum of its children
+would, and `"AS"` (Australia, discontinued 198712) answers the 669 records of its child
+`"A2"` apart from the code, while `"NF"` (Norfolk Island), another child, answered none.
+On that evidence the package accepts every parent for every month. `"18"` and `"01"`
+answered an empty list, which means no data, as for any listed partner without trade;
+the package assumes no member list for them.
 
 The customs-district forms answer the same partner-month by US customs district, one
 record per district and HS10 code, and take `customs_district_id` too, checked against

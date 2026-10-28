@@ -424,9 +424,9 @@ def test_a_parent_and_its_child_answer_for_a_current_month(
 
 def test_a_parent_answers_the_aggregate_of_its_children(replay_fixture: ReplayFixture) -> None:
     """As recorded for 2026-08: ``Y1`` holds every HS10 code of ``AC``, one of its nine
-    islands, at no lower a value or quantity, and more in all; ``AS`` answers exactly the
-    records of ``A2``, its child of the same name, under its own code, while ``NF``
-    (Norfolk Island), another child, answers ``[]``."""
+    islands, at no lower a value or quantity, and more in all; ``AS`` answers the records
+    of ``A2``, its child of the same name, apart from the code, while ``NF`` (Norfolk
+    Island), another child, answers ``[]``."""
     replay_fixture(EXPORT_RELEASES, "all")
     for code in ("Y1", "AC", "AS", "A2", "NF"):
         replay_fixture(EXPORTS, f"{code}_2026_8")
@@ -453,9 +453,9 @@ def test_a_child_or_numbered_code_without_exports_is_an_empty_result(
     replay_fixture: ReplayFixture, code: str
 ) -> None:
     """Recorded for 2026-08: ``NF`` (Norfolk Island, a child of ``AS``), ``18`` (ASEAN)
-    and ``01`` (Caribbean,nes), two numbered residual and grouping codes, answer HTTP 200
-    with ``[]``. The codes are listed and the month is released, so empty means no data,
-    as for any listed partner without trade, and nothing is refused."""
+    and ``01`` (Caribbean,nes), two-digit codes of region ``R99``, answer HTTP 200 with
+    ``[]``. The codes are listed and the month is released, so empty means no data, as
+    for any listed partner without trade, and nothing is refused."""
     case = f"{code}_2026_8"
     assert load_fixture(FIXTURES / EXPORTS / f"{case}.json").response.status == 200
     assert _recorded(EXPORTS, case) == []

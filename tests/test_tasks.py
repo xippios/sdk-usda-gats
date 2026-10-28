@@ -1169,9 +1169,9 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     """Iceland's exports over July and August 2026: July answers as recorded, August with
     a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
     nothing, not July's 105 records. The wait is read through the client, so it is the
-    snapshot's from now, a fraction under ``Retry-After``'s 3151 s. NOT RECORDED here: GATS
-    has no recorded 429, so August's answer is psd's, built as ``test_client.py`` builds
-    it. Not marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself,
+    snapshot's from now, ``Retry-After``'s 3151 s give or take ``CLOCK_SLACK``: a fraction
+    under, or over where this host's clock steps back. NOT RECORDED here: GATS has no
+    recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself,
     which the plugin leaves on, not the quota policy's pause, which it turns off."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
@@ -1181,7 +1181,8 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     with pytest.raises(RateLimitError) as info:
         tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
     assert info.value.retry_after is not None
-    assert 3151 - CLOCK_SLACK.total_seconds() <= info.value.retry_after <= 3151
+    slack = CLOCK_SLACK.total_seconds()
+    assert 3151 - slack <= info.value.retry_after <= 3151 + slack
     assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
     assert sent_urls(july) == [_ic_url("censusExports", 7)]
     assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"

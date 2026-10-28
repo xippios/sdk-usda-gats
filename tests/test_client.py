@@ -277,7 +277,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
         await api.GATSData_GetCountries()
     slack = CLOCK_SLACK.total_seconds()
     assert info.value.retry_after is not None
-    assert 3151 - slack <= info.value.retry_after <= 3151, "the snapshot's wait from now"
+    assert 3151 - slack <= info.value.retry_after <= 3151 + slack, "the snapshot's wait from now"
     assert info.value.source == "usda-gats"
     assert route.call_count == 1, "not retried"
     assert "1000 requests per rolling hour per key" in info.value.message
@@ -294,7 +294,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     )
     assert refused.value.source == "api.data.gov"
     assert refused.value.retry_after is not None
-    assert 3151 - slack <= refused.value.retry_after <= 3151
+    assert 3151 - slack <= refused.value.retry_after <= 3151 + slack
     assert route.call_count == 1
     assert releases.call_count == 0
 
@@ -311,7 +311,7 @@ async def test_core_retries_a_429_only_within_its_backoff(
     """NOT RECORDED here: psd's recorded 429, with or without its ``Retry-After``. gats's
     ``classify`` shapes core's retries (ADR-0015): its ``RateLimitError`` carries the wait,
     ``Retry-After`` or else the one-hour window, counted from the snapshot core's
-    ``observe`` took, so a fraction under it read through the client, and beyond
+    ``observe`` took, so within ``CLOCK_SLACK`` of it read through the client, and beyond
     ``backoff_max`` (30 s), so a 429 is sent once, with or without the header. The control
     drops ``classify``: core then retries the 429 without ``Retry-After`` on its status
     alone, three more times at its short backoff, so this test fails if ``classify`` stops
@@ -340,7 +340,8 @@ async def test_core_retries_a_429_only_within_its_backoff(
     if shaped:
         wait = float(retry_after or 3600)
         assert info.value.retry_after is not None
-        assert wait - CLOCK_SLACK.total_seconds() <= info.value.retry_after <= wait
+        slack = CLOCK_SLACK.total_seconds()
+        assert wait - slack <= info.value.retry_after <= wait + slack
     else:
         assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
 

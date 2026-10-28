@@ -66,6 +66,11 @@ All notable changes to this project are documented here. The format follows
   on its list. A refusal from the cached UN list says it is kept for a day. The Census
   release lists stay at an hour (`_client.UN_RELEASE_DATES_TTL`,
   `_client.un_release_dates_cache`).
+- `list_commodities` parses the HS10 list into records once for each day the client
+  keeps it, where it parsed the 24,936 records on every search: the endpoint wrapper
+  keeps the records beside the cache entry they came from and returns them for every
+  answer from that entry; a new entry is parsed again. `meta.retrieved_at` is still the
+  entry's stored time.
 - The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
   core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
   default, and a list grown past it would no longer have been cached for the day.

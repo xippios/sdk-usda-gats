@@ -204,8 +204,9 @@ names) and `list_customs_districts()` (53, e.g. 10 NEW YORK, N.Y.).
 
 The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commodities(search=None,
 hs10_code=None, product_type=None)` fetches it live, in one request the client keeps for
-a day, and filters it: `search` on the name and the description, `hs10_code` a prefix of
-the code, `product_type` exact. Upstream's product types are `"X"` (exports, 5,919
+a day and parses into records once for that day, and filters it: `search` on the name
+and the description, `hs10_code` a prefix of the code, `product_type` exact.
+Upstream's product types are `"X"` (exports, 5,919
 records), `"M"` (imports, 14,469), `"T"` (2,704) and `"B"` (1,844); upstream documents
 none of them, and the `T` and `B` records carry seven-digit codes padded with three
 spaces, kept as sent. On a cache hit `meta.retrieved_at` is when the list was fetched.

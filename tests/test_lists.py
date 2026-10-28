@@ -10,9 +10,11 @@ empties every ``MemoryCache`` around each offline test (ADR-0013).
 """
 
 import json
+import sys
 from collections import Counter
 from datetime import UTC, datetime
 from importlib import resources
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,10 +22,16 @@ import pytest
 import respx
 from xippios.core import InvalidRequestError, PackagedList
 from xippios.core.client import cache_key
-from xippios.core.testing import ReplayFixture, mcp_call, sent_urls
+from xippios.core.testing import (
+    ReplayFixture,
+    assert_time_between,
+    load_fixture,
+    mcp_call,
+    sent_urls,
+)
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, cache
+from xippios.usda.gats._client import BASE_URL, cache, commodities_cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
@@ -66,6 +74,9 @@ countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
 CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"
+COMMODITIES_FIXTURE = Path(__file__).parent / "fixtures" / "get_commodities" / "all.json"
+WRAPPER = sys.modules["xippios.usda.gats.api.get_commodities"]
+"""The wrapper's module: ``api.get_commodities`` is the function, which shadows it."""
 HS6_NOTE = (
     "filter by search, on the code, the name and the description, e.g. 'wheat', or by "
     "hs6_code (a code or a prefix such as '0201') to see the rest"
@@ -457,6 +468,107 @@ def test_list_commodities_filters(replay_fixture: ReplayFixture) -> None:
         ("3001200000", "X"),
     ], "upstream text the fixture's key grep matches"
     assert route.call_count == 1
+
+
+def _count_parses(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count the wrapper's calls of core's ``parse``, each record list it builds."""
+    sizes: list[int] = []
+    real = WRAPPER.parse
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        records = real(*args, **kwargs)
+        sizes.append(len(records))
+        return records
+
+    monkeypatch.setattr(WRAPPER, "parse", counted)
+    return sizes
+
+
+def _entry_time() -> datetime:
+    entry = cache.get(cache_key("GET", httpx.URL(COMMODITIES_URL)))
+    assert entry is not None
+    return datetime.fromtimestamp(entry.stored_at, UTC)
+
+
+def test_list_commodities_parses_the_list_once_per_cache_entry(
+    replay_fixture: ReplayFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recorded HS10 list, one request: three searches within the day's entry parse
+    it once and share the records it parsed, the same objects; ``meta.retrieved_at`` is
+    still the entry's stored time on every hit. A new entry, here after the cache was
+    cleared as an expired entry would be dropped, is fetched and parsed again: equal
+    records, new objects, the new entry's time."""
+    parses = _count_parses(monkeypatch)
+    route = replay_fixture("get_commodities", "all")
+    before = datetime.now(UTC)
+    every = tasks.list_commodities()
+    assert_time_between(every.meta.retrieved_at, before, datetime.now(UTC))
+    wheat = tasks.list_commodities(search="wheat")
+    fillets = tasks.list_commodities(hs10_code="0304")
+    again = tasks.list_commodities()
+    assert parses == [24936], "parsed once for the entry"
+    assert route.call_count == 1
+    stored = _entry_time()
+    for result in (wheat, fillets, again):
+        assert result.meta.retrieved_at == stored, "the entry's time on a hit"
+    assert all(a is b for a, b in zip(again.data, every.data, strict=True)), "the same records"
+    by_id = {id(c) for c in every.data}
+    assert {id(c) for c in wheat.data} <= by_id
+    assert (len(wheat.data), len(fillets.data)) == (168, 548)
+    cache.clear()
+    renewed = tasks.list_commodities()
+    assert route.call_count == 2, "a new entry from the wire"
+    assert parses == [24936, 24936], "and parsed again"
+    assert renewed.data == every.data
+    assert not any(a is b for a, b in zip(renewed.data, every.data, strict=True))
+    assert renewed.meta.retrieved_at >= stored
+    tasks.list_commodities(search="swine")
+    assert parses == [24936, 24936], "the new entry's records serve the next search"
+    assert sent_urls(route) == [COMMODITIES_URL, COMMODITIES_URL]
+
+
+def test_a_slot_never_answers_for_another_answer(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NOT RECORDED as such: the second answer is the recorded list's first record alone,
+    a stand-in for a list upstream changed. Once the first answer's entry is gone, the
+    slot it filled does not answer for the new one, which is parsed and returned."""
+    parses = _count_parses(monkeypatch)
+    body = load_fixture(COMMODITIES_FIXTURE).response.body
+    assert isinstance(body, str)
+    first_record = json.loads(body)[:1]
+    route = respx_mock.get(COMMODITIES_URL).mock(
+        side_effect=[
+            httpx.Response(200, content=body.encode("utf-8")),
+            httpx.Response(200, json=first_record),
+        ]
+    )
+    assert len(tasks.list_commodities().data) == 24936
+    assert len(tasks.list_commodities().data) == 24936, "from the entry and the slot"
+    cache.clear()
+    changed = tasks.list_commodities()
+    assert [c.hs10_code for c in changed.data] == [first_record[0]["hS10Code"]]
+    hit = tasks.list_commodities()
+    assert hit.data == changed.data
+    assert hit.meta.retrieved_at == _entry_time()
+    assert parses == [24936, 1]
+    assert route.call_count == 2
+
+
+def test_an_answer_the_cache_does_not_keep_is_parsed_every_time(
+    replay_fixture: ReplayFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An answer the cache does not store, one over the cache's bound say, has no entry
+    to tie records to: each call fetches and parses it, and the slot stays empty, so it
+    cannot answer for the entry a later answer gets."""
+    parses = _count_parses(monkeypatch)
+    route = replay_fixture("get_commodities", "all")
+    monkeypatch.setattr(commodities_cache, "set", lambda key, value: None)
+    tasks.list_commodities(search="wheat")
+    tasks.list_commodities(search="swine")
+    assert route.call_count == 2
+    assert parses == [24936, 24936]
+    assert WRAPPER._parsed is None
 
 
 def test_list_commodities_checks_hs10_code_before_the_request(

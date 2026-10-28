@@ -1826,8 +1826,9 @@ async def list_commodities_async(
     spaces (``"0011010   "``) and no description, kept as sent. A code is not unique: it
     repeats across product types and with a later ``start_date`` (``"0207410000"`` under
     ``"M"`` is chicken cuts from ``"198901"`` and ducks from ``"201201"``). Not packaged,
-    for its size: one request, kept by the client for a day, so a search after the first
-    sends nothing; ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
+    for its size: one request, kept by the client for a day and parsed into records once
+    for it, so a search after the first sends nothing and parses nothing anew;
+    ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
     and ``meta.published_at`` stay empty: upstream gives the list no version or date. The
     filters apply after the one request; for HS6 codes use ``list_hs6_commodities``.
 

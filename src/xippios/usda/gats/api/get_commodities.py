@@ -14,20 +14,49 @@ The client caches this path for a day (``_client.COMMODITIES_TTL``), so the wrap
 it with ``client.get_answer``, whose ``retrieved_at`` ``tasks.list_commodities``
 reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
 time the answer arrived (conventions §4, ADR-0015).
+
+Parsing the 24,936 records into models takes longer than the search after it, so the
+wrapper keeps the records it parsed beside the cache entry they came from, one slot: an
+answer from the entry the slot holds returns the same records, an answer from another
+entry, or from none, is parsed and replaces the slot. The slot holds the entry itself
+and compares it by identity: a new entry is a new object, whether the day's entry
+expired, the cache was cleared (core's test plugin clears it around every offline test)
+or the answer was too large to store, so a slot never answers for another entry and
+nothing clears it by hand.
 """
 
 from datetime import datetime
+from typing import NamedTuple
 
+import httpx
 from xippios.core import parse
+from xippios.core.client import CachedResponse, cache_key
 
-from xippios.usda.gats._client import COMMODITIES_PATH, SOURCE, client
+from xippios.usda.gats._client import BASE_URL, COMMODITIES_PATH, SOURCE, cache, client
 from xippios.usda.gats.models import Commodity
 
 __all__ = ["get_commodities"]
 
+_KEY = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
+"""The client's cache key of the commodities answer (``_client.PathCaches``)."""
+
+
+class _Parsed(NamedTuple):
+    """The records parsed from one cached answer, and the cache entry they came from."""
+
+    entry: CachedResponse
+    records: list[Commodity]
+
+
+_parsed: _Parsed | None = None
+"""The one slot: the last records parsed from a cached answer, or ``None``."""
+
 
 async def get_commodities() -> tuple[list[Commodity], datetime]:
     """Call ``GATSData_GetCommodities``.
+
+    The records are parsed once per cache entry: within the day the client keeps the
+    answer, every call after the first returns the same list (see the module docstring).
 
     Returns:
         Every commodity record, current and historical, in upstream order (by code), one
@@ -38,17 +67,26 @@ async def get_commodities() -> tuple[list[Commodity], datetime]:
             is_ag_commodity=False, census_uom_id1=78, census_uom_id2=78,
             fas_converted_uom_id=78, fas_non_converted_uom_id=78)``,
         and when it was retrieved, timezone-aware UTC: on a cache hit the time the
-        entry was stored, else the time the answer arrived.
+        entry was stored, else the time the answer arrived. The list is shared by the
+        calls answered from the same entry: a caller that changes it copies it first.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
     """
+    global _parsed
     answer = await client.get_answer(COMMODITIES_PATH)
+    # The entry the answer came from, or the one the client has just stored it as: no
+    # await lies between the client's lookup or store and this one.
+    entry = cache.get(_KEY)
+    held = _parsed
+    if held is not None and entry is not None and held.entry is entry:
+        return held.records, answer.retrieved_at
     records = parse(
         list[Commodity],
         answer.payload,
         source=SOURCE,
         endpoint="GATSData_GetCommodities",
     )
+    _parsed = None if entry is None else _Parsed(entry, records)
     return records, answer.retrieved_at

@@ -36,9 +36,10 @@ from typing import Any
 import httpx
 import pytest
 from xippios.core import UpstreamModel
+from xippios.core.data_gov import Gateway
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, config, policy
+from xippios.usda.gats._client import BASE_URL, config
 from xippios.usda.gats.models import ProductType
 from xippios.usda.gats.params import packaged_values, validate_partner_code
 
@@ -71,7 +72,7 @@ def _vintage_is_a_release_time(vintage: str | None) -> None:
 
 
 def _quota_is_the_gateways() -> None:
-    snapshot = policy.snapshot()
+    snapshot = Gateway.policy.snapshot()
     assert snapshot is not None
     assert snapshot.limit == 1000
 

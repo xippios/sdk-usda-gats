@@ -95,16 +95,6 @@ RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
 
 
-@pytest.fixture(autouse=True)
-def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour and the commodities list for
-    a day (``_client.cache``): each test starts and ends without an entry, so a list one
-    test fetched never answers the route the next test mounted."""
-    cache.clear()
-    yield
-    cache.clear()
-
-
 def _recorded(endpoint: str, case: str) -> list[dict[str, object]]:
     records: list[dict[str, object]] = json.loads(
         load_fixture(FIXTURES / endpoint / f"{case}.json").response.body
@@ -308,7 +298,7 @@ def test_a_month_not_released_yet_is_not_found(replay_fixture: ReplayFixture) ->
     assert message.startswith("GATS has no Census exports for 203501: it is not released yet")
     assert "the latest exports month released is 202608" in message
     assert "716 months, 196701 to 202608" in message
-    assert "fetched at" not in message, "the list came from the wire"
+    assert "The release list was fetched at " in message, "when it came from the wire"
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
 
@@ -1196,10 +1186,11 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
 ) -> None:
     """Iceland's exports over July and August 2026: July answers as recorded, August with
     a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
-    nothing, not July's 105 records. NOT RECORDED here: GATS has no recorded 429, so
-    August's answer is psd's, built as ``test_client.py`` builds it. Not marked
-    ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which the
-    plugin leaves on, not the quota policy's pause, which it turns off."""
+    nothing, not July's 105 records. The wait is read through the client, so it is the
+    snapshot's from now, a fraction under ``Retry-After``'s 3151 s. NOT RECORDED here: GATS
+    has no recorded 429, so August's answer is psd's, built as ``test_client.py`` builds
+    it. Not marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself,
+    which the plugin leaves on, not the quota policy's pause, which it turns off."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
     august = respx_mock.get(_ic_url("censusExports", 8)).mock(
@@ -1207,7 +1198,8 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     )
     with pytest.raises(RateLimitError) as info:
         tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
-    assert info.value.retry_after == 3151.0
+    assert info.value.retry_after is not None
+    assert 3151 - CLOCK_SLACK.total_seconds() <= info.value.retry_after <= 3151
     assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
     assert sent_urls(july) == [_ic_url("censusExports", 7)]
     assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"
@@ -1786,12 +1778,13 @@ def test_a_reporter_year_the_list_lacks_is_not_found(replay_fixture: ReplayFixtu
     with pytest.raises(NotFoundError) as info:
         tasks.get_un_exports("IC", 2020)
     message = info.value.message
-    assert message == (
+    assert message.startswith(
         "GATS has no UN Trade exports for reporter IC in 2020: "
         "GATSData_GetUNTradeExportDataReleaseInfo lists 31 years of exports for reporter IC, "
         "1989 to 2019; the latest year it lists for any reporter is 2019, and its newest "
         "release time is 2021-01-18T01:25:58. GATS answers a reporter-year it has not "
-        "released with an empty list, so the package checks the release list first."
+        "released with an empty list, so the package checks the release list first. The "
+        "release list was fetched at "
     )
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
@@ -1810,7 +1803,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
     assert "lists 12 years of exports for reporter MC, 1991 to 1999, 2015, 2016, 2019;" in (
         gap.value.message
     )
-    assert "fetched at" not in gap.value.message, "the first read is from the wire"
+    assert "The release list was fetched at " in gap.value.message, "from the wire"
     with pytest.raises(NotFoundError) as none:
         tasks.get_un_reexports("CD", 2019)
     message = none.value.message
@@ -1822,7 +1815,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
     assert "GATS publishes no UN Trade release list for re-exports: the package checks the " in (
         message
     )
-    assert "The release list was fetched at " in message, "the second read is cached"
+    assert "The release list was fetched at " in message, "and from the cache"
     assert " UTC and is kept for an hour" in message
     with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
         tasks.get_un_exports("IC", 2035)

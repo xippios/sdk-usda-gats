@@ -117,7 +117,7 @@ upstream reports no count.
 
 import argparse
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 from xippios.core import InvalidRequestError, NotFoundError, Result, ResultMeta, parse, sync
@@ -454,7 +454,7 @@ def _check(
 def _release_of(
     month_code: str,
     releases: list[DataReleaseInfo],
-    stored: datetime | None,
+    fetched: datetime,
     flow: str,
     operation: str,
     data: str | None = None,
@@ -466,7 +466,8 @@ def _release_of(
     Args:
         month_code: The requested month as six digits, e.g. ``"203501"``.
         releases: The flow's release list, one record per released month.
-        stored: When the client's cache stored the list, or ``None`` if fetched now.
+        fetched: When the list was retrieved: the time the client's cache stored it on a
+            hit, else the time it arrived (``client.get_answer``).
         flow: ``"exports"`` or ``"imports"``, the list's flow, for the message.
         operation: The release-date operation, for the message.
         data: What was asked for, e.g. ``"re-exports"``, ``"customs-district imports"``;
@@ -485,10 +486,8 @@ def _release_of(
     asked = data or flow
     months = {record.statistical_year_month for record in releases}
     when = (
-        f" The release list was fetched at {stored:%Y-%m-%d %H:%M} UTC and is kept for an "
+        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for an "
         "hour; a month released since then is refused until it is fetched again."
-        if stored is not None
-        else ""
     )
     own = (
         f" GATS publishes no release list for {asked}: the package checks the {flow} list."
@@ -521,11 +520,11 @@ def _release_of(
     )
 
 
-async def _releases(product_type: ProductType) -> tuple[list[DataReleaseInfo], datetime | None]:
-    """The Census release list of ``product_type`` and when the client's cache stored it.
+async def _releases(product_type: ProductType) -> tuple[list[DataReleaseInfo], datetime]:
+    """The Census release list of ``product_type`` and when it was retrieved.
 
     One request, or none while the cache holds the list (``_client.RELEASE_DATES_TTL``);
-    the time is ``None`` for a list from the wire.
+    the time is the cache's stored time on a hit, else the time the list arrived.
     """
     if product_type is ProductType.X:
         return await api.GATSData_GetCensusExportDataReleaseInfo()
@@ -540,9 +539,9 @@ async def _release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``.
     """
-    releases, stored = await _releases(product_type)
+    releases, fetched = await _releases(product_type)
     flow, operation = RELEASE_LISTS[product_type]
-    return _release_of(f"{year:04d}{month:02d}", releases, stored, flow, operation, data)
+    return _release_of(f"{year:04d}{month:02d}", releases, fetched, flow, operation, data)
 
 
 def _matching[R: _Coded](records: list[R], hs10_code: str | None) -> list[R]:
@@ -995,11 +994,11 @@ async def _series[R: _Coded](
         cannot parametrise ``Result`` with a type variable bound to a protocol.
     """
     months = _series_months(partner_code, start_year, start_month, end_year, end_month, hs10_code)
-    releases, stored = await _releases(product_type)
+    releases, fetched = await _releases(product_type)
     flow, operation = RELEASE_LISTS[product_type]
     codes = [f"{year:04d}{month:02d}" for year, month in months]
     found = [
-        _release_of(code, releases, stored, flow, operation, data, series=(codes[0], codes[-1]))
+        _release_of(code, releases, fetched, flow, operation, data, series=(codes[0], codes[-1]))
         for code in codes
     ]
     records: list[R] = []
@@ -1240,14 +1239,14 @@ async def get_census_release_dates_async(
     code = _product_type(product_type)
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
-        releases, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+        releases, retrieved_at = await api.GATSData_GetCensusExportDataReleaseInfo()
     else:
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
-        releases, stored = await api.GATSData_GetCensusImportDataReleaseInfo()
+        releases, retrieved_at = await api.GATSData_GetCensusImportDataReleaseInfo()
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
-        retrieved_at=stored or datetime.now(UTC),
+        retrieved_at=retrieved_at,
         request={"product_type": code.value},
     )
     return Result(data=releases, meta=meta)
@@ -1295,7 +1294,7 @@ def _un_release_of(
     reporter_code: str,
     year: int,
     releases: list[UNTradeDataReleaseInfo],
-    stored: datetime | None,
+    fetched: datetime,
     flow: str,
     operation: str,
     data: str | None = None,
@@ -1307,7 +1306,8 @@ def _un_release_of(
         year: The statistical year, e.g. ``2020``, matched as four digits against
             ``statistical_year``.
         releases: The flow's UN release list, one record per reporter and year.
-        stored: When the client's cache stored the list, or ``None`` if fetched now.
+        fetched: When the list was retrieved: the time the client's cache stored it on a
+            hit, else the time it arrived (``client.get_answer``).
         flow: ``"exports"`` or ``"imports"``, the list's flow, for the message.
         operation: The release-date operation, for the message.
         data: What was asked for, e.g. ``"re-exports"``; ``None`` for the flow itself.
@@ -1331,10 +1331,8 @@ def _un_release_of(
     asked = data or flow
     listed = {r.statistical_year for r in releases if r.reporter_code == reporter_code}
     when = (
-        f" The release list was fetched at {stored:%Y-%m-%d %H:%M} UTC and is kept for an "
+        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for an "
         "hour; a reporter-year released since then is refused until it is fetched again."
-        if stored is not None
-        else ""
     )
     own = (
         f" GATS publishes no UN Trade release list for {asked}: the package checks the {flow} list."
@@ -1374,11 +1372,11 @@ async def _un_release(
     asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
     if product_type is ProductType.X:
-        releases, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+        releases, fetched = await api.GATSData_GetUNTradeExportDataReleaseInfo()
     else:
-        releases, stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+        releases, fetched = await api.GATSData_GetUNTradeImportDataReleaseInfo()
     flow, operation = UN_RELEASE_LISTS[product_type]
-    return _un_release_of(reporter_code, year, releases, stored, flow, operation, data)
+    return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
 
 
 def _un_selected(
@@ -1612,9 +1610,9 @@ async def get_un_release_dates_async(
     if year is not None:
         validate_year(year)
     if code is ProductType.X:
-        releases, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+        releases, retrieved_at = await api.GATSData_GetUNTradeExportDataReleaseInfo()
     else:
-        releases, stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+        releases, retrieved_at = await api.GATSData_GetUNTradeImportDataReleaseInfo()
     statistical_year = None if year is None else f"{year:04d}"
     selected = [
         r
@@ -1625,7 +1623,7 @@ async def get_un_release_dates_async(
     meta = ResultMeta(
         source=SOURCE,
         endpoint=UN_RELEASE_LISTS[code][1],
-        retrieved_at=stored or datetime.now(UTC),
+        retrieved_at=retrieved_at,
         request={"product_type": code.value, "reporter_code": reporter_code, "year": year},
     )
     return Result(data=selected, meta=meta)
@@ -1828,7 +1826,7 @@ async def list_commodities_async(
     _search(search)
     if hs10_code is not None:
         validate_hs10_code(hs10_code)
-    commodities, stored = await api.GATSData_GetCommodities()
+    commodities, retrieved_at = await api.GATSData_GetCommodities()
     selected = [
         c
         for c in commodities
@@ -1839,7 +1837,7 @@ async def list_commodities_async(
     meta = ResultMeta(
         source=SOURCE,
         endpoint="GATSData_GetCommodities",
-        retrieved_at=stored or datetime.now(UTC),
+        retrieved_at=retrieved_at,
         request={"search": search, "hs10_code": hs10_code, "product_type": product_type},
     )
     return Result(data=selected, meta=meta)

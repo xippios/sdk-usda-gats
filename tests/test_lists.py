@@ -5,13 +5,12 @@ The packaged files were written from the answers recorded in
 wrapper parses from that recording proves the package answers what upstream answered.
 Every test here runs with ``respx`` active: a request no route matches fails loudly, and
 each packaged-list test checks that the tasks sent none. ``list_commodities`` replays the
-HS10 recording through the client, whose cache keeps it for a day; the autouse fixture
-empties the cache around every test.
+HS10 recording through the client, whose cache keeps it for a day; core's plugin
+empties every ``MemoryCache`` around each offline test (ADR-0013).
 """
 
 import json
 from collections import Counter
-from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Any
@@ -69,16 +68,6 @@ COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
     "prefix such as '0201') or by product_type ('X' exports, 'M' imports) to see the rest"
 )
-
-
-@pytest.fixture(autouse=True)
-def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour and the commodities list for
-    a day (``_client.cache``): each test starts and ends without an entry, so a list one
-    test fetched never answers the route the next test mounted."""
-    cache.clear()
-    yield
-    cache.clear()
 
 
 def _fetched(name: str) -> str:

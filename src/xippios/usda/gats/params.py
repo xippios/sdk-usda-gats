@@ -3,11 +3,12 @@
 Five of the lists GATS publishes, regions, countries, HS6 commodities, units of measure
 and customs districts, ship inside the package under ``reference/`` so that lookups and
 argument checks need no network call; GATS answers an unknown partner code with an empty
-list (``errors.UnknownCode``). ``scripts/refresh_reference.py`` writes the files through
-the ``api/`` wrappers, never by hand, and regenerates ``UnitOfMeasureId`` in
-``enums.py``; ``reference/README.md`` carries their provenance. Each file keeps
-upstream's records verbatim, under upstream's field names. The HS10 list is not
-packaged: ``tasks.list_commodities`` fetches it live.
+list, so core's ``UnknownCode`` refuses one the list lacks (``errors``).
+``scripts/refresh_reference.py`` writes the files through the ``api/`` wrappers with
+``PackagedList.write``, never by hand, and regenerates ``UnitOfMeasureId`` in
+``enums.py``; ``PackagedList.load(PACKAGE, name)`` reads one, and ``reference/README.md``
+carries their provenance. Each file keeps upstream's records verbatim, under upstream's
+field names. The HS10 list is not packaged: ``tasks.list_commodities`` fetches it live.
 
 The checks built on them: a country code against ``countries`` (``validate_country_code``,
 named by its parameter: ``validate_partner_code`` for the Census partner,
@@ -24,21 +25,18 @@ Refresh policy: ``/refresh-reference-data`` runs inside ``/release-prep``, and w
 a validation failure names a code the package lacks.
 """
 
-import difflib
 import functools
 import re
-from datetime import date
+from datetime import datetime
 from typing import Any
 
-from xippios.core import InvalidRequestError, UpstreamModel, load_json
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode, closest
 
 from xippios.usda.gats._client import SOURCE
-from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON, UnknownCode
+from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON
 
 __all__ = [
     "PACKAGED_LISTS",
-    "PackagedList",
-    "packaged_values",
     "validate_country_code",
     "validate_customs_district_id",
     "validate_hs6_code",
@@ -51,6 +49,7 @@ __all__ = [
 ]
 
 PACKAGE = "xippios.usda.gats"
+"""The package whose ``reference/`` holds the lists: ``PackagedList.load(PACKAGE, name)``."""
 
 PACKAGED_LISTS: tuple[str, ...] = (
     "regions",
@@ -75,48 +74,18 @@ _HS6 = re.compile(r"[0-9]{1,6}")
 _THREE = re.compile(r"[A-Z0-9]{3}")
 
 
-class PackagedList(UpstreamModel):
-    """One packaged list: ``reference/<name>.json``.
-
-    Attributes:
-        param: The list, as the upstream path names it, e.g. ``"countries"``.
-        endpoint: The upstream operation it was fetched from, e.g.
-            ``"GATSData_GetCountries"``.
-        fetched: Day the list was fetched (UTC).
-        records: Upstream's records verbatim, under upstream's field names, in upstream
-            order, e.g. ``{"countryCode": "CH", "regionCode": "R40", ...,
-            "countryName": "China", ...}``.
-    """
-
-    param: str
-    endpoint: str
-    fetched: date
-    records: list[dict[str, Any]]
-
-
-def packaged_values(name: str) -> PackagedList | None:
-    """The packaged list ``name``, or ``None`` when it is not packaged."""
-    if name not in PACKAGED_LISTS:
-        return None
-    return PackagedList.model_validate(load_json(PACKAGE, f"{name}.json"))
-
-
 @functools.cache
-def _codes(name: str, code_field: str, name_field: str) -> tuple[str, dict[str, str]]:
-    """Fetch date and ``{code: upstream name}`` of a packaged list, in upstream order."""
-    packaged = packaged_values(name)
-    if packaged is None:  # pragma: no cover - only the lists above are asked for
-        raise KeyError(name)
+def _codes(name: str, code_field: str, name_field: str) -> tuple[datetime, dict[str, str]]:
+    """When a packaged list was fetched and its ``{code: upstream name}``, in upstream order."""
+    packaged = PackagedList.load(PACKAGE, name)
     codes = {str(record[code_field]): str(record[name_field]) for record in packaged.records}
-    return packaged.fetched.isoformat(), codes
+    return packaged.fetched, codes
 
 
 @functools.cache
 def _countries() -> dict[str, dict[str, Any]]:
     """The packaged ``countries`` records by ``countryCode``, in upstream order."""
-    packaged = packaged_values("countries")
-    if packaged is None:  # pragma: no cover - the list ships with the package
-        raise KeyError("countries")
+    packaged = PackagedList.load(PACKAGE, "countries")
     return {str(record["countryCode"]): record for record in packaged.records}
 
 
@@ -146,27 +115,19 @@ def _three_letter_codes() -> dict[str, list[str]]:
 def _closest(
     value: str, codes: dict[str, str], three_letter: dict[str, list[str]] | None = None
 ) -> list[tuple[str, str]]:
-    """Up to three known codes close to ``value``: a three-letter code, then code, then name.
+    """Up to three known codes close to ``value``: a three-letter code, then core's ``closest``.
 
-    sdk-usda-psd's matching, with GATS's ISO and GENC codes in front of it: an agent may
-    pass ``"CHN"`` (``isO3Code`` and ``gencCode``) for ``"CH"``, ``"ch"`` for ``"CH"`` or
-    ``"China"`` for ``"CH"``; each leads to the code. An exact three-letter match comes
-    first, so ``"CHN"`` names ``CH`` (China) before ``CN`` (Comoros), which difflib finds
-    close by its letters. Two-character codes are close only when they differ in case, so
-    a code that shares one character with a known one (``"ZZ"``) gets none.
+    GATS's ISO and GENC codes in front of core's two passes, by code and then by name
+    (``xippios.core.closest``): an agent may pass ``"CHN"`` (``isO3Code`` and
+    ``gencCode``) for ``"CH"``, ``"ch"`` for ``"CH"`` or ``"China"`` for ``"CH"``; each
+    leads to the code. An exact three-letter match comes first, so ``"CHN"`` names ``CH``
+    (China) before ``CN`` (Comoros), which difflib finds close by its letters.
+    Two-character codes are close only when they differ in case, so a code that shares one
+    character with a known one (``"ZZ"``) gets none. The three-letter pass is this
+    package's own strategy in front of core's (ADR-0022, amendment 2026-10-27, point 3).
     """
     matches = list((three_letter or {}).get(value.upper(), []))
-    matches += [
-        code
-        for code in difflib.get_close_matches(value.upper(), list(codes), n=3)
-        if code not in matches
-    ]
-    by_name = {name.lower(): code for code, name in codes.items()}
-    matches += [
-        by_name[name]
-        for name in difflib.get_close_matches(value.lower(), list(by_name), n=3)
-        if by_name[name] not in matches
-    ]
+    matches += [code for code, _ in closest(value, codes) if code not in matches]
     return [(code, codes[code]) for code in matches[:3]]
 
 
@@ -207,21 +168,22 @@ def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON
         )
     if code in codes:
         return code
-    closest = _closest(code, codes, _three_letter_codes())
+    nearest = _closest(code, codes, _three_letter_codes())
     raise UnknownCode(
         param,
         code,
         list_name="countries",
         fetched=fetched,
-        closest=closest,
+        closest=nearest,
         hint=None
-        if closest
+        if nearest
         else (
             "GATS's country codes are its own, two characters, as GATSData_GetCountries "
             f"lists them, e.g. {PARTNER_EXAMPLES}; list_countries lists every one and "
             "searches them by name, ISO or GENC code."
         ),
         reason=reason,
+        source=SOURCE,
     )
 
 
@@ -330,8 +292,8 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
     )
     raise InvalidRequestError(
         f"partner_code {partner_code!r} ({name}) was discontinued in {ended} "
-        f"(discontinuedOn in GATS's countries list, packaged, fetched {fetched}): it holds "
-        f"no trade after that month, so {year:04d}-{month:02d} ({asked}) is refused. "
+        f"(discontinuedOn in GATS's countries list, packaged, fetched {fetched:%Y-%m-%d}): it "
+        f"holds no trade after that month, so {year:04d}-{month:02d} ({asked}) is refused. "
         f"{instead}",
         source=SOURCE,
     )
@@ -381,6 +343,7 @@ def validate_customs_district_id(customs_district_id: int) -> int:
         reason="The customs-district operations take no district; the task keeps this "
         "district's records after the call, so an id the packaged list lacks would give an "
         "empty result, and the package refuses it. list_customs_districts lists the ids.",
+        source=SOURCE,
     )
 
 
@@ -526,4 +489,5 @@ def validate_hs6_code(hs6_code: str) -> str:
         fetched=fetched,
         closest=_sharing_digits(hs6_code, codes),
         reason=HS6_REASON,
+        source=SOURCE,
     )

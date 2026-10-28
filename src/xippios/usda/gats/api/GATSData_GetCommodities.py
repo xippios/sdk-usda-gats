@@ -11,23 +11,22 @@ the largest answer in the family so far, committed whole as
 mapped once in ``xippios.usda.gats._client.classify``.
 
 The client caches this path for a day (``_client.COMMODITIES_TTL``), so the wrapper reads
-the response, not only its JSON: on a cache hit it also returns when the entry was
-stored, which ``tasks.list_commodities`` reports as ``meta.retrieved_at`` (conventions
-§4, ADR-0015).
+it with ``client.get_answer``, whose ``retrieved_at`` ``tasks.list_commodities``
+reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
+time the answer arrived (conventions §4, ADR-0015).
 """
 
 from datetime import datetime
 
 from xippios.core import parse
-from xippios.core.client import decode_json
 
-from xippios.usda.gats._client import COMMODITIES_PATH, SOURCE, client, stored_at
+from xippios.usda.gats._client import COMMODITIES_PATH, SOURCE, client
 from xippios.usda.gats.models import Commodity
 
 __all__ = ["GATSData_GetCommodities"]
 
 
-async def GATSData_GetCommodities() -> tuple[list[Commodity], datetime | None]:
+async def GATSData_GetCommodities() -> tuple[list[Commodity], datetime]:
     """Call ``GATSData_GetCommodities``.
 
     Returns:
@@ -38,18 +37,18 @@ async def GATSData_GetCommodities() -> tuple[list[Commodity], datetime | None]:
             commodity_description="SWINE, LIVE, NESOI, WEIGHING LESS THAN 50 KG EACH  (NO)",
             is_ag_commodity=False, census_uom_id1=78, census_uom_id2=78,
             fas_converted_uom_id=78, fas_non_converted_uom_id=78)``,
-        and when the client's cache answered, the time the entry was stored (UTC);
-        ``None`` for an answer from the wire.
+        and when it was retrieved, timezone-aware UTC: on a cache hit the time the
+        entry was stored, else the time the answer arrived.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
     """
-    response = await client.get(COMMODITIES_PATH)
+    answer = await client.get_answer(COMMODITIES_PATH)
     records = parse(
         list[Commodity],
-        decode_json(response, source=SOURCE, path=COMMODITIES_PATH),
+        answer.payload,
         source=SOURCE,
         endpoint="GATSData_GetCommodities",
     )
-    return records, stored_at(response)
+    return records, answer.retrieved_at

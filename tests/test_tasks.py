@@ -1,17 +1,14 @@
-"""Structural checks every task must satisfy. Per-task tests with recorded fixtures go below.
+"""Replay tests on recorded fixtures, at least one per task (conventions §10).
 
-A replay test that checks what was sent compares ``xippios.core.testing.sent_urls(route)``,
-the URLs the route received with credentials redacted, rather than keep a request from
-``route.calls`` in its frame, where a failure or ``pytest -l`` would print it.
+``/add-endpoint`` and ``/record-fixture`` add them.
 """
 
 import argparse
-import inspect
 import json
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -19,45 +16,29 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, NotFoundError, RateLimitError
+from xippios.core import (
+    InvalidRequestError,
+    NotFoundError,
+    RateLimitError,
+    ResultMeta,
+    UnknownCode,
+)
 from xippios.core.client import cache_key
 from xippios.core.mcp import build_parser, main
 from xippios.core.testing import (
+    CLOCK_SLACK,
     FixtureResponse,
     ReplayFixture,
+    assert_time_between,
     load_fixture,
     mcp_call,
     sent_urls,
 )
 
-from xippios.usda.gats import __version__, tasks
+from xippios.usda.gats import tasks
 from xippios.usda.gats._client import BASE_URL, cache
-from xippios.usda.gats.errors import UnknownCode
 from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
-
-TASKS = [getattr(tasks, name) for name in tasks.__all__]
-CLOCK_SLACK = timedelta(seconds=5)
-"""The slack on a comparison of two wall-clock readings: the WSL2 host these tests run on
-steps its clock back about two seconds every half minute, so a later reading can be the
-earlier one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by:
-a recording's time or a release's is hours or days away."""
-
-
-def test_package_has_a_version() -> None:
-    assert __version__
-
-
-@pytest.mark.parametrize("task", TASKS, ids=tasks.__all__)
-def test_task_is_a_sync_facade_with_an_agent_docstring(task: object) -> None:
-    assert callable(task)
-    assert hasattr(task, "async_fn"), "write the async function and derive the sync one with sync()"
-    doc = inspect.getdoc(task) or ""
-    assert doc, "task functions need a docstring: agents read it"
-    assert doc.splitlines()[0].endswith("."), "the first line is one sentence"
-    if inspect.signature(task).parameters:
-        assert "Args:" in doc, "explain every parameter under Args: with valid-value examples"
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORTS = "GATSData_GetCensusExports"
@@ -95,14 +76,13 @@ RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
 
 
-@pytest.fixture(autouse=True)
-def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour and the commodities list for
-    a day (``_client.cache``): each test starts and ends without an entry, so a list one
-    test fetched never answers the route the next test mounted."""
-    cache.clear()
-    yield
-    cache.clear()
+def _published_naive(meta: ResultMeta) -> None:
+    """``published_at`` is the release time ``vintage`` names, parsed and kept without a
+    zone as FAS prints it, with ``published_at_naive`` set (ADR-0022, rule 2)."""
+    assert meta.vintage is not None
+    assert meta.published_at == datetime.fromisoformat(meta.vintage)
+    assert meta.published_at.tzinfo is None
+    assert meta.published_at_naive is True
 
 
 def _recorded(endpoint: str, case: str) -> list[dict[str, object]]:
@@ -139,10 +119,9 @@ def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "CH",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert {r.date for r in result.data} == {"202608"}, "the month is the records' own"
     assert result.meta.total is None
     assert sent_urls(releases) == [EXPORT_RELEASES_URL]
@@ -166,10 +145,9 @@ def test_get_census_imports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "CH",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(IMPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert {r.date for r in result.data} == {"202608"}
     assert sent_urls(releases) == [IMPORT_RELEASES_URL]
     assert sent_urls(data) == [CH_IMPORTS_URL]
@@ -180,12 +158,12 @@ def test_vintage_is_the_months_release_time_as_upstream_states_it(
 ) -> None:
     """The month's release record carries ``2026-10-06T08:00:00`` without a time zone:
     ``vintage`` is that text, the naive time written back with ``isoformat()``, and
-    ``published_at`` stays ``None``, since ``ResultMeta`` takes only an aware time; the
-    month itself is in ``meta.request``."""
+    ``published_at`` the time itself, naive, with ``published_at_naive`` set (ADR-0022,
+    rule 2); the month itself is in ``meta.request``."""
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(EXPORTS, "CH_2026_8")
     result = tasks.get_census_exports("CH", 2026, 8)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert (result.meta.request["year"], result.meta.request["month"]) == (2026, 8)
     releases = tasks.get_census_release_dates(ProductType.X)
     august = next(r for r in releases.data if r.statistical_year_month == "202608")
@@ -285,12 +263,11 @@ def test_a_listed_partner_without_trade_is_an_empty_result(
     result = tasks.get_census_exports("BV", 2026, 8)
     assert result.data == []
     assert result.meta.vintage == RELEASED_2026_08, "the month's release, data or none"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.request == {
         "partner_code": "BV",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert sent_urls(data) == [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/BV/year/2026/month/8"
@@ -308,7 +285,7 @@ def test_a_month_not_released_yet_is_not_found(replay_fixture: ReplayFixture) ->
     assert message.startswith("GATS has no Census exports for 203501: it is not released yet")
     assert "the latest exports month released is 202608" in message
     assert "716 months, 196701 to 202608" in message
-    assert "fetched at" not in message, "the list came from the wire"
+    assert "The release list was fetched at " in message, "when it came from the wire"
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
 
@@ -340,7 +317,7 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
     """respx is active with no routes mounted, so any upstream call would fail loudly."""
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         tasks.get_census_exports("ZZ", 2026, 8)
-    assert unknown.value.closest == []
+    assert unknown.value.closest == ()
     assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
     assert "list_countries lists every one" in unknown.value.message
     with pytest.raises(UnknownCode, match=r"Did you mean CH \(China\)") as close:
@@ -420,7 +397,7 @@ def test_an_iso_code_leads_to_the_partner_code_before_any_request(
     (Comoros), which difflib finds close by its letters."""
     with pytest.raises(UnknownCode) as info:
         tasks.get_census_exports("CHN", 2026, 8)
-    assert info.value.closest[:2] == [("CH", "China"), ("CN", "Comoros")]
+    assert info.value.closest[:2] == (("CH", "China"), ("CN", "Comoros"))
     assert "Did you mean CH (China), CN (Comoros)?" in info.value.message
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
         tasks.get_customs_district_imports("ISL", 2026, 8)
@@ -433,13 +410,13 @@ def test_an_unknown_customs_district_is_refused_before_any_request(
 ) -> None:
     with pytest.raises(UnknownCode) as info:
         task("IC", 2026, 8, customs_district_id=12)
-    assert info.value.closest == [
+    assert info.value.closest == (
         ("11", "PHILADELPHIA, PA."),
         ("13", "BALTIMORE, MD."),
         ("10", "NEW YORK, N.Y."),
-    ]
+    )
     assert info.value.message.startswith(
-        "12 is not a customs_district_id in GATS's customsDistricts list"
+        "12 is not a customs_district_id in the packaged customsDistricts list"
     )
     with pytest.raises(InvalidRequestError, match="customs_district_id must be an integer"):
         task("IC", 2026, 8, customs_district_id=True)
@@ -468,10 +445,9 @@ def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "IC",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     chapter = tasks.get_census_reexports("IC", 2026, 8, hs10_code="62")
     assert [r.hs10_code for r in chapter.data] == [
         "6201409000",
@@ -557,11 +533,9 @@ def test_customs_district_tasks(
         "partner_code": "IC",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
-        "customs_district_id": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(release_list, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     new_york = task("IC", 2026, 8, customs_district_id=10)
     assert len(new_york.data) == in_ny
     assert {r.customs_district_id for r in new_york.data} == {10}
@@ -625,7 +599,7 @@ async def test_the_district_tools_name_both_filters_when_cut(
         f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["request"]["customs_district_id"] is None
+    assert "customs_district_id" not in payload["meta"]["request"], "not given, left out"
 
 
 @pytest.mark.anyio
@@ -700,9 +674,8 @@ def test_get_census_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {"product_type": product_type.value}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
-    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
-        "fetched now, from the wire: the time of this call, not the recording's"
-    )
+    # Fetched now, from the wire: the time the answer arrived, not the recording's.
+    assert_time_between(result.meta.retrieved_at, before, after)
     assert sent_urls(route) == [url]
 
 
@@ -743,7 +716,8 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     }, "Decimal values are JSON numbers (ADR-0008)"
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["published_at"] is None
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
     chapter = await mcp_call(
         server, "usda_gats_get_census_exports", {**arguments, "hs10_code": "02"}
     )
@@ -974,13 +948,12 @@ def test_census_series_tasks(
         "start_month": 7,
         "end_year": 2026,
         "end_month": 8,
-        "hs10_code": None,
     }
     newer = _release_time(release_list, "202608")
     older = _release_time(release_list, "202607")
     assert (older, newer) == (RELEASED_2026_07, RELEASED_2026_08)
     assert result.meta.vintage == RELEASED_2026_08, "the newer of the two months' releases"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.total is None
 
 
@@ -1037,14 +1010,13 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
         assert len(series.data) == len(_recorded(endpoint, f"{partner}_2026_8"))
         assert series.meta.endpoint == month.meta.endpoint == endpoint
         assert series.meta.vintage == month.meta.vintage == _release_time(release_list, "202608")
-        assert series.meta.published_at is None
+        _published_naive(series.meta)
         assert series.meta.request == {
             "partner_code": partner,
             "start_year": 2026,
             "start_month": 8,
             "end_year": 2026,
             "end_month": 8,
-            "hs10_code": None,
         }
         assert data.call_count == 2
 
@@ -1111,7 +1083,7 @@ def test_series_arguments_are_checked_before_any_request(
         task("SZ", 2026, 6, 2026, 8)
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         task("ZZ", 2026, 6, 2026, 8)
-    assert unknown.value.closest == []
+    assert unknown.value.closest == ()
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
         task("ISL", 2026, 6, 2026, 8)
     with pytest.raises(InvalidRequestError, match="hs10_code must be 1 to 10 digits"):
@@ -1196,10 +1168,12 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
 ) -> None:
     """Iceland's exports over July and August 2026: July answers as recorded, August with
     a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
-    nothing, not July's 105 records. NOT RECORDED here: GATS has no recorded 429, so
-    August's answer is psd's, built as ``test_client.py`` builds it. Not marked
-    ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which the
-    plugin leaves on, not the quota policy's pause, which it turns off."""
+    nothing, not July's 105 records. The wait is read through the client, so it is the
+    snapshot's from now, ``Retry-After``'s 3151 s give or take ``CLOCK_SLACK``: a fraction
+    under, or over where this host's clock steps back. NOT RECORDED here: GATS has no
+    recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not
+    marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which
+    the plugin leaves on, not the quota policy's pause, which it turns off."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
     august = respx_mock.get(_ic_url("censusExports", 8)).mock(
@@ -1207,7 +1181,9 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     )
     with pytest.raises(RateLimitError) as info:
         tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
-    assert info.value.retry_after == 3151.0
+    assert info.value.retry_after is not None
+    slack = CLOCK_SLACK.total_seconds()
+    assert 3151 - slack <= info.value.retry_after <= 3151 + slack
     assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
     assert sent_urls(july) == [_ic_url("censusExports", 7)]
     assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"
@@ -1252,8 +1228,9 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     )
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["published_at"] is None
-    assert payload["meta"]["request"] == {**arguments, "hs10_code": None}
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
+    assert payload["meta"]["request"] == arguments
     chapter = await mcp_call(server, tool, {**arguments, "hs10_code": "02"})
     assert "note" not in chapter
     assert {row["hs10_code"][:2] for row in chapter["data"]} == {"02"}
@@ -1659,11 +1636,9 @@ def test_un_data_tasks(
     assert result.meta.request == {
         "reporter_code": reporter_code,
         "year": 2019,
-        "partner_code": None,
-        "hs6_code": None,
     }
     assert result.meta.vintage == _un_release_time(release_list, reporter_code, "2019")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.total is None
     assert sent_urls(releases) == [release_url]
     assert sent_urls(data) == [url]
@@ -1737,10 +1712,10 @@ def test_partner_code_and_hs6_code_select_after_the_one_request(
     assert _partners_and_codes(result.data) == [
         (r["partnerCountryCode"], r["hS6Code"]) for r in recorded
     ]
-    assert (result.meta.request["partner_code"], result.meta.request["hs6_code"]) == (
+    assert (result.meta.request.get("partner_code"), result.meta.request.get("hs6_code")) == (
         partner_code,
         hs6_code,
-    )
+    ), "a filter not given is left out (ADR-0022, rule 3)"
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
     assert sent_urls(data) == [IC_UN_EXPORTS_URL], "the filters are not sent upstream"
 
@@ -1772,7 +1747,7 @@ def test_a_listed_reporter_year_without_re_exports_is_an_empty_result(
     result = tasks.get_un_reexports("IC", 2019)
     assert result.data == []
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.endpoint == UN_RE_EXPORTS
     assert sent_urls(data) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
@@ -1786,12 +1761,13 @@ def test_a_reporter_year_the_list_lacks_is_not_found(replay_fixture: ReplayFixtu
     with pytest.raises(NotFoundError) as info:
         tasks.get_un_exports("IC", 2020)
     message = info.value.message
-    assert message == (
+    assert message.startswith(
         "GATS has no UN Trade exports for reporter IC in 2020: "
         "GATSData_GetUNTradeExportDataReleaseInfo lists 31 years of exports for reporter IC, "
         "1989 to 2019; the latest year it lists for any reporter is 2019, and its newest "
         "release time is 2021-01-18T01:25:58. GATS answers a reporter-year it has not "
-        "released with an empty list, so the package checks the release list first."
+        "released with an empty list, so the package checks the release list first. The "
+        "release list was fetched at "
     )
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
@@ -1810,7 +1786,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
     assert "lists 12 years of exports for reporter MC, 1991 to 1999, 2015, 2016, 2019;" in (
         gap.value.message
     )
-    assert "fetched at" not in gap.value.message, "the first read is from the wire"
+    assert "The release list was fetched at " in gap.value.message, "from the wire"
     with pytest.raises(NotFoundError) as none:
         tasks.get_un_reexports("CD", 2019)
     message = none.value.message
@@ -1822,7 +1798,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
     assert "GATS publishes no UN Trade release list for re-exports: the package checks the " in (
         message
     )
-    assert "The release list was fetched at " in message, "the second read is cached"
+    assert "The release list was fetched at " in message, "and from the cache"
     assert " UTC and is kept for an hour" in message
     with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
         tasks.get_un_exports("IC", 2035)
@@ -1880,7 +1856,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
     for task in UN_TASKS:
         with pytest.raises(UnknownCode, match="'ZZ' is not a reporter_code") as unknown:
             task("ZZ", 2019)
-        assert unknown.value.closest == []
+        assert unknown.value.closest == ()
         assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
         assert "GATS answers an unknown reporter code with an empty result" in (
             unknown.value.message
@@ -1901,7 +1877,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
             task("IC", 2019, hs6_code="020119")
         assert absent.value.closest[0] == ("020110", "Bovine Carcass Fr/Ch")
         assert absent.value.message.startswith(
-            "'020119' is not a hs6_code in GATS's HS6Commodities list"
+            "'020119' is not a hs6_code in the packaged HS6Commodities list"
         )
     with pytest.raises(InvalidRequestError, match='product_type must be "X" \\(exports\\)'):
         tasks.get_un_release_dates("R")  # type: ignore[arg-type]
@@ -1957,8 +1933,6 @@ def test_get_un_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {
         "product_type": product_type.value,
-        "reporter_code": None,
-        "year": None,
     }
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     assert result.meta.retrieved_at.tzinfo is not None
@@ -1980,13 +1954,13 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
     assert [r.statistical_year for r in iceland.data] == [str(y) for y in range(2019, 1988, -1)]
     assert {r.reporter_code for r in iceland.data} == {"IC"}
     assert iceland.data[0].release_time_stamp.isoformat() == IC_2019_EXPORTS_RELEASED
-    assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC", "year": None}
+    assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC"}
     latest = tasks.get_un_release_dates(ProductType.M, year=2019)
     codes = [r.reporter_code for r in latest.data]
     assert len(codes) == 32
     assert codes == sorted(codes)
     assert "TP" in codes
-    assert latest.meta.request == {"product_type": "M", "reporter_code": None, "year": 2019}
+    assert latest.meta.request == {"product_type": "M", "year": 2019}
     (one,) = tasks.get_un_release_dates("M", reporter_code="TP", year=2019).data  # type: ignore[arg-type]
     assert one.release_time_stamp.isoformat() == "2020-07-16T01:15:37"
     assert tasks.get_un_release_dates(ProductType.X, reporter_code="AS", year=2018).data == []
@@ -2071,16 +2045,12 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     assert isinstance(payload["data"][0]["value"], float)
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
-    assert payload["meta"]["published_at"] is None
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
     whole = await mcp_call(server, tool, {**arguments, **narrow})
     assert len(whole["data"]) == narrowed
     assert "note" not in whole
-    assert whole["meta"]["request"] == {
-        "reporter_code": case[:2],
-        "year": 2019,
-        "partner_code": narrow.get("partner_code"),
-        "hs6_code": narrow.get("hs6_code"),
-    }
+    assert whole["meta"]["request"] == {"reporter_code": case[:2], "year": 2019, **narrow}
     assert sent_urls(data) == [url, url], "the filters are not sent upstream"
     with pytest.raises(AssertionError, match="error: UnknownCode: 'ZZ' is not a reporter_code"):
         await mcp_call(server, tool, {**arguments, "reporter_code": "ZZ"})
@@ -2113,7 +2083,7 @@ async def test_the_un_release_dates_tool_names_its_filters_when_cut(
     )
     assert len(iceland["data"]) == 31
     assert "note" not in iceland
-    assert iceland["meta"]["request"] == {"product_type": "X", "reporter_code": "IC", "year": None}
+    assert iceland["meta"]["request"] == {"product_type": "X", "reporter_code": "IC"}
     assert sent_urls(route) == [UN_EXPORT_RELEASES_URL]
 
 

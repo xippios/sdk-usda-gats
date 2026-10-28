@@ -25,22 +25,24 @@ is gone and what is new; ``/refresh-reference-data`` then refreshes the package.
 ``list_commodities`` fetches the HS10 list live, one call of about 7.6 MB. The tests
 record what they answered as test properties (``--junitxml`` shows them), never a key.
 Next to them, the template's reachability check, ``test_upstream_answers``, sends no key:
-a plain request to ``BASE_URL`` that spends no quota call.
+a plain request to ``BASE_URL`` that spends no keyed call.
 """
 
 import json
 import re
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import httpx
 import pytest
-from xippios.core import UpstreamModel
+from xippios.core import PackagedList, ResultMeta, UpstreamModel
+from xippios.core.data_gov import Gateway
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, config, policy
+from xippios.usda.gats._client import BASE_URL, config
 from xippios.usda.gats.models import ProductType
-from xippios.usda.gats.params import packaged_values, validate_partner_code
+from xippios.usda.gats.params import PACKAGE, validate_partner_code
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
@@ -52,9 +54,8 @@ RELEASE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
 async def test_upstream_answers() -> None:
     """The base URL answers without a server error (sdk-template's reachability check).
 
-    A plain request, not the package's client, so no key goes out and no call counts
-    against the key's quota; a keyed gateway's answer to it (a 403 or a 404, say) still
-    shows the host is up.
+    A plain request, not the package's client, so no key goes out and it spends no keyed
+    call; a keyed gateway's answer to it (a 403 or a 404, say) still shows the host is up.
     """
     async with httpx.AsyncClient(
         headers={"User-Agent": config.user_agent},
@@ -70,8 +71,15 @@ def _vintage_is_a_release_time(vintage: str | None) -> None:
     assert RELEASE_TIME.match(vintage), vintage
 
 
+def _published_naive(meta: ResultMeta) -> None:
+    """``published_at`` is the time ``vintage`` names, without a zone, flagged naive."""
+    assert meta.vintage is not None
+    assert meta.published_at == datetime.fromisoformat(meta.vintage)
+    assert meta.published_at_naive is True
+
+
 def _quota_is_the_gateways() -> None:
-    snapshot = policy.snapshot()
+    snapshot = Gateway.policy.snapshot()
     assert snapshot is not None
     assert snapshot.limit == 1000
 
@@ -81,7 +89,7 @@ async def test_get_census_exports_live(record_property: Callable[[str, object], 
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     _quota_is_the_gateways()
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
@@ -92,7 +100,7 @@ async def test_get_census_imports_live(record_property: Callable[[str, object], 
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     _quota_is_the_gateways()
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
@@ -117,7 +125,7 @@ async def test_get_census_reexports_live(record_property: Callable[[str, object]
     assert {(r.country_code, r.date) for r in result.data} <= {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
 
@@ -134,7 +142,7 @@ async def test_get_census_export_series_live(
     assert {r.country_code for r in result.data} == {PARTNER}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
@@ -152,7 +160,7 @@ async def test_get_census_import_series_live(
     assert {r.country_code for r in result.data} == {PARTNER}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusImport"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
@@ -172,15 +180,14 @@ async def test_get_census_reexport_series_live(
     }
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
 
 
 def _districts() -> set[int]:
-    packaged = packaged_values("customsDistricts")
-    assert packaged is not None
+    packaged = PackagedList.load(PACKAGE, "customsDistricts")
     return {int(record["customsDistrictId"]) for record in packaged.records}
 
 
@@ -201,7 +208,7 @@ async def test_customs_district_task_live(
     assert districts <= _districts(), "every district is packaged"
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("districts", sorted(districts))
     record_property("vintage", result.meta.vintage)
@@ -243,8 +250,9 @@ async def test_packaged_list_equals_the_live_list(task: str, endpoint: str) -> N
     new = sorted(set(theirs) - set(ours))
     behind = bool(stale or new)
     assert not behind, (
-        f"{task} is behind upstream (packaged {packaged.meta.vintage}): {len(stale)} packaged "
-        f"records upstream no longer sends, {len(new)} upstream records the package lacks; "
+        f"{task} is behind upstream (packaged {packaged.meta.retrieved_at:%Y-%m-%d}): "
+        f"{len(stale)} packaged records upstream no longer sends, {len(new)} upstream "
+        "records the package lacks; "
         f"first of each: {stale[:5]}, {new[:5]}. Refresh with /refresh-reference-data."
     )
     assert ours == theirs, f"{task}: the same records in another order"
@@ -256,8 +264,7 @@ UN_YEAR = 2019
 
 
 def _listed(name: str, field: str) -> set[str]:
-    packaged = packaged_values(name)
-    assert packaged is not None
+    packaged = PackagedList.load(PACKAGE, name)
     return {str(record[field]) for record in packaged.records}
 
 
@@ -293,7 +300,7 @@ async def test_un_data_task_live(
     _in_gats_vocabulary(result.data)
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
 

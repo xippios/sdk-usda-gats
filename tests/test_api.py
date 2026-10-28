@@ -6,8 +6,8 @@ never a request kept from ``route.calls``.
 
 import json
 from collections import Counter, defaultdict
-from collections.abc import Awaitable, Callable, Iterator
-from datetime import datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -18,7 +18,7 @@ from xippios.core import NotFoundError, UpstreamModel
 from xippios.core.testing import ReplayFixture, load_fixture, sent_urls
 
 from xippios.usda.gats import api
-from xippios.usda.gats._client import BASE_URL, cache, classify
+from xippios.usda.gats._client import BASE_URL, classify
 from xippios.usda.gats.models import (
     CensusExport,
     CensusImport,
@@ -70,16 +70,6 @@ def units(record: CensusExport | CustomsDistrictExport) -> tuple[int, int, int, 
         record.fas_converted_uom_id,
         record.fas_non_converted_uom_id,
     )
-
-
-@pytest.fixture(autouse=True)
-def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour and the commodities list for
-    a day (``_client.cache``): each test starts and ends without an entry, so a list one
-    test fetched never answers the route the next test mounted."""
-    cache.clear()
-    yield
-    cache.clear()
 
 
 async def test_get_countries(replay_fixture: ReplayFixture) -> None:
@@ -143,8 +133,9 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
     in the family. Product types ``T`` and ``B`` carry seven digits padded with three
     spaces, kept as sent; code, product type and start month are unique together."""
     route = replay_fixture("GATSData_GetCommodities", "all")
-    records, stored = await api.GATSData_GetCommodities()
-    assert stored is None, "from the wire, not from the cache"
+    records, retrieved_at = await api.GATSData_GetCommodities()
+    assert route.call_count == 1, "from the wire, not from the cache"
+    assert retrieved_at.tzinfo is UTC
     assert len(records) == 24936
     by_key = {(r.hs10_code, r.product_type, r.start_date): r for r in records}
     assert len(by_key) == 24936, "code, product type and start month are unique together"
@@ -262,8 +253,9 @@ async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    releases, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
-    assert stored is None, "from the wire, not from the cache"
+    releases, retrieved_at = await api.GATSData_GetCensusExportDataReleaseInfo()
+    assert route.call_count == 1, "from the wire, not from the cache"
+    assert retrieved_at.tzinfo is UTC
     assert len(releases) == 716
     assert releases[0] == DataReleaseInfo(
         statistical_year_month="202608",
@@ -751,8 +743,9 @@ async def test_get_un_trade_export_release_dates(replay_fixture: ReplayFixture) 
     """One record per reporter and statistical year, 1989 to 2019, the newest released
     on 2021-01-18: 3,796 records, 464,555 bytes as a fixture file."""
     route = replay_fixture(UN_EXPORT_RELEASES, "all")
-    releases, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    assert stored is None, "from the wire, not from the cache"
+    releases, retrieved_at = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    assert route.call_count == 1, "from the wire, not from the cache"
+    assert retrieved_at.tzinfo is UTC
     assert len(releases) == 3796
     assert releases[0] == UNTradeDataReleaseInfo(
         statistical_year="2019",
@@ -779,9 +772,9 @@ async def test_get_un_trade_import_release_dates(replay_fixture: ReplayFixture) 
     list's: 32 pairs are only in the exports list, 68 only in this one."""
     route = replay_fixture(UN_IMPORT_RELEASES, "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
-    imports, stored = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
     exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    assert stored is None
+    assert route.call_count == 1
     assert len(imports) == 3832
     assert imports[0] == UNTradeDataReleaseInfo(
         statistical_year="2019",

@@ -27,7 +27,8 @@ len(result.data)  # 26: the month's HS10 products of chapter 02, of 777 in all
 row = result.data[0]
 row.hs10_code, row.value, row.quantity1  # "0201206000", Decimal("30819.0"), Decimal("1018.0")
 result.meta.vintage  # "2026-10-06T08:00:00": the month's release time, as upstream states it
-result.meta.published_at  # None: upstream's release time carries no time zone
+result.meta.published_at  # datetime(2026, 10, 6, 8, 0): that time, without a zone
+result.meta.published_at_naive  # True: upstream prints its release times without one
 result.meta.request  # {"partner_code": "CH", "year": 2026, "month": 8, "hs10_code": "02"}
 result.meta.retrieved_at
 
@@ -72,9 +73,10 @@ last revised the figures, since Census applies corrections once a year and the l
 records only each month's latest release. The month itself is in `meta.request` and in
 every record's `date`. For up to an hour after a release the cached list may still give
 a revised month the previous release's time, or refuse a month just released, and the
-refusal says when the list was fetched: an accepted lag. `meta.published_at` stays
-`None`: core's `ResultMeta` takes only a timezone-aware time, and FAS states no zone for
-its release times, which `get_census_release_dates` returns as upstream states them.
+refusal says when the list was fetched: an accepted lag. `meta.published_at` is the same
+release time parsed and kept without a zone, since FAS states none for its release times,
+with `meta.published_at_naive` set; `get_census_release_dates` returns them as upstream
+states them.
 
 ### Month series
 
@@ -133,7 +135,7 @@ len(fish.data)  # 1024 records, partner by partner, of 3,980 for the whole year
 row = fish.data[0]
 row.partner_country_code, row.hs6_code, row.value  # "AE", "030211", Decimal("10620.0")
 fish.meta.vintage  # "2020-06-03T05:50:46": Iceland 2019's release time in the exports list
-fish.meta.request  # {"reporter_code": "IC", "year": 2019, "partner_code": None, "hs6_code": "03"}
+fish.meta.request  # {"reporter_code": "IC", "year": 2019, "hs6_code": "03"}: the filters given
 
 coverage = get_un_release_dates(ProductType.X, reporter_code="IC")
 [r.statistical_year for r in coverage.data]  # ["2019", "2018", ..., "1989"]: 31 years
@@ -154,17 +156,17 @@ answers an unknown reporter, a future year and an unreleased year alike with an 
 list, so a reporter-year the list lacks raises `NotFoundError` naming the reporter's
 listed years and the latest year; a listed reporter-year without trade is an empty list
 (Iceland's 2019 re-exports). `meta.vintage` is the reporter-year's release time as
-upstream states it; `meta.published_at` stays `None`, as for the Census tasks. One
-reporter-year can be large: Iceland's 2019 imports are 23,396 records (about 5.2 MB),
-India's 2016 exports 75,919 (about 17 MB). `get_un_release_dates(product_type,
+upstream states it, and `meta.published_at` that time parsed, naive, as for the Census
+tasks. One reporter-year can be large: Iceland's 2019 imports are 23,396 records (about
+5.2 MB), India's 2016 exports 75,919 (about 17 MB). `get_un_release_dates(product_type,
 reporter_code=None, year=None)` returns either list, one record per reporter and year,
 3,796 for exports and 3,832 for imports as recorded.
 
 ## Reference lists
 
 Five GATS lists ship with the package under `reference/`, and their `list_*` tasks
-answer from them without a call; `meta.vintage` is the day the package fetched the
-list, `meta.retrieved_at` when the task answered:
+answer from them without a call; `meta.retrieved_at` is when the package fetched the
+list, and `meta.vintage` stays empty, since upstream gives the lists no version:
 
 ```python
 from xippios.usda.gats import list_countries, list_hs6_commodities
@@ -251,11 +253,11 @@ server, per process.
 | `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |
 | `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by the exports and re-exports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
 | `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by the imports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
-| `GATSData_GetUNTradeExports` (`UNTradeExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_exports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_exports` | alpha |
-| `GATSData_GetUNTradeImports` (`UNTradeImports/reporterCode/{reporterCode}/year/{year}`) | `get_un_imports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_imports` | alpha |
-| `GATSData_GetUNTradeReExports` (`UNTradeReExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_reexports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_reexports` | alpha |
-| `GATSData_GetUNTradeExportDataReleaseInfo` (`UNTrade/data/exports/dataReleaseDates`) | `get_un_release_dates("X", reporter_code=None, year=None)`; read by the UN exports and re-exports tasks too | `usda_gats_get_un_release_dates` | alpha |
-| `GATSData_GetUNTradeImportDataReleaseInfo` (`UNTrade/data/imports/dataReleaseDates`) | `get_un_release_dates("M", reporter_code=None, year=None)`; read by the UN imports task too | `usda_gats_get_un_release_dates` | alpha |
+| `GATSData_GetUNTradeExports` (`UNTradeExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_exports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_exports` | frozen, last release 2021-01-18 |
+| `GATSData_GetUNTradeImports` (`UNTradeImports/reporterCode/{reporterCode}/year/{year}`) | `get_un_imports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_imports` | frozen, last release 2021-01-18 |
+| `GATSData_GetUNTradeReExports` (`UNTradeReExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_reexports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_reexports` | frozen, last release 2021-01-18 |
+| `GATSData_GetUNTradeExportDataReleaseInfo` (`UNTrade/data/exports/dataReleaseDates`) | `get_un_release_dates("X", reporter_code=None, year=None)`; read by the UN exports and re-exports tasks too | `usda_gats_get_un_release_dates` | frozen, last release 2021-01-18 |
+| `GATSData_GetUNTradeImportDataReleaseInfo` (`UNTrade/data/imports/dataReleaseDates`) | `get_un_release_dates("M", reporter_code=None, year=None)`; read by the UN imports task too | `usda_gats_get_un_release_dates` | frozen, last release 2021-01-18 |
 | `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
 | `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
 | `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks the Census `partner_code` and the UN Trade `reporter_code` and `partner_code` filter | `usda_gats_list_countries` | alpha |
@@ -267,7 +269,8 @@ All nineteen operations of the snapshot (`docs/upstream/`) are wrapped. 0.1.0, t
 release, covers them with twenty tasks: six Census data tasks, three month series, the
 Census release dates, four UN Trade tasks and six list tasks. Alpha: the public surface
 may change in a minor version before 1.0 (conventions §12); `CHANGELOG.md` lists every
-change.
+change. The UN Trade tasks wrap a frozen series (conventions §4): their rows name the
+feed's last release, 2021-01-18, as recorded on 2026-10-26.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and

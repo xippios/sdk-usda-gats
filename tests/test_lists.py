@@ -5,21 +5,20 @@ The packaged files were written from the answers recorded in
 wrapper parses from that recording proves the package answers what upstream answered.
 Every test here runs with ``respx`` active: a request no route matches fails loudly, and
 each packaged-list test checks that the tasks sent none. ``list_commodities`` replays the
-HS10 recording through the client, whose cache keeps it for a day; the autouse fixture
-empties the cache around every test.
+HS10 recording through the client, whose cache keeps it for a day; core's plugin
+empties every ``MemoryCache`` around each offline test (ADR-0013).
 """
 
 import json
 from collections import Counter
-from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from importlib import resources
 from typing import Any
 
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError
+from xippios.core import InvalidRequestError, PackagedList
 from xippios.core.client import cache_key
 from xippios.core.testing import ReplayFixture, mcp_call, sent_urls
 
@@ -28,24 +27,14 @@ from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
+from xippios.usda.gats.params import PACKAGE
 
 LISTS: list[tuple[str, str, str, int, dict[str, Any]]] = [
-    # task, packaged list, operation it came from, records, meta.request without filters
+    # task, packaged list, operation it came from, records, meta.request without filters,
+    # which leaves out a filter not given (ADR-0022, rule 3)
     ("list_regions", "regions", "GATSData_GetRegions", 15, {}),
-    (
-        "list_countries",
-        "countries",
-        "GATSData_GetCountries",
-        322,
-        {"region_code": None, "search": None},
-    ),
-    (
-        "list_hs6_commodities",
-        "HS6Commodities",
-        "GATSData_GetHS6Commodities",
-        2909,
-        {"search": None},
-    ),
+    ("list_countries", "countries", "GATSData_GetCountries", 322, {}),
+    ("list_hs6_commodities", "HS6Commodities", "GATSData_GetHS6Commodities", 2909, {}),
     ("list_units_of_measure", "unitsOfMeasure", "GATSData_GetUnitsOfMeasure", 108, {}),
     ("list_customs_districts", "customsDistricts", "GATSData_GetCustomsDistricts", 53, {}),
 ]
@@ -55,11 +44,6 @@ WHOLE = ["list_regions", "list_countries", "list_units_of_measure", "list_custom
 countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
 CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
-CLOCK_SLACK = timedelta(seconds=5)
-"""The slack on a comparison of wall-clock readings: the WSL2 host these tests run on steps
-its clock back about two seconds every half minute, so a later reading can be the earlier
-one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by: the
-packaged fetch date or a recording's time is hours or days away."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"
 HS6_NOTE = (
     "filter by search, on the code, the name and the description, e.g. '0201' or "
@@ -71,22 +55,13 @@ COMMODITIES_NOTE = (
 )
 
 
-@pytest.fixture(autouse=True)
-def empty_cache() -> Iterator[None]:
-    """The client caches the release-date lists for an hour and the commodities list for
-    a day (``_client.cache``): each test starts and ends without an entry, so a list one
-    test fetched never answers the route the next test mounted."""
-    cache.clear()
-    yield
-    cache.clear()
-
-
-def _fetched(name: str) -> str:
-    """``fetched`` as the packaged file stores it, read from the file itself."""
+def _fetched(name: str) -> datetime:
+    """``fetched`` as the packaged file stores it, read from the file itself: a bare day,
+    which core reads as its 00:00 UTC (ADR-0022, amendment 2026-10-27)."""
     path = resources.files("xippios.usda.gats").joinpath("reference", f"{name}.json")
     fetched = json.loads(path.read_text(encoding="utf-8"))["fetched"]
     assert isinstance(fetched, str)
-    return fetched
+    return datetime.fromisoformat(f"{fetched}T00:00:00+00:00")
 
 
 def test_every_list_task_is_exported() -> None:
@@ -111,9 +86,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
 ) -> None:
     """The recording is mounted, so a call would succeed silently; none is made."""
     route = replay_fixture(endpoint, "all")
-    before = datetime.now(UTC)
     result = await getattr(tasks, f"{task}_async")()
-    after = datetime.now(UTC)
     assert not respx_mock.calls, f"{task} called upstream"
     recorded = await getattr(api, endpoint)()
     assert route.call_count == 1, "the one call is the wrapper's"
@@ -121,14 +94,14 @@ async def test_list_answers_the_recorded_records_without_a_call(
     assert len(result.data) == count
     assert result.meta.source == "usda-gats"
     assert result.meta.endpoint == endpoint
-    assert result.meta.vintage == _fetched(name)
-    assert result.meta.vintage == ("2026-10-25" if name == "countries" else "2026-10-26")
+    assert result.meta.retrieved_at == _fetched(name), "when the package fetched the list"
+    assert result.meta.retrieved_at == PackagedList.load(PACKAGE, name).fetched
+    day = 25 if name == "countries" else 26
+    assert result.meta.retrieved_at == datetime(2026, 10, day, tzinfo=UTC)
+    assert result.meta.vintage is None, "upstream gives the list no version; a day is none"
     assert result.meta.published_at is None
     assert result.meta.total is None
     assert result.meta.request == request_
-    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
-        "retrieved_at is when the task answered, not when the list was packaged"
-    )
 
 
 @pytest.mark.anyio
@@ -155,7 +128,8 @@ async def test_list_tool_end_to_end_is_whole(
     assert "note" not in payload
     assert payload["meta"]["source"] == "usda-gats"
     assert payload["meta"]["endpoint"] == endpoint
-    assert payload["meta"]["vintage"] == _fetched(name)
+    assert datetime.fromisoformat(payload["meta"]["retrieved_at"]) == _fetched(name)
+    assert payload["meta"]["vintage"] is None
     assert payload["meta"]["published_at"] is None
     assert payload["meta"]["request"] == request_
     assert not respx_mock.calls
@@ -181,7 +155,7 @@ async def test_countries_over_mcp_are_whole_without_a_filter_and_with_one(
         payload = await mcp_call(server, "usda_gats_list_countries", {"region_code": region_code})
         assert len(payload["data"]) == count, region_code
         assert "note" not in payload, region_code
-        assert payload["meta"]["request"] == {"region_code": region_code, "search": None}
+        assert payload["meta"]["request"] == {"region_code": region_code}
     united = await mcp_call(server, "usda_gats_list_countries", {"search": "united"})
     assert [row["country_code"] for row in united["data"]] == ["AE", "U0", "UK", "US"]
     assert not respx_mock.calls
@@ -202,7 +176,7 @@ def test_list_countries_by_region(respx_mock: respx.MockRouter) -> None:
     north_america = tasks.list_countries(region_code="R05")
     assert [c.country_code for c in north_america.data] == ["CA", "GL", "MX", "SB", "US"]
     assert north_america.data == [c for c in every if c.region_code == "R05"], "upstream order"
-    assert north_america.meta.request == {"region_code": "R05", "search": None}
+    assert north_america.meta.request == {"region_code": "R05"}
     assert len(tasks.list_countries(region_code="R40").data) == 9
     assert len(tasks.list_countries(region_code="R55").data) == 67
     assert not respx_mock.calls
@@ -212,8 +186,8 @@ def test_an_unknown_region_is_an_empty_list(respx_mock: respx.MockRouter) -> Non
     """No validation: a region no country carries has no countries, a correct answer."""
     unknown = tasks.list_countries(region_code="R00")
     assert unknown.data == []
-    assert unknown.meta.request == {"region_code": "R00", "search": None}
-    assert unknown.meta.vintage == "2026-10-25"
+    assert unknown.meta.request == {"region_code": "R00"}
+    assert unknown.meta.retrieved_at == datetime(2026, 10, 25, tzinfo=UTC)
     assert tasks.list_countries(region_code="r05").data == [], "exact, as list_regions spells it"
     assert not respx_mock.calls
 
@@ -223,7 +197,7 @@ def test_list_countries_search_matches_code_name_iso_and_genc(
 ) -> None:
     united = tasks.list_countries(search="united")
     assert [c.country_code for c in united.data] == ["AE", "U0", "UK", "US"]
-    assert united.meta.request == {"region_code": None, "search": "united"}
+    assert united.meta.request == {"search": "united"}
     assert tasks.list_countries(search="UNITED").data == united.data
     china = tasks.list_countries(search="CHN").data
     assert [(c.country_code, c.iso3_code, c.genc_code) for c in china] == [("CH", "CHN", "CHN")]
@@ -341,7 +315,7 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
         "B": 1844,
     }
     assert every.meta.endpoint == "GATSData_GetCommodities"
-    assert every.meta.request == {"search": None, "hs10_code": None, "product_type": None}
+    assert every.meta.request == {}
     assert (every.meta.vintage, every.meta.published_at, every.meta.total) == (None, None, None)
     swine = tasks.list_commodities(search="swine")
     assert route.call_count == 1, "the second call is answered from the cache"
@@ -350,7 +324,7 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
     assert entry is not None
     assert swine.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(swine.data) == 91
-    assert swine.meta.request == {"search": "swine", "hs10_code": None, "product_type": None}
+    assert swine.meta.request == {"search": "swine"}
 
 
 def test_list_commodities_filters(replay_fixture: ReplayFixture) -> None:
@@ -444,7 +418,8 @@ def test_list_routes_over_http(replay_fixture: ReplayFixture) -> None:
     assert len(countries.json()["data"]) == 322
     east_asia = http.get("/usda-gats/list_countries", params={"region_code": "R40"}).json()
     assert len(east_asia["data"]) == 9
-    assert east_asia["meta"]["vintage"] == "2026-10-25"
+    assert east_asia["meta"]["vintage"] is None
+    assert datetime.fromisoformat(east_asia["meta"]["retrieved_at"]) == _fetched("countries")
     hs6 = http.get("/usda-gats/list_hs6_commodities").json()
     assert len(hs6["data"]) == 2909
     fillets = http.get(

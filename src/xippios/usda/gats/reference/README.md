@@ -1,58 +1,32 @@
 # Reference data for USDA FAS Global Agricultural Trade System
 
-Five of the lists GATS publishes ship here as JSON, versioned with the package, and load
-through `xippios.usda.gats.params` (built on `xippios.core.reference`):
+Five of the lists GATS publishes ship here, versioned with the package (conventions §3):
+each `reference/<name>.json` holds `{"param", "endpoint", "fetched", "records"}` and an
+optional `"note"`, upstream's records verbatim under upstream's field names and in
+upstream order, written by `/refresh-reference-data`'s script with `PackagedList.write`,
+never by hand, and read with `PackagedList.load`:
 
 ```python
-from xippios.usda.gats.params import packaged_values
+from xippios.core import PackagedList
 
-packaged_values("countries").records  # [{"countryCode": "01", ...}, ...], no network call
+PackagedList.load("xippios.usda.gats", "countries").records  # [{"countryCode": "01", ...}, ...]
 ```
 
-Each file holds upstream's records verbatim, under upstream's field names and in
-upstream order, plus the list name (`param`, as the upstream path names it), the
-operation it came from (`endpoint`) and the UTC fetch date (`fetched`).
+One row per file: Origin is the endpoint it was fetched from, Fetched the UTC time of that
+fetch; these files keep the bare day the 0.1.0 script wrote, which core reads as its
+00:00 UTC until the next refresh writes the time.
 
-Rules:
-
-- Files come from the upstream through `scripts/refresh_reference.py`
-  (`/refresh-reference-data`), never typed in by hand; the script also regenerates
-  `enums.py` with `xippios.core.reference`: one `StrEnum` per value list
-  (`render_str_enums`), or one `IntEnum` per list of integer ids (`render_int_enums`).
-  GATS's one id list is `unitsOfMeasure`, which makes `UnitOfMeasureId`
-  (`UnitOfMeasureId.KILOGRAMS == 47`; the name "Crates" of ids 33 and 105 gives
-  `CRATES_33` and `CRATES_105`); regions, countries, HS6 commodities and customs
-  districts stay tables, not enums.
-- Files keep upstream's names: a file is named as the upstream path names its list, and
-  a table and a list of integer ids alike hold their records under upstream's field
-  names.
-- Every file has a row below naming the endpoint it came from, the date and the count.
-- A multi-tenant source packages no tenant data (ADR-0014); GATS is single-tenant, every
-  list is the same for every caller of the api.data.gov key.
-- Use: `params.validate_partner_code` checks the `partner_code` of the six Census data
-  tasks and the three Census series tasks against `countries.json` before any call,
-  since GATS answers an unknown partner code with an empty list, the same as a partner
-  without trade, and refuses a code for a month after its `discontinuedOn` (a series for
-  its start and its end month); `params.validate_customs_district_id` checks the
-  `customs_district_id` filter of the three customs-district tasks against
-  `customsDistricts.json`. The four UN Trade tasks check `reporter_code`
-  (`params.validate_reporter_code`) and the `partner_code` filter against
-  `countries.json` for membership only, since the UN data keeps codes the list marks
-  discontinued in 1987 (`AS`, Australia) for later years, and a six-digit `hs6_code`
-  filter against `HS6Commodities.json` (`params.validate_hs6_code`).
-- Agents get a lookup task for every packaged list so they can form valid calls: one
-  lookup task per list, `list_<thing>`, served as the MCP tool
-  `usda_gats_list_<thing>`: `list_regions`, `list_countries`, `list_hs6_commodities`,
-  `list_units_of_measure`, `list_customs_districts`. They answer from these files without
-  an upstream call, with the file's `endpoint` as `meta.endpoint` and its `fetched` date
-  as `meta.vintage`.
-- The HS10 list, `GATSData_GetCommodities` (24,936 records, about 7.6 MB of JSON), is not
-  packaged: `list_commodities` fetches it live, and the client keeps it for a day.
-- Freshness: the live tests (`tests/test_live.py`, `XIPPIOS_LIVE_TESTS=1`) fetch each
-  list through its endpoint wrapper and fail when the packaged records differ, naming
-  what is gone and what is new.
-- Refresh policy: `/refresh-reference-data` inside `/release-prep`, and whenever a
-  validation failure names a code the package lacks.
+GATS's one id list, `unitsOfMeasure`, makes `UnitOfMeasureId` in `enums.py`
+(`UnitOfMeasureId.KILOGRAMS == 47`; the name "Crates" of ids 33 and 105 gives `CRATES_33`
+and `CRATES_105`); regions, countries, HS6 commodities and customs districts are tables,
+not enums. `params` checks the Census `partner_code` and the UN Trade `reporter_code`
+and `partner_code` against `countries.json`, the customs-district filter against
+`customsDistricts.json` and a six-digit `hs6_code` against `HS6Commodities.json`, before
+any call, since GATS answers an unknown code with an empty list; the five `list_*` tasks
+answer from the files without a call. The HS10 list, `GATSData_GetCommodities` (24,936
+records, about 7.6 MB of JSON), is not packaged: `list_commodities` fetches it live. The
+live tests (`tests/test_live.py`) fetch each list through its endpoint wrapper and fail
+when the packaged records differ, naming what is gone and what is new.
 
 | File | Origin | Fetched (UTC) | Records |
 | --- | --- | --- | --- |
@@ -65,8 +39,8 @@ Rules:
 The 2026-10-25 file was written by `scripts/refresh_reference.py` from the answer
 recorded the same evening in `tests/fixtures/GATSData_GetCountries/all.json`
 (21:00:34 UTC), served to the script's wrapper through `respx`, so the refresh spent no
-second keyed call. The four 2026-10-26 files were written by the script's own functions
-(`upstream_record`, `write`, `render`) from the answers recorded that morning in
+second keyed call. The four 2026-10-26 files were written by the 0.1.0 script's own
+functions from the answers recorded that morning in
 `tests/fixtures/<operation>/all.json`, served to the wrappers through `respx` in the same
 way: `GATSData_GetRegions` at 04:55:45 UTC, `GATSData_GetHS6Commodities` at 04:55:54,
 `GATSData_GetUnitsOfMeasure` at 04:55:55 and `GATSData_GetCustomsDistricts` at 04:55:56;

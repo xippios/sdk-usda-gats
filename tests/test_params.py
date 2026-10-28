@@ -219,24 +219,50 @@ def test_a_partner_code_that_is_not_text_is_refused(value: object) -> None:
     assert "list_countries lists them" in info.value.message
 
 
-def test_a_code_discontinued_before_the_month_is_refused() -> None:
-    """``SZ`` (Switzerland) reads ``discontinuedOn`` ``"198712"``: 2026-08 is refused,
-    naming ``SR``, the listed code of the same name."""
+def test_a_leaf_discontinued_before_the_month_is_refused() -> None:
+    """``D1`` (Denmark) reads ``discontinuedOn`` ``"198712"`` and is no other code's
+    parent: 2026-08 is refused, naming ``9U`` and ``DA``, the listed codes of the same
+    name."""
     with pytest.raises(InvalidRequestError) as info:
-        validate_partner_month("SZ", 2026, 8)
+        validate_partner_month("D1", 2026, 8)
     error = info.value
     assert not isinstance(error, UnknownCode), "the code is listed"
     assert status_for(error) == 422
     assert error.message == (
-        "partner_code 'SZ' (Switzerland) was discontinued in 198712 (discontinuedOn in "
-        "GATS's countries list, packaged, fetched 2026-10-25): it holds no trade after that "
-        "month, so 2026-08 (202608) is refused. Listed under the same name: SR."
+        "partner_code 'D1' (Denmark) was discontinued in 198712 (discontinuedOn in "
+        "GATS's countries list, packaged, fetched 2026-10-25) and is no other code's parent: "
+        "it holds no trade after that month, so 2026-08 (202608) is refused. Listed under "
+        "the same name: 9U, DA (discontinued 198712)."
     )
+
+
+def test_a_leaf_refusal_names_its_parent_code() -> None:
+    """``GE`` (Germany, Federal Republic (Former)), discontinued in 199009, is a child of
+    ``GM`` (Germany), which a refusal names as accepted for every month."""
+    with pytest.raises(InvalidRequestError) as info:
+        validate_partner_month("GE", 2026, 8)
+    assert info.value.message == (
+        "partner_code 'GE' (Germany, Federal Republic (Former)) was discontinued in 199009 "
+        "(discontinuedOn in GATS's countries list, packaged, fetched 2026-10-25) and is no "
+        "other code's parent: it holds no trade after that month, so 2026-08 (202608) is "
+        "refused. Its parent code GM (Germany) is accepted for every month. No other listed "
+        "code carries the name 'Germany, Federal Republic (Former)'; list_countries "
+        "searches them."
+    )
+    assert validate_partner_month("GM", 2026, 8) == "GM"
+
+
+@pytest.mark.parametrize("code", ["SZ", "AS", "Y1"])
+def test_a_discontinued_parent_passes_for_a_current_month(code: str) -> None:
+    """``SZ`` (Switzerland, 198712), ``AS`` (Australia, 198712) and ``Y1``
+    (Leeward-Windward Islands, 198801) are parents: GATS answers them for 2026-08 with the
+    aggregate of their children (``AS_2026_8.json``, ``Y1_2026_8.json``)."""
+    assert validate_partner_month(code, 2026, 8) == code
 
 
 @pytest.mark.parametrize(
     ("code", "year", "month"),
-    [("SZ", 1987, 12), ("SZ", 1987, 6), ("SZ", 1967, 1), ("CH", 2026, 8), ("SR", 1980, 1)],
+    [("D1", 1987, 12), ("D1", 1987, 6), ("D1", 1967, 1), ("CH", 2026, 8), ("SR", 1980, 1)],
 )
 def test_a_month_at_or_before_the_discontinuation_passes(code: str, year: int, month: int) -> None:
     """The ``discontinuedOn`` month itself passes; a current code passes for any month."""
@@ -275,17 +301,46 @@ def test_validate_partner_month_checks_the_code_the_year_and_the_month_first() -
         validate_partner_month("SZ", 2026, 13)
 
 
-def test_every_discontinued_code_is_refused_after_its_month() -> None:
+def _parents_and_leaves() -> tuple[set[str], set[str]]:
+    """The packaged list's parents (codes another record names as its
+    ``countryParentCode``) and its leaves (discontinued codes that are nobody's parent)."""
+    records = PackagedList.load(PACKAGE, "countries").records
+    parents = {
+        str(r["countryParentCode"]) for r in records if r["countryParentCode"] != r["countryCode"]
+    }
+    leaves = {str(r["countryCode"]) for r in records if r["discontinuedOn"]} - parents
+    return parents, leaves
+
+
+def test_the_packaged_list_has_21_parents_and_7_discontinued_leaves() -> None:
+    parents, leaves = _parents_and_leaves()
+    assert len(parents) == 21
+    assert leaves == {"D1", "DA", "GC", "GE", "RB", "YE", "YS"}
+    packaged = PackagedList.load(PACKAGE, "countries")
+    ended = {str(r["countryCode"]) for r in packaged.records if r["discontinuedOn"]}
+    assert len(ended) == 26
+    assert len(ended & parents) == 19
+    assert parents - ended == {"GM", "YM"}, "two parents are current"
+
+
+def test_every_discontinued_leaf_is_refused_after_its_month_and_every_parent_passes() -> None:
+    parents, leaves = _parents_and_leaves()
     packaged = PackagedList.load(PACKAGE, "countries")
     ended = [
-        (r["countryCode"], r["discontinuedOn"]) for r in packaged.records if r["discontinuedOn"]
+        (str(r["countryCode"]), str(r["discontinuedOn"]))
+        for r in packaged.records
+        if r["discontinuedOn"]
     ]
-    assert len(ended) == 26
     for code, month_code in ended:
         year, month = int(month_code[:4]), min(int(month_code[4:]), 12)
         assert validate_partner_month(code, year, month) == code, code
-        with pytest.raises(InvalidRequestError, match=f"discontinued in {month_code}"):
-            validate_partner_month(code, 2026, 8)
+        if code in leaves:
+            with pytest.raises(InvalidRequestError, match=f"discontinued in {month_code}"):
+                validate_partner_month(code, 2026, 8)
+        else:
+            assert validate_partner_month(code, 2026, 8) == code, code
+    for code in parents:
+        assert validate_partner_month(code, 2026, 8) == code, code
 
 
 @pytest.mark.parametrize("district", [0, 1, 10, 52, 99])
@@ -474,7 +529,9 @@ def test_the_membership_check_names_the_parameter_it_was_given_as() -> None:
 def test_every_un_reporter_and_partner_recorded_passes_without_a_discontinuation_check() -> None:
     """Every reporter of both recorded release lists and every reporter and partner of the
     three recorded answers is a listed code; nine reporters are listed for years after
-    their ``discontinuedOn``, which ``validate_partner_month`` would refuse."""
+    their ``discontinuedOn``. Two of them, ``DA`` (Denmark) and ``RB`` (Serbia and
+    Kosovo), are leaves, which ``validate_partner_month`` would refuse; the other seven
+    are parents, which it accepts."""
     reporters = {
         str(r["reporterCode"])
         for endpoint in UN_RELEASES
@@ -491,7 +548,8 @@ def test_every_un_reporter_and_partner_recorded_passes_without_a_discontinuation
         assert validate_country_code(code, "partner_code", reason=UN_PARTNER_REASON) == code
     assert {"AS", "NO", "DA", "IT", "NZ"} <= reporters | codes
     with pytest.raises(InvalidRequestError, match="discontinued in 198712"):
-        validate_partner_month("AS", 2019, 1)
+        validate_partner_month("DA", 2019, 1)
+    assert validate_partner_month("AS", 2019, 1) == "AS"
 
 
 @pytest.mark.parametrize("code", ["030444", "070700", "010110", "0304", "03", "0", "99999"])

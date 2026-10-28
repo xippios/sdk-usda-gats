@@ -1,13 +1,6 @@
-"""Task-shaped functions for USDA FAS Global Agricultural Trade System.
+"""Task functions, the public API: the adapters serve ``__all__`` (conventions §2).
 
-The public API (ADR-0001, layer 2). A task composes endpoint wrappers from ``api/``,
-resolves pagination and reference lookups, and returns ``Result[T]`` with full
-``ResultMeta``. Write the async version, derive the sync one with ``xippios.core.sync``,
-and list the sync name in ``__all__``: the MCP server and the HTTP router register
-exactly what is named there.
-
-Docstrings are read by agents: one sentence first, then ``Args:`` with examples of
-valid values for every parameter. ``/add-endpoint`` walks through the whole recipe.
+``/add-endpoint`` adds them.
 
 The six Census data tasks, ``get_census_exports``, ``get_census_imports`` and
 ``get_census_reexports``, and ``get_customs_district_exports``,
@@ -40,13 +33,13 @@ upstream's text for every recorded time. The statistical month stays in
 For up to ``_client.RELEASE_DATES_TTL``, an hour, after a release the cached list may
 still give a revised month the previous release's time, an accepted lag; a month
 released in that hour is refused, and the refusal says when the list was fetched.
-``meta.published_at`` stays ``None`` on every task: ``ResultMeta`` takes only a
-timezone-aware time, FAS states no zone for its time stamps, and an invented zone could
-shift them by hours in an as-of store. sdk-usda-esr and sdk-usda-nass leave theirs empty
-for the same reason. ``get_census_release_dates`` returns every month's time as upstream
-states it and leaves ``vintage`` empty; its ``meta.retrieved_at`` is the time the
-client's cache stored the list when the cache answered (conventions §4), else the time
-of the call.
+``meta.published_at`` is the same release time parsed, without a zone as FAS prints it,
+with ``meta.published_at_naive`` set (ADR-0022, rule 2): an invented zone could shift it
+by hours in an as-of store, so a consumer that knows the publisher's zone assigns it.
+``get_census_release_dates`` returns every month's time as upstream states it and leaves
+``vintage`` and ``published_at`` empty, since it answers no single release; its
+``meta.retrieved_at`` is the time the client's cache stored the list when the cache
+answered (conventions §4), else the time the list arrived.
 
 The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
 and ``get_census_reexport_series``, answer one partner over a range of months from the
@@ -72,7 +65,8 @@ carries its month in ``date``, so nothing is grouped or summed, and a month that
 newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
 recent of the releases that last revised them, which across the annual revision can be
 an earlier month's than the end month's; ``get_census_release_dates`` gives each month's
-own. ``meta.request`` carries the six arguments; ``meta.published_at`` stays ``None``.
+own. ``meta.published_at`` is that newest time, naive, with ``meta.published_at_naive``
+set. ``meta.request`` carries the arguments, ``hs10_code`` when given.
 
 The three UN Trade data tasks, ``get_un_exports``, ``get_un_imports`` and
 ``get_un_reexports``, answer one reporter and one statistical year across every partner
@@ -94,10 +88,11 @@ release list. An empty list for a listed reporter-year is a successful empty res
 (Iceland's 2019 re-exports). ``partner_code`` and ``hs6_code`` select records after the
 one data call. ``meta.vintage`` is the reporter-year's ``releaseTimeStamp`` from that
 list as upstream states it (``"2020-06-03T05:50:46"`` for Iceland's 2019 exports) and
-``meta.published_at`` stays ``None``, for the Census tasks' reasons; the year is in
-``meta.request`` and on every record. As recorded on 2026-10-26 the UN Trade feed is
-frozen: both release lists end with statistical year 2019, and their newest release
-time is 2021-01-18. ``get_un_release_dates`` returns either list, whole or filtered by
+``meta.published_at`` its parsed time, naive, with ``meta.published_at_naive`` set, as for
+the Census tasks; the year is in ``meta.request`` and on every record. As recorded on
+2026-10-26 the UN Trade feed is frozen (conventions §4): both release lists end with
+statistical year 2019, and their newest release time is 2021-01-18, the last release the
+README's status table names. ``get_un_release_dates`` returns either list, whole or filtered by
 reporter or year, with ``retrieved_at`` from the cache as for the Census list.
 
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
@@ -126,6 +121,7 @@ from xippios.core import (
     NotFoundError,
     PackagedList,
     Result,
+    ResultCap,
     ResultMeta,
     matches,
     sync,
@@ -186,6 +182,9 @@ __all__ = [
     "list_regions",
     "list_units_of_measure",
 ]
+
+# A task named here is Python-only: no tool, no route; the adapters skip it (ADR-0019 decision 4).
+BULK_TASKS: frozenset[str] = frozenset()
 
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
 """What a cut Census data result tells the agent: the one filter the tools have."""
@@ -253,30 +252,25 @@ COMMODITIES_NOTE = (
 )
 """What the cut HS10 list tells the agent: the three filters the tool has."""
 
-try:
-    from xippios.core.mcp import ResultCap
-except ImportError:  # pragma: no cover - a base install, without the mcp extra, has no server
-    MCP_CAPS: "Mapping[str, ResultCap]" = {}
-else:
-    MCP_CAPS = {
-        "get_census_export_series": ResultCap(note=SERIES_NOTE),
-        "get_census_exports": ResultCap(note=HS10_NOTE),
-        "get_census_import_series": ResultCap(note=SERIES_NOTE),
-        "get_census_imports": ResultCap(note=HS10_NOTE),
-        "get_census_reexport_series": ResultCap(note=SERIES_NOTE),
-        "get_census_reexports": ResultCap(note=HS10_NOTE),
-        "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE),
-        "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
-        "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE),
-        "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE),
-        "get_un_exports": ResultCap(note=UN_DATA_NOTE),
-        "get_un_imports": ResultCap(note=UN_DATA_NOTE),
-        "get_un_reexports": ResultCap(note=UN_DATA_NOTE),
-        "get_un_release_dates": ResultCap(note=UN_RELEASE_DATES_NOTE),
-        "list_commodities": ResultCap(note=COMMODITIES_NOTE),
-        "list_countries": ResultCap(max_rows=400, max_bytes=100_000, note=COUNTRIES_NOTE),
-        "list_hs6_commodities": ResultCap(note=HS6_NOTE),
-    }
+MCP_CAPS: Mapping[str, ResultCap] = {
+    "get_census_export_series": ResultCap(note=SERIES_NOTE),
+    "get_census_exports": ResultCap(note=HS10_NOTE),
+    "get_census_import_series": ResultCap(note=SERIES_NOTE),
+    "get_census_imports": ResultCap(note=HS10_NOTE),
+    "get_census_reexport_series": ResultCap(note=SERIES_NOTE),
+    "get_census_reexports": ResultCap(note=HS10_NOTE),
+    "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE),
+    "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
+    "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE),
+    "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE),
+    "get_un_exports": ResultCap(note=UN_DATA_NOTE),
+    "get_un_imports": ResultCap(note=UN_DATA_NOTE),
+    "get_un_reexports": ResultCap(note=UN_DATA_NOTE),
+    "get_un_release_dates": ResultCap(note=UN_RELEASE_DATES_NOTE),
+    "list_commodities": ResultCap(note=COMMODITIES_NOTE),
+    "list_countries": ResultCap(max_rows=400, max_bytes=100_000, note=COUNTRIES_NOTE),
+    "list_hs6_commodities": ResultCap(note=HS6_NOTE),
+}
 """MCP result caps of their own, by task function name (conventions §8, ADR-0016).
 
 The Census data tools keep the family's bounds, 200 rows or 64 KB, with a note of their
@@ -308,8 +302,6 @@ outgrows it. ``list_hs6_commodities`` (2,909 codes, about 0.7 MB) and
 ``list_commodities`` (24,936 records, about 7 MB) are too large to serve whole: they keep
 the default bounds with notes naming their filters. ``list_regions`` (15),
 ``list_units_of_measure`` (108) and ``list_customs_districts`` (53) fit the default.
-``ResultCap`` lives in ``xippios.core.mcp``, which needs the ``mcp`` extra, so a base
-install, which serves no MCP tool, has no caps.
 """
 
 _series_ceiling = SERIES_MAX_MONTHS
@@ -579,14 +571,16 @@ def _data_meta(
 
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it: the
     model keeps the time naive, and ``isoformat()`` gives back upstream's text,
-    ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` stays ``None``: ``ResultMeta``
-    takes only a zone-aware time, and FAS states no zone. ``filters`` are the task's
-    other filters, e.g. ``customs_district_id``, recorded in ``meta.request`` after
-    ``hs10_code``.
+    ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` is that time, naive as FAS
+    prints it, with ``published_at_naive`` set (ADR-0022, rule 2). ``filters`` are the
+    task's other filters, e.g. ``customs_district_id``, recorded in ``meta.request`` after
+    ``hs10_code``; a filter left ``None`` is left out.
     """
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
+        published_at=release.release_time_stamp,
+        published_at_naive=True,
         vintage=release.release_time_stamp.isoformat(),
         request={
             "partner_code": partner_code,
@@ -620,9 +614,8 @@ async def get_census_exports_async(
     figures, since Census applies corrections once a year. For up to an hour after a
     release the cached list may still give the previous release's time, an accepted lag.
     The month itself is in ``meta.request`` and in every record's ``date``
-    (``"202608"``). ``meta.published_at`` stays empty: FAS states no time zone, and
-    ``ResultMeta`` takes only a zone-aware time. The MCP server returns at most 200 rows
-    or 64 KB, so pass ``hs10_code`` there to see a chapter or one product.
+    (``"202608"``). ``meta.published_at`` is that time, without a zone as FAS prints it,
+    and ``meta.published_at_naive`` says so.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -667,9 +660,8 @@ async def get_census_imports_async(
     corrections once a year. For up to an hour after a release the cached list may still
     give the previous release's time, an accepted lag. The month itself is in
     ``meta.request`` and in every record's ``date`` (``"202608"``).
-    ``meta.published_at`` stays empty: FAS states no time zone, and ``ResultMeta`` takes
-    only a zone-aware time. The MCP server returns at most 200 rows or 64 KB, so pass
-    ``hs10_code`` there to see a chapter or one product.
+    ``meta.published_at`` is that time, without a zone as FAS prints it, and
+    ``meta.published_at_naive`` says so.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -710,8 +702,8 @@ async def get_census_reexports_async(
     ``get_census_exports``: an unknown partner code names close codes (``"ISL"`` leads to
     ``"IC"``) or ``list_countries``, a code discontinued before the month is refused. A
     listed partner without re-exports that month gives an empty list. The month is in
-    ``meta.request`` and in every record's ``date``; ``meta.published_at`` stays empty.
-    The MCP server returns at most 200 rows or 64 KB; pass ``hs10_code`` there to narrow.
+    ``meta.request`` and in every record's ``date``; ``meta.published_at`` is the release
+    time, naive (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -752,9 +744,8 @@ async def get_customs_district_exports_async(
     nearest listed ids with their names. A month not released yet raises
     ``NotFoundError``; a listed partner without exports gives an empty list.
     ``meta.vintage`` is the exports list's release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` stays empty. The
-    MCP server returns at most 200 rows or 64 KB, so pass ``hs10_code`` or
-    ``customs_district_id`` there to narrow.
+    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
+    (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -806,9 +797,8 @@ async def get_customs_district_imports_async(
     ``InvalidRequestError`` naming the nearest listed ids with their names. A month not
     released yet raises ``NotFoundError``; a listed partner without imports gives an empty
     list. ``meta.vintage`` is the imports list's release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` stays empty. The
-    MCP server returns at most 200 rows or 64 KB, so pass ``hs10_code`` or
-    ``customs_district_id`` there to narrow.
+    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
+    (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -861,9 +851,8 @@ async def get_customs_district_reexports_async(
     (``"2026-10-06T08:00:00"`` for August 2026), the exports' release. The arguments are
     checked before either request, ``customs_district_id`` against the packaged districts
     list (an id it lacks names the nearest listed ids). A listed partner without
-    re-exports gives an empty list; ``meta.published_at`` stays empty. The MCP server
-    returns at most 200 rows or 64 KB; pass ``hs10_code`` or ``customs_district_id``
-    there to narrow.
+    re-exports gives an empty list; ``meta.published_at`` is the release time, naive
+    (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -997,9 +986,11 @@ async def _series[R: _Coded](
 
     Returns:
         The records in month order and their ``ResultMeta``: ``vintage`` the newest
-        ``releaseTimeStamp`` among the range's months as upstream states it, ``request``
-        the six arguments. The task builds its ``Result`` from the two, since pydantic
-        cannot parametrise ``Result`` with a type variable bound to a protocol.
+        ``releaseTimeStamp`` among the range's months as upstream states it,
+        ``published_at`` that time, naive, with ``published_at_naive`` set, ``request``
+        the arguments, ``hs10_code`` when given. The task builds its ``Result`` from the
+        two, since pydantic cannot parametrise ``Result`` with a type variable bound to a
+        protocol.
     """
     months = _series_months(partner_code, start_year, start_month, end_year, end_month, hs10_code)
     releases, fetched = await _releases(product_type)
@@ -1012,10 +1003,13 @@ async def _series[R: _Coded](
     records: list[R] = []
     for year, month in months:
         records.extend(_matching(await fetch(partner_code, year, month), hs10_code))
+    newest = max(release.release_time_stamp for release in found)
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
-        vintage=max(release.release_time_stamp for release in found).isoformat(),
+        published_at=newest,
+        published_at_naive=True,
+        vintage=newest.isoformat(),
         request={
             "partner_code": partner_code,
             "start_year": start_year,
@@ -1061,9 +1055,8 @@ async def get_census_export_series_async(
     ``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08, August's release. Across Census's
     annual revision it can be an earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to
     2026-02, December's revised release, not February's. Each month's own release time is
-    in ``get_census_release_dates``. ``meta.published_at`` stays empty. The MCP server
-    returns at most 200 rows or 64 KB, oldest month first, so pass ``hs10_code`` or ask
-    for fewer months there.
+    in ``get_census_release_dates``. ``meta.published_at`` is that newest time, naive
+    (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -1124,8 +1117,7 @@ async def get_census_import_series_async(
     not trimmed. ``meta.vintage`` is the newest release time among the range's months
     in the imports list, as upstream states it (``"2026-10-06T08:00:00"`` for 2026-06 to
     2026-08); each month's own is in ``get_census_release_dates``. ``meta.published_at``
-    stays empty. The MCP server returns at most 200 rows or 64 KB, oldest month first, so
-    pass ``hs10_code`` or ask for fewer months there.
+    is that newest time, naive (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -1186,9 +1178,8 @@ async def get_census_reexport_series_async(
     series is refused, not trimmed. ``meta.vintage`` is the newest release time among the
     range's months in the exports list (``"2026-10-06T08:00:00"`` for 2026-06 to
     2026-08), the exports' releases, not ones the re-exports state; each month's own is
-    in ``get_census_release_dates``. ``meta.published_at`` stays empty. The MCP server
-    returns at most 200 rows or 64 KB, oldest month first, so pass ``hs10_code`` or ask
-    for fewer months there.
+    in ``get_census_release_dates``. ``meta.published_at`` is that newest time, naive
+    (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -1235,9 +1226,8 @@ async def get_census_release_dates_async(
     changed; the six Census data tasks give their month's time as ``meta.vintage``, the
     three series tasks the newest among their months, the re-export forms the exports
     list's, since re-exports have no list of their own. One request, kept by the client
-    for an hour; ``meta.retrieved_at`` is when it was
-    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The MCP server
-    returns the newest 200 months, more than sixteen years, and says so.
+    for an hour; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
+    ``meta.vintage`` stay empty: the list is no single release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
@@ -1411,12 +1401,15 @@ def _un_meta(
 
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it, the
     naive time written back with ``isoformat()``: ``"2020-06-03T05:50:46"`` for Iceland's
-    2019 exports. ``published_at`` stays ``None``: ``ResultMeta`` takes only a zone-aware
-    time, and FAS states no zone.
+    2019 exports. ``published_at`` is that time, naive as FAS prints it, with
+    ``published_at_naive`` set (ADR-0022, rule 2). A filter left ``None`` is left out of
+    ``request``.
     """
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
+        published_at=release.release_time_stamp,
+        published_at_naive=True,
         vintage=release.release_time_stamp.isoformat(),
         request={
             "reporter_code": reporter_code,
@@ -1455,9 +1448,8 @@ async def get_un_exports_async(
     ``NotFoundError`` naming the reporter's listed years and the list's latest year; a
     listed reporter-year without exports gives an empty list. ``meta.vintage`` is the
     reporter-year's release time from that list, as upstream states it
-    (``"2020-06-03T05:50:46"`` for Iceland 2019); ``meta.published_at`` stays empty: FAS
-    states no time zone. The MCP server returns at most 200 rows or 64 KB, so pass
-    ``partner_code`` or ``hs6_code`` there.
+    (``"2020-06-03T05:50:46"`` for Iceland 2019); ``meta.published_at`` is that time,
+    without a zone as FAS prints it, and ``meta.published_at_naive`` says so.
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
@@ -1495,7 +1487,7 @@ async def get_un_imports_async(
     1,026 HS6 codes and 58 partners, 957 of the records with Portugal (``"PO"``) as
     partner. A large reporter answers far more: Iceland's 2019 imports are 23,396
     records, about 5.2 MB of JSON. The codes are GATS's own, not UN Comtrade's, as for
-    the exports. The data is frozen at statistical year 2019, last released on
+    the exports. The UN Trade data is frozen at statistical year 2019, last released on
     2021-01-18, as recorded on 2026-10-26. Two requests: the
     imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
     for an hour), then the year (``GATSData_GetUNTradeImports``). The imports list is not
@@ -1504,9 +1496,8 @@ async def get_un_imports_async(
     only. A reporter-year the imports list lacks raises ``NotFoundError`` naming the
     reporter's listed years; a listed reporter-year without imports gives an empty list.
     ``meta.vintage`` is the reporter-year's release time from that list
-    (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at``
-    stays empty. The MCP server returns at most 200 rows or 64 KB, so pass
-    ``partner_code`` or ``hs6_code`` there.
+    (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at`` is
+    that time, naive (``meta.published_at_naive``).
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
@@ -1542,8 +1533,8 @@ async def get_un_reexports_async(
     record (``get_un_exports``); 421 records for Macau (``"MC"``) in 2019, every quantity
     0, 27 of them to ``"AS"`` (Australia, a code the countries list marks discontinued in
     1987, kept by the UN data). Iceland, listed for 2019 exports, answers an empty list
-    for its 2019 re-exports. The data is frozen at statistical year 2019, as recorded on
-    2026-10-26. Two requests: the exports release list
+    for its 2019 re-exports. The UN Trade data is frozen at statistical year 2019, last
+    released on 2021-01-18, as recorded on 2026-10-26. Two requests: the exports release list
     (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for an hour), then
     the year (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export
     release list, so the package checks the exports list, by assumption, as the Census
@@ -1552,8 +1543,8 @@ async def get_un_reexports_async(
     the reporter-year (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release,
     not one the re-exports state. The arguments are checked before either request as for
     ``get_un_exports``, membership only. A listed reporter-year without re-exports gives
-    an empty list; ``meta.published_at`` stays empty. The MCP server returns at most 200
-    rows or 64 KB, so pass ``partner_code`` or ``hs6_code`` there.
+    an empty list; ``meta.published_at`` is the release time, naive
+    (``meta.published_at_naive``).
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
@@ -1588,7 +1579,8 @@ async def get_un_release_dates_async(
     order within a year: ``statistical_year`` (``"2019"``), ``product_type``,
     ``reporter_code`` and ``release_time_stamp``, the time of the reporter-year's latest
     release as upstream states it, without a time zone (``2020-06-03T05:50:46`` for
-    Iceland's 2019 exports). As recorded on 2026-10-26 the lists cover 1989 to 2019:
+    Iceland's 2019 exports). The UN Trade feed is frozen: as recorded on 2026-10-26 the
+    lists cover 1989 to 2019:
     3,796 exports records for 206 reporters and 3,832 imports records for 207, 32
     reporters for 2019 in each; the newest release time is 2021-01-18 (the Netherlands'
     2014), and no reporter-year has been released since. The two lists differ:
@@ -1596,9 +1588,8 @@ async def get_un_release_dates_async(
     tasks check a reporter-year against this list and give its time as ``meta.vintage``,
     the re-exports task the exports list's, since re-exports have no list of their own.
     One request, kept by the client for an hour; ``meta.retrieved_at`` is when it was
-    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty. The filters apply
-    after the request. The MCP server returns at most 200 rows (2019, 2018 and part of
-    2017), so pass ``reporter_code`` or ``year`` there.
+    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
+    release. The filters apply after the request.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
@@ -1673,8 +1664,7 @@ async def list_countries_async(
     ``"01"`` Caribbean,nes have no GENC code. 26 carry a ``discontinued_on`` month, the
     last a Census task accepts for them (``"SZ"`` Switzerland, ``"198712"``; ``"SR"``
     Switzerland is current). ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-25); ``meta.vintage`` stays empty. The MCP server
-    returns the whole list.
+    (2026-10-25); ``meta.vintage`` stays empty.
 
     Args:
         region_code: Keep the countries of this GATS region, spelled exactly as
@@ -1712,8 +1702,7 @@ async def list_hs6_commodities_async(search: str | None = None) -> Result[list[H
     Re-export data records obtained by querying UN Trade Data"; the first six digits of
     every HS10 code in the Census records are a listed code. For HS10 codes use
     ``list_commodities``. ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-26); ``meta.vintage`` stays empty. The MCP server
-    returns at most 200 rows or 64 KB, so pass ``search`` there.
+    (2026-10-26); ``meta.vintage`` stays empty.
 
     Args:
         search: Keep the commodities where this text occurs, ignoring case, in the code,
@@ -1787,8 +1776,7 @@ async def list_commodities_async(
     for its size: one request, kept by the client for a day, so a search after the first
     sends nothing; ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
     and ``meta.published_at`` stay empty: upstream gives the list no version or date. The
-    filters apply after the one request. The MCP server returns at most 200 rows or
-    64 KB, so pass a filter there; for HS6 codes use ``list_hs6_commodities``.
+    filters apply after the one request; for HS6 codes use ``list_hs6_commodities``.
 
     Args:
         search: Keep the records where this text occurs, ignoring case, in the name or

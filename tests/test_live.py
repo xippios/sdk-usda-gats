@@ -31,11 +31,12 @@ a plain request to ``BASE_URL`` that spends no quota call.
 import json
 import re
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import httpx
 import pytest
-from xippios.core import PackagedList, UpstreamModel
+from xippios.core import PackagedList, ResultMeta, UpstreamModel
 from xippios.core.data_gov import Gateway
 
 from xippios.usda.gats import api, tasks
@@ -71,6 +72,13 @@ def _vintage_is_a_release_time(vintage: str | None) -> None:
     assert RELEASE_TIME.match(vintage), vintage
 
 
+def _published_naive(meta: ResultMeta) -> None:
+    """``published_at`` is the time ``vintage`` names, without a zone, flagged naive."""
+    assert meta.vintage is not None
+    assert meta.published_at == datetime.fromisoformat(meta.vintage)
+    assert meta.published_at_naive is True
+
+
 def _quota_is_the_gateways() -> None:
     snapshot = Gateway.policy.snapshot()
     assert snapshot is not None
@@ -82,7 +90,7 @@ async def test_get_census_exports_live(record_property: Callable[[str, object], 
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     _quota_is_the_gateways()
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
@@ -93,7 +101,7 @@ async def test_get_census_imports_live(record_property: Callable[[str, object], 
     assert result.data
     assert {(r.country_code, r.date) for r in result.data} == {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     _quota_is_the_gateways()
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
@@ -118,7 +126,7 @@ async def test_get_census_reexports_live(record_property: Callable[[str, object]
     assert {(r.country_code, r.date) for r in result.data} <= {(PARTNER, "202608")}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
 
@@ -135,7 +143,7 @@ async def test_get_census_export_series_live(
     assert {r.country_code for r in result.data} == {PARTNER}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
@@ -153,7 +161,7 @@ async def test_get_census_import_series_live(
     assert {r.country_code for r in result.data} == {PARTNER}
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusImport"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
@@ -173,7 +181,7 @@ async def test_get_census_reexport_series_live(
     }
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
     record_property("vintage", result.meta.vintage)
@@ -201,7 +209,7 @@ async def test_customs_district_task_live(
     assert districts <= _districts(), "every district is packaged"
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("districts", sorted(districts))
     record_property("vintage", result.meta.vintage)
@@ -293,7 +301,7 @@ async def test_un_data_task_live(
     _in_gats_vocabulary(result.data)
     _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
 

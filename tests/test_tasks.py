@@ -19,7 +19,13 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, NotFoundError, RateLimitError, UnknownCode
+from xippios.core import (
+    InvalidRequestError,
+    NotFoundError,
+    RateLimitError,
+    ResultMeta,
+    UnknownCode,
+)
 from xippios.core.client import cache_key
 from xippios.core.mcp import build_parser, main
 from xippios.core.testing import (
@@ -94,6 +100,15 @@ RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
 
 
+def _published_naive(meta: ResultMeta) -> None:
+    """``published_at`` is the release time ``vintage`` names, parsed and kept without a
+    zone as FAS prints it, with ``published_at_naive`` set (ADR-0022, rule 2)."""
+    assert meta.vintage is not None
+    assert meta.published_at == datetime.fromisoformat(meta.vintage)
+    assert meta.published_at.tzinfo is None
+    assert meta.published_at_naive is True
+
+
 def _recorded(endpoint: str, case: str) -> list[dict[str, object]]:
     records: list[dict[str, object]] = json.loads(
         load_fixture(FIXTURES / endpoint / f"{case}.json").response.body
@@ -128,10 +143,9 @@ def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "CH",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert {r.date for r in result.data} == {"202608"}, "the month is the records' own"
     assert result.meta.total is None
     assert sent_urls(releases) == [EXPORT_RELEASES_URL]
@@ -155,10 +169,9 @@ def test_get_census_imports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "CH",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(IMPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert {r.date for r in result.data} == {"202608"}
     assert sent_urls(releases) == [IMPORT_RELEASES_URL]
     assert sent_urls(data) == [CH_IMPORTS_URL]
@@ -169,12 +182,12 @@ def test_vintage_is_the_months_release_time_as_upstream_states_it(
 ) -> None:
     """The month's release record carries ``2026-10-06T08:00:00`` without a time zone:
     ``vintage`` is that text, the naive time written back with ``isoformat()``, and
-    ``published_at`` stays ``None``, since ``ResultMeta`` takes only an aware time; the
-    month itself is in ``meta.request``."""
+    ``published_at`` the time itself, naive, with ``published_at_naive`` set (ADR-0022,
+    rule 2); the month itself is in ``meta.request``."""
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(EXPORTS, "CH_2026_8")
     result = tasks.get_census_exports("CH", 2026, 8)
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert (result.meta.request["year"], result.meta.request["month"]) == (2026, 8)
     releases = tasks.get_census_release_dates(ProductType.X)
     august = next(r for r in releases.data if r.statistical_year_month == "202608")
@@ -274,12 +287,11 @@ def test_a_listed_partner_without_trade_is_an_empty_result(
     result = tasks.get_census_exports("BV", 2026, 8)
     assert result.data == []
     assert result.meta.vintage == RELEASED_2026_08, "the month's release, data or none"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.request == {
         "partner_code": "BV",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert sent_urls(data) == [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/BV/year/2026/month/8"
@@ -457,10 +469,9 @@ def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
         "partner_code": "IC",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     chapter = tasks.get_census_reexports("IC", 2026, 8, hs10_code="62")
     assert [r.hs10_code for r in chapter.data] == [
         "6201409000",
@@ -546,11 +557,9 @@ def test_customs_district_tasks(
         "partner_code": "IC",
         "year": 2026,
         "month": 8,
-        "hs10_code": None,
-        "customs_district_id": None,
     }
     assert result.meta.vintage == RELEASED_2026_08 == _release_time(release_list, "202608")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     new_york = task("IC", 2026, 8, customs_district_id=10)
     assert len(new_york.data) == in_ny
     assert {r.customs_district_id for r in new_york.data} == {10}
@@ -614,7 +623,7 @@ async def test_the_district_tools_name_both_filters_when_cut(
         f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["request"]["customs_district_id"] is None
+    assert "customs_district_id" not in payload["meta"]["request"], "not given, left out"
 
 
 @pytest.mark.anyio
@@ -732,7 +741,8 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     }, "Decimal values are JSON numbers (ADR-0008)"
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["published_at"] is None
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
     chapter = await mcp_call(
         server, "usda_gats_get_census_exports", {**arguments, "hs10_code": "02"}
     )
@@ -963,13 +973,12 @@ def test_census_series_tasks(
         "start_month": 7,
         "end_year": 2026,
         "end_month": 8,
-        "hs10_code": None,
     }
     newer = _release_time(release_list, "202608")
     older = _release_time(release_list, "202607")
     assert (older, newer) == (RELEASED_2026_07, RELEASED_2026_08)
     assert result.meta.vintage == RELEASED_2026_08, "the newer of the two months' releases"
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.total is None
 
 
@@ -1026,14 +1035,13 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
         assert len(series.data) == len(_recorded(endpoint, f"{partner}_2026_8"))
         assert series.meta.endpoint == month.meta.endpoint == endpoint
         assert series.meta.vintage == month.meta.vintage == _release_time(release_list, "202608")
-        assert series.meta.published_at is None
+        _published_naive(series.meta)
         assert series.meta.request == {
             "partner_code": partner,
             "start_year": 2026,
             "start_month": 8,
             "end_year": 2026,
             "end_month": 8,
-            "hs10_code": None,
         }
         assert data.call_count == 2
 
@@ -1243,8 +1251,9 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     )
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == RELEASED_2026_08
-    assert payload["meta"]["published_at"] is None
-    assert payload["meta"]["request"] == {**arguments, "hs10_code": None}
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
+    assert payload["meta"]["request"] == arguments
     chapter = await mcp_call(server, tool, {**arguments, "hs10_code": "02"})
     assert "note" not in chapter
     assert {row["hs10_code"][:2] for row in chapter["data"]} == {"02"}
@@ -1650,11 +1659,9 @@ def test_un_data_tasks(
     assert result.meta.request == {
         "reporter_code": reporter_code,
         "year": 2019,
-        "partner_code": None,
-        "hs6_code": None,
     }
     assert result.meta.vintage == _un_release_time(release_list, reporter_code, "2019")
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.total is None
     assert sent_urls(releases) == [release_url]
     assert sent_urls(data) == [url]
@@ -1728,10 +1735,10 @@ def test_partner_code_and_hs6_code_select_after_the_one_request(
     assert _partners_and_codes(result.data) == [
         (r["partnerCountryCode"], r["hS6Code"]) for r in recorded
     ]
-    assert (result.meta.request["partner_code"], result.meta.request["hs6_code"]) == (
+    assert (result.meta.request.get("partner_code"), result.meta.request.get("hs6_code")) == (
         partner_code,
         hs6_code,
-    )
+    ), "a filter not given is left out (ADR-0022, rule 3)"
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
     assert sent_urls(data) == [IC_UN_EXPORTS_URL], "the filters are not sent upstream"
 
@@ -1763,7 +1770,7 @@ def test_a_listed_reporter_year_without_re_exports_is_an_empty_result(
     result = tasks.get_un_reexports("IC", 2019)
     assert result.data == []
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
-    assert result.meta.published_at is None
+    _published_naive(result.meta)
     assert result.meta.endpoint == UN_RE_EXPORTS
     assert sent_urls(data) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
@@ -1949,8 +1956,6 @@ def test_get_un_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {
         "product_type": product_type.value,
-        "reporter_code": None,
-        "year": None,
     }
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     assert result.meta.retrieved_at.tzinfo is not None
@@ -1972,13 +1977,13 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
     assert [r.statistical_year for r in iceland.data] == [str(y) for y in range(2019, 1988, -1)]
     assert {r.reporter_code for r in iceland.data} == {"IC"}
     assert iceland.data[0].release_time_stamp.isoformat() == IC_2019_EXPORTS_RELEASED
-    assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC", "year": None}
+    assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC"}
     latest = tasks.get_un_release_dates(ProductType.M, year=2019)
     codes = [r.reporter_code for r in latest.data]
     assert len(codes) == 32
     assert codes == sorted(codes)
     assert "TP" in codes
-    assert latest.meta.request == {"product_type": "M", "reporter_code": None, "year": 2019}
+    assert latest.meta.request == {"product_type": "M", "year": 2019}
     (one,) = tasks.get_un_release_dates("M", reporter_code="TP", year=2019).data  # type: ignore[arg-type]
     assert one.release_time_stamp.isoformat() == "2020-07-16T01:15:37"
     assert tasks.get_un_release_dates(ProductType.X, reporter_code="AS", year=2018).data == []
@@ -2063,16 +2068,12 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     assert isinstance(payload["data"][0]["value"], float)
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
-    assert payload["meta"]["published_at"] is None
+    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+    assert payload["meta"]["published_at_naive"] is True
     whole = await mcp_call(server, tool, {**arguments, **narrow})
     assert len(whole["data"]) == narrowed
     assert "note" not in whole
-    assert whole["meta"]["request"] == {
-        "reporter_code": case[:2],
-        "year": 2019,
-        "partner_code": narrow.get("partner_code"),
-        "hs6_code": narrow.get("hs6_code"),
-    }
+    assert whole["meta"]["request"] == {"reporter_code": case[:2], "year": 2019, **narrow}
     assert sent_urls(data) == [url, url], "the filters are not sent upstream"
     with pytest.raises(AssertionError, match="error: UnknownCode: 'ZZ' is not a reporter_code"):
         await mcp_call(server, tool, {**arguments, "reporter_code": "ZZ"})
@@ -2105,7 +2106,7 @@ async def test_the_un_release_dates_tool_names_its_filters_when_cut(
     )
     assert len(iceland["data"]) == 31
     assert "note" not in iceland
-    assert iceland["meta"]["request"] == {"product_type": "X", "reporter_code": "IC", "year": None}
+    assert iceland["meta"]["request"] == {"product_type": "X", "reporter_code": "IC"}
     assert sent_urls(route) == [UN_EXPORT_RELEASES_URL]
 
 

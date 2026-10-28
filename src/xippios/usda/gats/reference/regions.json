@@ -1,7 +1,7 @@
 {
   "param": "regions",
   "endpoint": "GATSData_GetRegions",
-  "fetched": "2026-10-26",
+  "fetched": "2026-10-28T19:22:39Z",
   "records": [
     {
       "regionCode": "R05",

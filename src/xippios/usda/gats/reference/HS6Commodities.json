@@ -1,7 +1,7 @@
 {
   "param": "HS6Commodities",
   "endpoint": "GATSData_GetHS6Commodities",
-  "fetched": "2026-10-26",
+  "fetched": "2026-10-28T19:22:42Z",
   "records": [
     {
       "hS6Code": "010110",

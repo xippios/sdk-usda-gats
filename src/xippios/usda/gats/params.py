@@ -36,7 +36,6 @@ from xippios.usda.gats._client import SOURCE
 from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON
 
 __all__ = [
-    "PACKAGE",
     "PACKAGED_LISTS",
     "validate_country_code",
     "validate_customs_district_id",

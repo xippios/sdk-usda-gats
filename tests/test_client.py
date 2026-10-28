@@ -1,7 +1,7 @@
 """The client's error mapping, and core's quota policy wired to the gateway's answers.
 
 Recorded answers come from ``tests/fixtures``: the invalid-key answer
-(``GATSData_GetRegions/invalid_key.json``, sent with a made-up key on 2026-10-25) and the
+(``get_regions/invalid_key.json``, sent with a made-up key on 2026-10-25) and the
 quota headers of the keyed answers. GATS has no recorded 429: the gateway's 429 and its
 ``NOT_FOUND`` 404 are built in the shape api.data.gov documents and sdk-usda-psd recorded
 (its ``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), and every such test
@@ -136,14 +136,14 @@ def test_the_client_asks_for_json() -> None:
 @pytest.mark.parametrize(
     ("endpoint", "case", "remaining"),
     [
-        ("GATSData_GetCountries", "all", "969"),
-        ("GATSData_GetCensusExports", "CH_2026_8", "966"),
-        ("GATSData_GetCensusExports", "unknown_partner", "965"),
-        ("GATSData_GetCensusExports", "month_13", "964"),
-        ("GATSData_GetCensusImport", "CH_2026_8", "965"),
-        ("GATSData_GetUNTradeExportDataReleaseInfo", "all", "992"),
-        ("GATSData_GetUNTradeExports", "IC_2019", "991"),
-        ("GATSData_GetUNTradeExports", "year_text", "985"),
+        ("get_countries", "all", "969"),
+        ("get_census_exports", "CH_2026_8", "966"),
+        ("get_census_exports", "unknown_partner", "965"),
+        ("get_census_exports", "month_13", "964"),
+        ("get_census_import", "CH_2026_8", "965"),
+        ("get_un_trade_export_data_release_info", "all", "992"),
+        ("get_un_trade_exports", "IC_2019", "991"),
+        ("get_un_trade_exports", "year_text", "985"),
     ],
 )
 def test_keyed_gats_answers_carry_the_hourly_quota(
@@ -157,7 +157,7 @@ def test_keyed_gats_answers_carry_the_hourly_quota(
 
 
 def test_invalid_key_is_an_auth_error_naming_the_code_and_the_variable() -> None:
-    response = recorded("GATSData_GetRegions", "invalid_key")
+    response = recorded("get_regions", "invalid_key")
     error = classify(response)
     assert isinstance(error, AuthError)
     assert error.status == 403
@@ -171,7 +171,7 @@ def test_invalid_key_is_an_auth_error_naming_the_code_and_the_variable() -> None
 def test_the_recorded_invalid_key_answer_is_the_documented_shape() -> None:
     """The bad-key answer carries api.data.gov's error object and no quota headers: the
     gateway refuses it before counting."""
-    response = recorded("GATSData_GetRegions", "invalid_key")
+    response = recorded("get_regions", "invalid_key")
     body = json.loads(response.text)
     assert set(body) == {"error"}
     assert set(body["error"]) == {"code", "message"}
@@ -198,7 +198,7 @@ def test_a_403_without_a_gateway_code_falls_through_to_core() -> None:
 async def test_a_call_raises_auth_error_on_the_recorded_invalid_key(
     replay_fixture: ReplayFixture, placeholder_api_key: str
 ) -> None:
-    route = replay_fixture("GATSData_GetRegions", "invalid_key")
+    route = replay_fixture("get_regions", "invalid_key")
     with pytest.raises(AuthError, match="API_KEY_INVALID") as info:
         await client.get_json(REGIONS)
     assert placeholder_api_key not in str(info.value)
@@ -229,14 +229,14 @@ async def test_a_call_raises_not_found_error_on_the_gateway_not_found(
 
 def test_an_empty_404_falls_through_to_core() -> None:
     """The recorded month-0 answer: no gateway code, so ``classify`` leaves it to core."""
-    response = recorded("GATSData_GetCensusExports", "month_0")
+    response = recorded("get_census_exports", "month_0")
     assert (response.status_code, response.content) == (404, b"")
     assert classify(response) is None
 
 
 def test_other_statuses_fall_through_to_core() -> None:
     assert classify(synthesised(500, {"Message": "An error has occurred."})) is None
-    assert classify(recorded("GATSData_GetCountries", "all")) is None
+    assert classify(recorded("get_countries", "all")) is None
 
 
 def test_a_429_is_a_rate_limit_error_with_its_retry_after() -> None:
@@ -274,7 +274,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError) as info:
-        await api.GATSData_GetCountries()
+        await api.get_countries()
     slack = CLOCK_SLACK.total_seconds()
     assert info.value.retry_after is not None
     assert 3151 - slack <= info.value.retry_after <= 3151 + slack, "the snapshot's wait from now"
@@ -288,7 +288,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     assert snapshot.resumes_at == snapshot.observed_at + timedelta(seconds=3151)
     releases = respx_mock.get(f"{BASE_URL}/api/gats/census/data/exports/dataReleaseDates")
     with pytest.raises(RateLimitError, match="nothing was sent") as refused:
-        await api.GATSData_GetCensusExportDataReleaseInfo()
+        await api.get_census_export_data_release_info()
     assert refused.value.message.startswith(
         "api.data.gov quota of the key in DATA_GOV_API_KEY spent"  # pragma: allowlist secret
     )
@@ -427,14 +427,14 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
     """Through the real client: the commodities answer is stored in the day's cache, a
     release list in the hour's, and the second commodities call sends nothing and carries
     the entry's stored time."""
-    commodities = replay_fixture("GATSData_GetCommodities", "all")
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetCommodities()
-    await api.GATSData_GetCensusExportDataReleaseInfo()
+    commodities = replay_fixture("get_commodities", "all")
+    replay_fixture("get_census_export_data_release_info", "all")
+    first, _ = await api.get_commodities()
+    await api.get_census_export_data_release_info()
     assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
     entry = commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
     assert entry is not None
-    again, retrieved_at = await api.GATSData_GetCommodities()
+    again, retrieved_at = await api.get_commodities()
     assert retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(again) == len(first) == 24936
     assert commodities.call_count == 1
@@ -448,29 +448,29 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     """The first call says when the answer arrived, the second sends nothing and says when
     the entry was stored, for ``meta.retrieved_at`` (conventions §4, ``get_answer``); each
     flow's list is an entry of its own."""
-    exports = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    imports = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
+    exports = replay_fixture("get_census_export_data_release_info", "all")
+    imports = replay_fixture("get_census_import_data_release_info", "all")
     before = datetime.now(UTC)
-    first, first_at = await api.GATSData_GetCensusExportDataReleaseInfo()
+    first, first_at = await api.get_census_export_data_release_info()
     assert_time_between(first_at, before, datetime.now(UTC))
     assert exports.call_count == 1, "the first answer came from the wire"
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    again, stored = await api.get_census_export_data_release_info()
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
     assert stored.tzinfo is UTC
     assert again == first
     assert exports.call_count == 1
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]
-    await api.GATSData_GetCensusImportDataReleaseInfo()
+    await api.get_census_import_data_release_info()
     assert imports.call_count == 1, "the imports list is not the exports list's entry"
 
 
 @pytest.mark.anyio
 async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCensusExports", "CH_2026_8")
-    await api.GATSData_GetCensusExports("CH", 2026, 8)
-    await api.GATSData_GetCensusExports("CH", 2026, 8)
+    route = replay_fixture("get_census_exports", "CH_2026_8")
+    await api.get_census_exports("CH", 2026, 8)
+    await api.get_census_exports("CH", 2026, 8)
     assert route.call_count == 2
     assert len(cache) == 0
 
@@ -482,12 +482,12 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
     """Through the real client: each UN Trade list is an entry of the hour's store, beside
     the Census lists, never the day's; the second call sends nothing and says when the
     entry was stored."""
-    exports = replay_fixture("GATSData_GetUNTradeExportDataReleaseInfo", "all")
-    imports = replay_fixture("GATSData_GetUNTradeImportDataReleaseInfo", "all")
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    await api.GATSData_GetUNTradeImportDataReleaseInfo()
-    await api.GATSData_GetCensusExportDataReleaseInfo()
+    exports = replay_fixture("get_un_trade_export_data_release_info", "all")
+    imports = replay_fixture("get_un_trade_import_data_release_info", "all")
+    replay_fixture("get_census_export_data_release_info", "all")
+    first, _ = await api.get_un_trade_export_data_release_info()
+    await api.get_un_trade_import_data_release_info()
+    await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
     assert (len(release_dates_cache), len(commodities_cache)) == (3, 0)
     for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
@@ -496,7 +496,7 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
         assert commodities_cache.get(key) is None, path
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    again, stored = await api.get_un_trade_export_data_release_info()
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
     assert again == first
     assert (exports.call_count, imports.call_count) == (1, 1)
@@ -506,9 +506,9 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
 
 @pytest.mark.anyio
 async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetUNTradeReExports", "MC_2019")
-    await api.GATSData_GetUNTradeReExports("MC", "2019")
-    await api.GATSData_GetUNTradeReExports("MC", "2019")
+    route = replay_fixture("get_un_trade_re_exports", "MC_2019")
+    await api.get_un_trade_re_exports("MC", "2019")
+    await api.get_un_trade_re_exports("MC", "2019")
     assert route.call_count == 2
     assert len(cache) == 0
 
@@ -522,17 +522,17 @@ async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     release list cached before it still answers, since a cache hit returns before the
     quota policy's check (ADR-0015), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
-    releases = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    releases = replay_fixture("get_census_export_data_release_info", "all")
+    first, _ = await api.get_census_export_data_release_info()
     spent = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError):
         await client.get_json(REGIONS)
-    cached, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    cached, _ = await api.get_census_export_data_release_info()
     assert cached == first
     assert releases.call_count == 1, "answered from the cache"
     countries = respx_mock.get(f"{BASE_URL}/api/gats/countries")
     with pytest.raises(RateLimitError, match="nothing was sent"):
-        await api.GATSData_GetCountries()
+        await api.get_countries()
     assert (spent.call_count, countries.call_count) == (1, 0)

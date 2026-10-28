@@ -233,18 +233,18 @@ def _keyed(records: list[Any]) -> list[str]:
 
 
 LISTS = [
-    ("list_regions", "GATSData_GetRegions"),
-    ("list_countries", "GATSData_GetCountries"),
-    ("list_hs6_commodities", "GATSData_GetHS6Commodities"),
-    ("list_units_of_measure", "GATSData_GetUnitsOfMeasure"),
-    ("list_customs_districts", "GATSData_GetCustomsDistricts"),
+    ("list_regions", "get_regions", "GATSData_GetRegions"),
+    ("list_countries", "get_countries", "GATSData_GetCountries"),
+    ("list_hs6_commodities", "get_hs6_commodities", "GATSData_GetHS6Commodities"),
+    ("list_units_of_measure", "get_units_of_measure", "GATSData_GetUnitsOfMeasure"),
+    ("list_customs_districts", "get_customs_districts", "GATSData_GetCustomsDistricts"),
 ]
 
 
-@pytest.mark.parametrize(("task", "endpoint"), LISTS, ids=[task for task, _ in LISTS])
-async def test_packaged_list_equals_the_live_list(task: str, endpoint: str) -> None:
+@pytest.mark.parametrize(("task", "wrapper", "endpoint"), LISTS, ids=[task for task, *_ in LISTS])
+async def test_packaged_list_equals_the_live_list(task: str, wrapper: str, endpoint: str) -> None:
     packaged = await getattr(tasks, f"{task}_async")()
-    live: list[UpstreamModel] = await getattr(api, endpoint)()
+    live: list[UpstreamModel] = await getattr(api, wrapper)()
     ours, theirs = _keyed(packaged.data), _keyed(live)
     stale = sorted(set(ours) - set(theirs))
     new = sorted(set(theirs) - set(ours))

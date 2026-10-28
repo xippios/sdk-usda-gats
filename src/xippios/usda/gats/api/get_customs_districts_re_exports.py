@@ -10,7 +10,7 @@ operation; the path says ``customsDistrictReExports``): three path parameters,
 USA, that are ultimately exported out to other countries from USA". The record is
 ``models.CustomsDistrictExport``: the recorded answer carries the customs-district
 exports' eleven fields in their order and nothing else, so that model is reused rather
-than copied (``tests/fixtures/GATSData_GetCustomsDistrictsReExports/IC_2026_8.json``, 13
+than copied (``tests/fixtures/get_customs_districts_re_exports/IC_2026_8.json``, 13
 records, about 3 KB of JSON, for Iceland in August 2026). One answer is one partner-month
 across all districts and products, never paged. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``; the probes recorded for
@@ -24,10 +24,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CustomsDistrictExport
 
-__all__ = ["GATSData_GetCustomsDistrictsReExports"]
+__all__ = ["get_customs_districts_re_exports"]
 
 
-async def GATSData_GetCustomsDistrictsReExports(
+async def get_customs_districts_re_exports(
     partner_code: str, year: int, month: int
 ) -> list[CustomsDistrictExport]:
     """Call ``GATSData_GetCustomsDistrictsReExports``.

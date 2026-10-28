@@ -8,7 +8,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 data on a monthly basis with corrections applied once a year." The record is
 ``models.CensusExport``: the recorded answer carries the exports' ten fields in their
 order and nothing else, so the exports' model is reused rather than copied
-(``tests/fixtures/GATSData_GetCensusReExports/IC_2026_8.json``, 12 records, about 2 KB of
+(``tests/fixtures/get_census_re_exports/IC_2026_8.json``, 12 records, about 2 KB of
 JSON, for Iceland in August 2026). One answer is one partner-month across all products,
 never paged. Error shapes are mapped once in ``xippios.usda.gats._client.classify``; the
 probes recorded for ``GATSData_GetCensusExports`` were not repeated here.
@@ -21,12 +21,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CensusExport
 
-__all__ = ["GATSData_GetCensusReExports"]
+__all__ = ["get_census_re_exports"]
 
 
-async def GATSData_GetCensusReExports(
-    partner_code: str, year: int, month: int
-) -> list[CensusExport]:
+async def get_census_re_exports(partner_code: str, year: int, month: int) -> list[CensusExport]:
     """Call ``GATSData_GetCensusReExports``.
 
     Args:

@@ -10,7 +10,7 @@ one upstream call returns it; never paged, never sliced upstream. Before that ca
 check the arguments (``params``) and fetch a release list, which the client caches for
 an hour (``_client.RELEASE_DATES_PATHS``): GATS answers a month it has not released with
 ``[]``, the same as a partner without trade (``future_month.json`` and
-``no_data_valid_partner.json`` under ``tests/fixtures/GATSData_GetCensusExports/``), so
+``no_data_valid_partner.json`` under ``tests/fixtures/get_census_exports/``), so
 a month the list lacks is refused as ``NotFoundError`` naming the months it holds. The
 imports forms check the imports list (``GATSData_GetCensusImportDataReleaseInfo``); the
 exports forms and, by assumption, the re-exports forms check the exports list
@@ -78,7 +78,7 @@ codes for membership only, since the UN data keeps codes the countries list mark
 discontinued in 1987 (``AS``, Australia) for 2019, and fetch the flow's UN Trade release
 list, cached like the Census ones. GATS answers an unknown reporter, a year far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
-``unreleased_year.json`` under ``tests/fixtures/GATSData_GetUNTradeExports/``), so a
+``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
 years and the list's latest year. The imports task checks the imports list
 (``GATSData_GetUNTradeImportDataReleaseInfo``); the exports task and, by assumption as
@@ -527,8 +527,8 @@ async def _releases(product_type: ProductType) -> tuple[list[DataReleaseInfo], d
     the time is the cache's stored time on a hit, else the time the list arrived.
     """
     if product_type is ProductType.X:
-        return await api.GATSData_GetCensusExportDataReleaseInfo()
-    return await api.GATSData_GetCensusImportDataReleaseInfo()
+        return await api.get_census_export_data_release_info()
+    return await api.get_census_import_data_release_info()
 
 
 async def _release(
@@ -630,7 +630,7 @@ async def get_census_exports_async(
     """
     _check(partner_code, year, month, hs10_code)
     release = await _release(ProductType.X, year, month)
-    records = await api.GATSData_GetCensusExports(partner_code, year, month)
+    records = await api.get_census_exports(partner_code, year, month)
     meta = _data_meta("GATSData_GetCensusExports", release, partner_code, year, month, hs10_code)
     return Result(data=_matching(records, hs10_code), meta=meta)
 
@@ -676,7 +676,7 @@ async def get_census_imports_async(
     """
     _check(partner_code, year, month, hs10_code)
     release = await _release(ProductType.M, year, month)
-    records = await api.GATSData_GetCensusImport(partner_code, year, month)
+    records = await api.get_census_import(partner_code, year, month)
     meta = _data_meta("GATSData_GetCensusImport", release, partner_code, year, month, hs10_code)
     return Result(data=_matching(records, hs10_code), meta=meta)
 
@@ -717,7 +717,7 @@ async def get_census_reexports_async(
     """
     _check(partner_code, year, month, hs10_code)
     release = await _release(ProductType.X, year, month, "re-exports")
-    records = await api.GATSData_GetCensusReExports(partner_code, year, month)
+    records = await api.get_census_re_exports(partner_code, year, month)
     meta = _data_meta("GATSData_GetCensusReExports", release, partner_code, year, month, hs10_code)
     return Result(data=_matching(records, hs10_code), meta=meta)
 
@@ -762,7 +762,7 @@ async def get_customs_district_exports_async(
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release = await _release(ProductType.X, year, month, "customs-district exports")
-    records = await api.GATSData_GetCustomsDistrictsExports(partner_code, year, month)
+    records = await api.get_customs_districts_exports(partner_code, year, month)
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsExports",
         release,
@@ -815,7 +815,7 @@ async def get_customs_district_imports_async(
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release = await _release(ProductType.M, year, month, "customs-district imports")
-    records = await api.GATSData_GetCustomsDistrictsImports(partner_code, year, month)
+    records = await api.get_customs_districts_imports(partner_code, year, month)
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsImports",
         release,
@@ -869,7 +869,7 @@ async def get_customs_district_reexports_async(
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release = await _release(ProductType.X, year, month, "customs-district re-exports")
-    records = await api.GATSData_GetCustomsDistrictsReExports(partner_code, year, month)
+    records = await api.get_customs_districts_re_exports(partner_code, year, month)
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsReExports",
         release,
@@ -971,7 +971,7 @@ async def _series[R: _Coded](
     adds nothing.
 
     Args:
-        fetch: The month's data wrapper, e.g. ``api.GATSData_GetCensusExports``.
+        fetch: The month's data wrapper, e.g. ``api.get_census_exports``.
         endpoint: Its operation, ``meta.endpoint``, e.g. ``"GATSData_GetCensusExports"``.
         product_type: Which release list to check: ``ProductType.X`` for exports and
             re-exports, ``ProductType.M`` for imports.
@@ -1075,7 +1075,7 @@ async def get_census_export_series_async(
             month's request.
     """
     records, meta = await _series(
-        api.GATSData_GetCensusExports,
+        api.get_census_exports,
         "GATSData_GetCensusExports",
         ProductType.X,
         None,
@@ -1136,7 +1136,7 @@ async def get_census_import_series_async(
             month's request.
     """
     records, meta = await _series(
-        api.GATSData_GetCensusImport,
+        api.get_census_import,
         "GATSData_GetCensusImport",
         ProductType.M,
         None,
@@ -1198,7 +1198,7 @@ async def get_census_reexport_series_async(
             Applied after each month's request.
     """
     records, meta = await _series(
-        api.GATSData_GetCensusReExports,
+        api.get_census_re_exports,
         "GATSData_GetCensusReExports",
         ProductType.X,
         "re-exports",
@@ -1237,10 +1237,10 @@ async def get_census_release_dates_async(
     code = _product_type(product_type)
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
-        releases, retrieved_at = await api.GATSData_GetCensusExportDataReleaseInfo()
+        releases, retrieved_at = await api.get_census_export_data_release_info()
     else:
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
-        releases, retrieved_at = await api.GATSData_GetCensusImportDataReleaseInfo()
+        releases, retrieved_at = await api.get_census_import_data_release_info()
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
@@ -1370,9 +1370,9 @@ async def _un_release(
     asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
     if product_type is ProductType.X:
-        releases, fetched = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+        releases, fetched = await api.get_un_trade_export_data_release_info()
     else:
-        releases, fetched = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+        releases, fetched = await api.get_un_trade_import_data_release_info()
     flow, operation = UN_RELEASE_LISTS[product_type]
     return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
 
@@ -1469,7 +1469,7 @@ async def get_un_exports_async(
     """
     _un_check(reporter_code, year, partner_code, hs6_code)
     release = await _un_release(ProductType.X, reporter_code, year)
-    records = await api.GATSData_GetUNTradeExports(reporter_code, f"{year:04d}")
+    records = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeExports", release, reporter_code, year, partner_code, hs6_code
     )
@@ -1516,7 +1516,7 @@ async def get_un_imports_async(
     """
     _un_check(reporter_code, year, partner_code, hs6_code)
     release = await _un_release(ProductType.M, reporter_code, year)
-    records = await api.GATSData_GetUNTradeImports(reporter_code, f"{year:04d}")
+    records = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeImports", release, reporter_code, year, partner_code, hs6_code
     )
@@ -1563,7 +1563,7 @@ async def get_un_reexports_async(
     """
     _un_check(reporter_code, year, partner_code, hs6_code)
     release = await _un_release(ProductType.X, reporter_code, year, "re-exports")
-    records = await api.GATSData_GetUNTradeReExports(reporter_code, f"{year:04d}")
+    records = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeReExports", release, reporter_code, year, partner_code, hs6_code
     )
@@ -1608,9 +1608,9 @@ async def get_un_release_dates_async(
     if year is not None:
         validate_year(year)
     if code is ProductType.X:
-        releases, retrieved_at = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+        releases, retrieved_at = await api.get_un_trade_export_data_release_info()
     else:
-        releases, retrieved_at = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+        releases, retrieved_at = await api.get_un_trade_import_data_release_info()
     statistical_year = None if year is None else f"{year:04d}"
     selected = [
         r
@@ -1792,7 +1792,7 @@ async def list_commodities_async(
     _search(search)
     if hs10_code is not None:
         validate_hs10_code(hs10_code)
-    commodities, retrieved_at = await api.GATSData_GetCommodities()
+    commodities, retrieved_at = await api.get_commodities()
     selected = [
         c
         for c in commodities

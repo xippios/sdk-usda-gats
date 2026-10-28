@@ -1,14 +1,14 @@
 """Why GATS's codes the packaged lists lack are refused (conventions §5, ADR-0022).
 
 GATS answers an unknown partner code with HTTP 200 and an empty list
-(``tests/fixtures/GATSData_GetCensusExports/unknown_partner.json``, ``ZZ``), the same
+(``tests/fixtures/get_census_exports/unknown_partner.json``, ``ZZ``), the same
 answer as a listed partner without trade in that month (``no_data_valid_partner.json``,
 ``BV``, Bouvet Island): nothing in the answer tells the two apart. The package therefore
 checks a code against its packaged list before calling upstream and refuses an unknown
 one with core's ``UnknownCode``, naming the closest known codes, or example codes when
 none is close (``params``). The same check covers the customs district a task keeps after
 the call, the UN Trade ``reporter_code``, which GATS answers with ``[]`` when unknown
-(``GATSData_GetUNTradeExports/unknown_reporter.json``), and the UN Trade filters
+(``get_un_trade_exports/unknown_reporter.json``), and the UN Trade filters
 ``partner_code`` and a six-digit ``hs6_code``. The reasons below go into
 ``UnknownCode``'s message as its ``reason=``, before core's closing sentence on refreshing
 the packaged list; the customs-district reason is written inline in
@@ -30,7 +30,7 @@ REPORTER_REASON = (
 )
 """Why an unknown ``reporter_code`` of a UN Trade task is refused: ``unknown_reporter.json``
 (``ZZ``, 2019), ``future_year.json`` and ``unreleased_year.json`` under
-``tests/fixtures/GATSData_GetUNTradeExports/`` all answer HTTP 200 with ``[]``."""
+``tests/fixtures/get_un_trade_exports/`` all answer HTTP 200 with ``[]``."""
 
 UN_PARTNER_REASON = (
     "The UN Trade operations take no partner: the task keeps this partner's records after "

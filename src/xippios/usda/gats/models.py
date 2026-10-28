@@ -49,16 +49,16 @@ __all__ = [
 # the records it names (ADR-0008: upstream enumerations become ``StrEnum`` with upstream's
 # values). Established by the recorded lists, not by the snapshot, which documents no
 # record shape: every record of
-# ``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json`` carries ``"X"``,
-# every record of ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``
+# ``tests/fixtures/get_census_export_data_release_info/all.json`` carries ``"X"``,
+# every record of ``tests/fixtures/get_census_import_data_release_info/all.json``
 # ``"M"`` (716 each, recorded 2026-10-25). ``X`` selects
 # ``GATSData_GetCensusExportDataReleaseInfo`` (``census/data/exports/dataReleaseDates``),
 # ``M`` ``GATSData_GetCensusImportDataReleaseInfo``
 # (``census/data/imports/dataReleaseDates``). Re-exports have no release-date operation in
 # the snapshot, so there is no member for them. The UN Trade release lists carry the same
 # two codes: every record of
-# ``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json`` ``"X"`` (3,796),
-# every record of ``tests/fixtures/GATSData_GetUNTradeImportDataReleaseInfo/all.json``
+# ``tests/fixtures/get_un_trade_export_data_release_info/all.json`` ``"X"`` (3,796),
+# every record of ``tests/fixtures/get_un_trade_import_data_release_info/all.json``
 # ``"M"`` (3,832, recorded 2026-10-26); ``X`` selects
 # ``GATSData_GetUNTradeExportDataReleaseInfo``, ``M``
 # ``GATSData_GetUNTradeImportDataReleaseInfo``, and the snapshot has no UN re-export
@@ -81,7 +81,7 @@ class ProductType(StrEnum):
 class Country(UpstreamModel):
     """One record of ``GATSData_GetCountries`` (``GET /api/gats/countries``).
 
-    Shape from ``tests/fixtures/GATSData_GetCountries/all.json`` (322 records, every one
+    Shape from ``tests/fixtures/get_countries/all.json`` (322 records, every one
     with all eight fields; 26 with a ``discontinuedOn``, 79 without a GENC code, 66 whose
     ``countryParentCode`` differs from their own code).
 
@@ -117,7 +117,7 @@ class Country(UpstreamModel):
 class Region(UpstreamModel):
     """One record of ``GATSData_GetRegions`` (``GET /api/gats/regions``).
 
-    Shape from ``tests/fixtures/GATSData_GetRegions/all.json`` (15 records, every one with
+    Shape from ``tests/fixtures/get_regions/all.json`` (15 records, every one with
     both fields, no code twice, ``"R05"`` to ``"R99"`` in order). Upstream: "Use it to
     associate Region Name with Country records obtained by querying Country end point";
     every ``Country.region_code`` recorded is one of the 15.
@@ -135,7 +135,7 @@ class Region(UpstreamModel):
 class Commodity(UpstreamModel):
     """One record of ``GATSData_GetCommodities`` (``GET /api/gats/commodities``).
 
-    Shape from ``tests/fixtures/GATSData_GetCommodities/all.json``, recorded 2026-10-26:
+    Shape from ``tests/fixtures/get_commodities/all.json``, recorded 2026-10-26:
     24,936 records, 7,592,916 bytes of JSON (8,383,278 as a fixture file), every one with
     all eleven fields.
     Upstream: "Commodity record contains HS10 Code and Census and FAS Unit Of Measure
@@ -188,7 +188,7 @@ class Commodity(UpstreamModel):
 class HS6Commodity(UpstreamModel):
     """One record of ``GATSData_GetHS6Commodities`` (``GET /api/gats/HS6Commodities``).
 
-    Shape from ``tests/fixtures/GATSData_GetHS6Commodities/all.json``: 2,909 records,
+    Shape from ``tests/fixtures/get_hs6_commodities/all.json``: 2,909 records,
     661,146 bytes of JSON, every one with all seven fields and none ``null``, one per HS6
     code, no code twice, in code order. Upstream: "a list of Commodities classified at a
     broader level of classification, at the HS6 Level, as opposed to HS10 Level. Use this
@@ -220,7 +220,7 @@ class HS6Commodity(UpstreamModel):
 class UnitOfMeasure(UpstreamModel):
     """One record of ``GATSData_GetUnitsOfMeasure`` (``GET /api/gats/unitsOfMeasure``).
 
-    Shape from ``tests/fixtures/GATSData_GetUnitsOfMeasure/all.json``: 108 records, every
+    Shape from ``tests/fixtures/get_units_of_measure/all.json``: 108 records, every
     one with all four fields, ids ``0`` to ``107`` in order without a gap. Upstream: "Use
     this to match against Units Of Measure IDs in the Import and Export records to get
     the name of the Unit of Measure"; every unit-of-measure id in the recorded data and
@@ -245,7 +245,7 @@ class UnitOfMeasure(UpstreamModel):
 class CustomsDistrict(UpstreamModel):
     """One record of ``GATSData_GetCustomsDistricts`` (``GET /api/gats/customsDistricts``).
 
-    Shape from ``tests/fixtures/GATSData_GetCustomsDistricts/all.json``: 53 records, every
+    Shape from ``tests/fixtures/get_customs_districts/all.json``: 53 records, every
     one with all four fields, ids from ``0`` to ``99`` in order, with gaps. Upstream: "US
     Customs Districts, the point of Entry and Exit for the Commodity Imports and
     Exports." A record names an id, a name and the district's region, one of five; no
@@ -276,8 +276,8 @@ class DataReleaseInfo(UpstreamModel):
     (``GET /api/gats/census/data/exports/dataReleaseDates``) and
     ``GATSData_GetCensusImportDataReleaseInfo``
     (``GET /api/gats/census/data/imports/dataReleaseDates``) answer the same record. Shape
-    from ``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json`` and
-    ``tests/fixtures/GATSData_GetCensusImportDataReleaseInfo/all.json``: 716 records each,
+    from ``tests/fixtures/get_census_export_data_release_info/all.json`` and
+    ``tests/fixtures/get_census_import_data_release_info/all.json``: 716 records each,
     one per statistical month from ``"196701"`` to ``"202608"``, newest first, no month
     twice, ``reporterCode`` ``"US"`` in every record. A record is per month, not per
     partner. The UN Trade lists answer another record, one per reporter and year
@@ -303,14 +303,14 @@ class DataReleaseInfo(UpstreamModel):
 class CensusExport(UpstreamModel):
     """One record of ``GATSData_GetCensusExports`` (``censusExports/partnerCode/...``).
 
-    Shape from ``tests/fixtures/GATSData_GetCensusExports/CH_2026_8.json``: 777 records for
+    Shape from ``tests/fixtures/get_census_exports/CH_2026_8.json``: 777 records for
     China (``"CH"``), August 2026, one per HS10 code, no code twice, every record with all
     ten fields. The record names its partner, month and HS10 code and four
     unit-of-measure ids; it names no customs district and no FAS product group. The
     snapshot points to ``GATSData_GetUnitsOfMeasure`` for the units; which quantity is in
     which unit is not documented. ``GATSData_GetCensusReExports``
     (``censusReExports/partnerCode/...``) answers the same record, the same ten fields in
-    the same order (``tests/fixtures/GATSData_GetCensusReExports/IC_2026_8.json``, 12
+    the same order (``tests/fixtures/get_census_re_exports/IC_2026_8.json``, 12
     records for Iceland, August 2026).
 
     Attributes:
@@ -341,7 +341,7 @@ class CensusExport(UpstreamModel):
 class CensusImport(UpstreamModel):
     """One record of ``GATSData_GetCensusImport`` (``censusImports/partnerCode/...``).
 
-    Shape from ``tests/fixtures/GATSData_GetCensusImport/CH_2026_8.json``: 3,294 records for
+    Shape from ``tests/fixtures/get_census_import/CH_2026_8.json``: 3,294 records for
     China (``"CH"``), August 2026, one per HS10 code, no code twice, every record with all
     fifteen fields. It carries every field of ``CensusExport`` and five more, sent first:
     ``consumptionQuantity1``, ``consumptionQuantity2``, ``consumptionValue``,
@@ -391,9 +391,9 @@ class CustomsDistrictExport(UpstreamModel):
     ``GATSData_GetCustomsDistrictsExports`` (``customsDistrictExports/partnerCode/...``)
     and ``GATSData_GetCustomsDistrictsReExports``
     (``customsDistrictReExports/partnerCode/...``) answer the same record. Shape from
-    ``tests/fixtures/GATSData_GetCustomsDistrictsExports/IC_2026_8.json`` (107 records,
+    ``tests/fixtures/get_customs_districts_exports/IC_2026_8.json`` (107 records,
     Iceland, August 2026), ``.../CH_2026_8.json`` (1,697 records, China) and
-    ``tests/fixtures/GATSData_GetCustomsDistrictsReExports/IC_2026_8.json`` (13 records):
+    ``tests/fixtures/get_customs_districts_re_exports/IC_2026_8.json`` (13 records):
     every record with all eleven fields, ``customsDistrictId`` first, then the ten fields
     of ``CensusExport`` in its order. One record per district and HS10 code, no pair
     twice; the district is named by its id alone, an id of ``GATSData_GetCustomsDistricts``.
@@ -432,7 +432,7 @@ class CustomsDistrictImport(UpstreamModel):
     """One record of ``GATSData_GetCustomsDistrictsImports``.
 
     Path ``customsDistrictImports/partnerCode/...``. Shape from
-    ``tests/fixtures/GATSData_GetCustomsDistrictsImports/IC_2026_8.json``: 123 records for
+    ``tests/fixtures/get_customs_districts_imports/IC_2026_8.json``: 123 records for
     Iceland (``"IC"``), August 2026, every record with all sixteen fields,
     ``customsDistrictId`` first, then the fifteen fields of ``CensusImport`` in its order.
     One record per district and HS10 code, no pair twice, 21 districts and 74 codes; the
@@ -482,9 +482,9 @@ class UNTradeDataReleaseInfo(UpstreamModel):
     (``GET /api/gats/UNTrade/data/exports/dataReleaseDates``) and
     ``GATSData_GetUNTradeImportDataReleaseInfo``
     (``GET /api/gats/UNTrade/data/imports/dataReleaseDates``) answer the same record. Shape
-    from ``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json`` (3,796
+    from ``tests/fixtures/get_un_trade_export_data_release_info/all.json`` (3,796
     records, 206 reporters) and
-    ``tests/fixtures/GATSData_GetUNTradeImportDataReleaseInfo/all.json`` (3,832 records,
+    ``tests/fixtures/get_un_trade_import_data_release_info/all.json`` (3,832 records,
     207 reporters), recorded 2026-10-26: every record with all four fields, none ``null``,
     one per reporter and statistical year, no pair twice, years ``"1989"`` to ``"2019"``,
     newest year first and reporters in code order within a year. It differs from the
@@ -520,9 +520,9 @@ class UNTradeRecord(UpstreamModel):
     ``GATSData_GetUNTradeReExports`` (``UNTrade{Exports|Imports|ReExports}/reporterCode/
     {reporterCode}/year/{year}``) answer the same record, the same eleven fields in the
     same order, every record with all of them and none ``null``. Shape from
-    ``tests/fixtures/GATSData_GetUNTradeExports/IC_2019.json`` (3,980 records, Iceland,
-    2019), ``tests/fixtures/GATSData_GetUNTradeImports/TP_2019.json`` (2,377 records, Sao
-    Tome and Principe) and ``tests/fixtures/GATSData_GetUNTradeReExports/MC_2019.json``
+    ``tests/fixtures/get_un_trade_exports/IC_2019.json`` (3,980 records, Iceland,
+    2019), ``tests/fixtures/get_un_trade_imports/TP_2019.json`` (2,377 records, Sao
+    Tome and Principe) and ``tests/fixtures/get_un_trade_re_exports/MC_2019.json``
     (421 records, Macau), recorded 2026-10-26. The snapshot: "a list of records of
     Commodity Export data as reported by UN COMTrade for a given year. UN COMTrade reports
     data on a yearly basis at a HS6 Code Level." A record names its year, reporter,

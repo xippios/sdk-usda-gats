@@ -5,7 +5,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 Upstream: "Returns a set of records with Units of Measure. Use this to match against
 Units Of Measure IDs in the Import and Export records to get the name of the Unit of
 Measure". The record shape is the recorded one,
-``tests/fixtures/GATSData_GetUnitsOfMeasure/all.json`` (108 records, about 14 KB of
+``tests/fixtures/get_units_of_measure/all.json`` (108 records, about 14 KB of
 JSON), parsed into ``models.UnitOfMeasure``; its ``unitOfMeasureId`` is what
 ``censusUOMId1`` and the other unit fields of the commodity and data records hold. Error
 shapes are mapped once in ``xippios.usda.gats._client.classify``.
@@ -16,10 +16,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import UnitOfMeasure
 
-__all__ = ["GATSData_GetUnitsOfMeasure"]
+__all__ = ["get_units_of_measure"]
 
 
-async def GATSData_GetUnitsOfMeasure() -> list[UnitOfMeasure]:
+async def get_units_of_measure() -> list[UnitOfMeasure]:
     """Call ``GATSData_GetUnitsOfMeasure``.
 
     Returns:

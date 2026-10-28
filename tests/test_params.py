@@ -35,11 +35,11 @@ UTC of that day until the next refresh writes the time (ADR-0022, amendment 2026
 
 
 PACKAGED = [
-    ("regions", "GATSData_GetRegions", "2026-10-26", 15),
-    ("countries", "GATSData_GetCountries", "2026-10-25", 322),
-    ("HS6Commodities", "GATSData_GetHS6Commodities", "2026-10-26", 2909),
-    ("unitsOfMeasure", "GATSData_GetUnitsOfMeasure", "2026-10-26", 108),
-    ("customsDistricts", "GATSData_GetCustomsDistricts", "2026-10-26", 53),
+    ("regions", "GATSData_GetRegions", "get_regions", "2026-10-26", 15),
+    ("countries", "GATSData_GetCountries", "get_countries", "2026-10-25", 322),
+    ("HS6Commodities", "GATSData_GetHS6Commodities", "get_hs6_commodities", "2026-10-26", 2909),
+    ("unitsOfMeasure", "GATSData_GetUnitsOfMeasure", "get_units_of_measure", "2026-10-26", 108),
+    ("customsDistricts", "GATSData_GetCustomsDistricts", "get_customs_districts", "2026-10-26", 53),
 ]
 
 
@@ -58,10 +58,12 @@ def test_five_lists_are_packaged_under_upstreams_names() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "endpoint", "fetched", "count"), PACKAGED, ids=[name for name, *_ in PACKAGED]
+    ("name", "endpoint", "wrapper", "fetched", "count"),
+    PACKAGED,
+    ids=[name for name, *_ in PACKAGED],
 )
 def test_each_packaged_list_is_its_recorded_answer_verbatim(
-    name: str, endpoint: str, fetched: str, count: int
+    name: str, endpoint: str, wrapper: str, fetched: str, count: int
 ) -> None:
     """Written by ``scripts/refresh_reference.py`` from the recorded answer served through
     ``respx``: the same records, field for field, in upstream's field order and record
@@ -69,7 +71,7 @@ def test_each_packaged_list_is_its_recorded_answer_verbatim(
     packaged = PackagedList.load(PACKAGE, name)
     assert (packaged.param, packaged.endpoint) == (name, endpoint)
     assert packaged.fetched == datetime.fromisoformat(f"{fetched}T00:00:00+00:00")
-    fixture = load_fixture(FIXTURES / endpoint / "all.json")
+    fixture = load_fixture(FIXTURES / wrapper / "all.json")
     assert fixture.recorded_at.date().isoformat() == fetched
     recorded = json.loads(fixture.response.body)
     assert len(packaged.records) == count
@@ -344,8 +346,8 @@ def test_every_recorded_partner_is_listed() -> None:
     packaged = PackagedList.load(PACKAGE, "countries")
     codes = {record["countryCode"] for record in packaged.records}
     for endpoint, case in [
-        ("GATSData_GetCensusExports", "CH_2026_8"),
-        ("GATSData_GetCensusImport", "CH_2026_8"),
+        ("get_census_exports", "CH_2026_8"),
+        ("get_census_import", "CH_2026_8"),
     ]:
         records = json.loads(load_fixture(FIXTURES / endpoint / f"{case}.json").response.body)
         assert {r["countryCode"] for r in records} <= codes, case
@@ -410,13 +412,13 @@ def _fixture_records(endpoint: str, case: str) -> list[dict[str, object]]:
 
 
 UN_DATA = [
-    ("GATSData_GetUNTradeExports", "IC_2019"),
-    ("GATSData_GetUNTradeImports", "TP_2019"),
-    ("GATSData_GetUNTradeReExports", "MC_2019"),
+    ("get_un_trade_exports", "IC_2019"),
+    ("get_un_trade_imports", "TP_2019"),
+    ("get_un_trade_re_exports", "MC_2019"),
 ]
 UN_RELEASES = [
-    "GATSData_GetUNTradeExportDataReleaseInfo",
-    "GATSData_GetUNTradeImportDataReleaseInfo",
+    "get_un_trade_export_data_release_info",
+    "get_un_trade_import_data_release_info",
 ]
 
 

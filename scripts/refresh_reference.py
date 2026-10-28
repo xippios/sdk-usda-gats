@@ -66,7 +66,7 @@ LISTS: dict[str, Callable[[], Coroutine[Any, Any, list[str]]]] = {}
 none packaged; GATS's lists are records."""
 
 ID_LISTS: dict[str, tuple[str, str, Fetcher]] = {
-    "unitsOfMeasure": ("unitOfMeasureId", "unitOfMeasureName", api.GATSData_GetUnitsOfMeasure),
+    "unitsOfMeasure": ("unitOfMeasureId", "unitOfMeasureName", api.get_units_of_measure),
 }
 """Lists of integer ids and names, one ``IntEnum`` each (conventions §3), in module order.
 
@@ -81,10 +81,10 @@ repeat as names do (``"CRT"`` is 33 and 105) and many are no identifier (``"24LB
 """
 
 TABLES: dict[str, Fetcher] = {
-    "regions": api.GATSData_GetRegions,
-    "countries": api.GATSData_GetCountries,
-    "HS6Commodities": api.GATSData_GetHS6Commodities,
-    "customsDistricts": api.GATSData_GetCustomsDistricts,
+    "regions": api.get_regions,
+    "countries": api.get_countries,
+    "HS6Commodities": api.get_hs6_commodities,
+    "customsDistricts": api.get_customs_districts,
 }
 """Record lists packaged as tables, with no enum: region, partner, HS6 and district codes.
 
@@ -94,10 +94,20 @@ Packaged like an id list, as upstream's records under upstream's field names, wh
 ``params.PACKAGED_LISTS``.
 """
 
+OPERATIONS: dict[Callable[[], object], str] = {
+    api.get_regions: "GATSData_GetRegions",
+    api.get_countries: "GATSData_GetCountries",
+    api.get_hs6_commodities: "GATSData_GetHS6Commodities",
+    api.get_units_of_measure: "GATSData_GetUnitsOfMeasure",
+    api.get_customs_districts: "GATSData_GetCustomsDistricts",
+}
+"""The upstream operation of each wrapper above, verbatim, as its ``endpoint=`` names it:
+the wrapper's own name is the operation in snake case (conventions §2)."""
+
 
 def operation(fetch: Callable[[], object]) -> str:
-    """The upstream operation a wrapper calls: its name, as ``api/`` names every wrapper."""
-    return fetch.__name__
+    """The upstream operation a wrapper calls, verbatim, the packaged file's ``endpoint``."""
+    return OPERATIONS[fetch]
 
 
 def write(name: str, endpoint: str, records: Sequence[dict[str, Any]]) -> None:

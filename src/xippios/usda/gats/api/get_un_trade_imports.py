@@ -9,7 +9,7 @@ returns a list of records of Commodity Import data as reported by UN COMTrade fo
 year. UN COMTrade reports data on a yearly basis at a HS6 Code Level." The record is
 ``models.UNTradeRecord``: the recorded answer carries the exports' eleven fields in their
 order and nothing else, so the exports' model is reused rather than copied
-(``tests/fixtures/GATSData_GetUNTradeImports/TP_2019.json``, 2,377 records, about 525 KB of
+(``tests/fixtures/get_un_trade_imports/TP_2019.json``, 2,377 records, about 525 KB of
 JSON, for Sao Tome and Principe in 2019; Iceland's 2019 imports, 23,396 records and about
 5.2 MB, were recorded on 2026-10-26 and not committed). One answer is one reporter-year
 across all partners and products, never paged. Error shapes are mapped once in
@@ -24,10 +24,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import UNTradeRecord
 
-__all__ = ["GATSData_GetUNTradeImports"]
+__all__ = ["get_un_trade_imports"]
 
 
-async def GATSData_GetUNTradeImports(reporter_code: str, year: str) -> list[UNTradeRecord]:
+async def get_un_trade_imports(reporter_code: str, year: str) -> list[UNTradeRecord]:
     """Call ``GATSData_GetUNTradeImports``.
 
     Args:

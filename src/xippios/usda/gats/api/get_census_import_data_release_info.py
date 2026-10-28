@@ -22,10 +22,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import DataReleaseInfo
 
-__all__ = ["GATSData_GetCensusImportDataReleaseInfo"]
+__all__ = ["get_census_import_data_release_info"]
 
 
-async def GATSData_GetCensusImportDataReleaseInfo() -> tuple[list[DataReleaseInfo], datetime]:
+async def get_census_import_data_release_info() -> tuple[list[DataReleaseInfo], datetime]:
     """Call ``GATSData_GetCensusImportDataReleaseInfo``.
 
     Returns:

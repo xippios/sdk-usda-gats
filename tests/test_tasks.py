@@ -41,18 +41,18 @@ from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
 
 FIXTURES = Path(__file__).parent / "fixtures"
-EXPORTS = "GATSData_GetCensusExports"
-IMPORTS = "GATSData_GetCensusImport"
-EXPORT_RELEASES = "GATSData_GetCensusExportDataReleaseInfo"
-IMPORT_RELEASES = "GATSData_GetCensusImportDataReleaseInfo"
+EXPORTS = "get_census_exports"
+IMPORTS = "get_census_import"
+EXPORT_RELEASES = "get_census_export_data_release_info"
+IMPORT_RELEASES = "get_census_import_data_release_info"
 EXPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/exports/dataReleaseDates"
 IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/census/data/imports/dataReleaseDates"
 CH_EXPORTS_URL = f"{BASE_URL}/api/gats/censusExports/partnerCode/CH/year/2026/month/8"
 CH_IMPORTS_URL = f"{BASE_URL}/api/gats/censusImports/partnerCode/CH/year/2026/month/8"
-RE_EXPORTS = "GATSData_GetCensusReExports"
-DISTRICT_EXPORTS = "GATSData_GetCustomsDistrictsExports"
-DISTRICT_IMPORTS = "GATSData_GetCustomsDistrictsImports"
-DISTRICT_RE_EXPORTS = "GATSData_GetCustomsDistrictsReExports"
+RE_EXPORTS = "get_census_re_exports"
+DISTRICT_EXPORTS = "get_customs_districts_exports"
+DISTRICT_IMPORTS = "get_customs_districts_imports"
+DISTRICT_RE_EXPORTS = "get_customs_districts_re_exports"
 IC_RE_EXPORTS_URL = f"{BASE_URL}/api/gats/censusReExports/partnerCode/IC/year/2026/month/8"
 IC_DISTRICT_EXPORTS_URL = (
     f"{BASE_URL}/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8"
@@ -475,10 +475,11 @@ def test_a_re_export_month_not_released_says_which_list_was_checked(
 
 
 @pytest.mark.parametrize(
-    ("task", "endpoint", "release_list", "release_url", "url", "count", "in_ny"),
+    ("task", "endpoint", "fixture", "release_list", "release_url", "url", "count", "in_ny"),
     [
         (
             tasks.get_customs_district_exports,
+            "GATSData_GetCustomsDistrictsExports",
             DISTRICT_EXPORTS,
             EXPORT_RELEASES,
             EXPORT_RELEASES_URL,
@@ -488,6 +489,7 @@ def test_a_re_export_month_not_released_says_which_list_was_checked(
         ),
         (
             tasks.get_customs_district_imports,
+            "GATSData_GetCustomsDistrictsImports",
             DISTRICT_IMPORTS,
             IMPORT_RELEASES,
             IMPORT_RELEASES_URL,
@@ -497,6 +499,7 @@ def test_a_re_export_month_not_released_says_which_list_was_checked(
         ),
         (
             tasks.get_customs_district_reexports,
+            "GATSData_GetCustomsDistrictsReExports",
             DISTRICT_RE_EXPORTS,
             EXPORT_RELEASES,
             EXPORT_RELEASES_URL,
@@ -511,6 +514,7 @@ def test_customs_district_tasks(
     replay_fixture: ReplayFixture,
     task: Callable[..., Any],
     endpoint: str,
+    fixture: str,
     release_list: str,
     release_url: str,
     url: str,
@@ -522,11 +526,11 @@ def test_customs_district_tasks(
     assumption, re-exports; a request for the other would fail. ``customs_district_id``
     keeps one district after the one data request."""
     releases = replay_fixture(release_list, "all")
-    data = replay_fixture(endpoint, "IC_2026_8")
+    data = replay_fixture(fixture, "IC_2026_8")
     result = task("IC", 2026, 8)
     assert len(result.data) == count
     assert [(r.customs_district_id, r.hs10_code) for r in result.data] == [
-        (r["customsDistrictId"], r["hS10Code"]) for r in _recorded(endpoint, "IC_2026_8")
+        (r["customsDistrictId"], r["hS10Code"]) for r in _recorded(fixture, "IC_2026_8")
     ], "every record, in upstream order"
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {
@@ -651,8 +655,18 @@ async def test_the_district_and_re_export_tools_end_to_end(
 @pytest.mark.parametrize(
     ("product_type", "endpoint", "fixture", "url"),
     [
-        (ProductType.X, EXPORT_RELEASES, EXPORT_RELEASES, EXPORT_RELEASES_URL),
-        (ProductType.M, IMPORT_RELEASES, IMPORT_RELEASES, IMPORT_RELEASES_URL),
+        (
+            ProductType.X,
+            "GATSData_GetCensusExportDataReleaseInfo",
+            EXPORT_RELEASES,
+            EXPORT_RELEASES_URL,
+        ),
+        (
+            ProductType.M,
+            "GATSData_GetCensusImportDataReleaseInfo",
+            IMPORT_RELEASES,
+            IMPORT_RELEASES_URL,
+        ),
     ],
     ids=["X", "M"],
 )
@@ -682,7 +696,7 @@ def test_get_census_release_dates(
 def test_a_plain_code_is_a_product_type(replay_fixture: ReplayFixture) -> None:
     replay_fixture(IMPORT_RELEASES, "all")
     result = tasks.get_census_release_dates("M")  # type: ignore[arg-type]
-    assert result.meta.endpoint == IMPORT_RELEASES
+    assert result.meta.endpoint == "GATSData_GetCensusImportDataReleaseInfo"
     assert result.meta.request == {"product_type": "M"}
 
 
@@ -885,10 +899,11 @@ def _months_recorded(endpoint: str, *cases: str) -> list[tuple[object, object]]:
 
 
 @pytest.mark.parametrize(
-    ("task", "endpoint", "release_list", "release_url", "path", "counts"),
+    ("task", "endpoint", "fixture", "release_list", "release_url", "path", "counts"),
     [
         (
             tasks.get_census_export_series,
+            "GATSData_GetCensusExports",
             EXPORTS,
             EXPORT_RELEASES,
             EXPORT_RELEASES_URL,
@@ -897,6 +912,7 @@ def _months_recorded(endpoint: str, *cases: str) -> list[tuple[object, object]]:
         ),
         (
             tasks.get_census_import_series,
+            "GATSData_GetCensusImport",
             IMPORTS,
             IMPORT_RELEASES,
             IMPORT_RELEASES_URL,
@@ -905,6 +921,7 @@ def _months_recorded(endpoint: str, *cases: str) -> list[tuple[object, object]]:
         ),
         (
             tasks.get_census_reexport_series,
+            "GATSData_GetCensusReExports",
             RE_EXPORTS,
             EXPORT_RELEASES,
             EXPORT_RELEASES_URL,
@@ -919,6 +936,7 @@ def test_census_series_tasks(
     respx_mock: respx.MockRouter,
     task: Callable[..., Any],
     endpoint: str,
+    fixture: str,
     release_list: str,
     release_url: str,
     path: str,
@@ -929,11 +947,11 @@ def test_census_series_tasks(
     upstream order within a month. Only the right release list is mounted: the imports
     list for imports, the exports list for exports and, by assumption, re-exports."""
     releases = replay_fixture(release_list, "all")
-    data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
+    data = _replay_months(respx_mock, fixture, *IC_MONTHS)
     result = task("IC", 2026, 7, 2026, 8)
     july, august = counts
-    assert len(result.data) == july + august == len(_months_recorded(endpoint, *IC_MONTHS))
-    assert [(r.date, r.hs10_code) for r in result.data] == _months_recorded(endpoint, *IC_MONTHS)
+    assert len(result.data) == july + august == len(_months_recorded(fixture, *IC_MONTHS))
+    assert [(r.date, r.hs10_code) for r in result.data] == _months_recorded(fixture, *IC_MONTHS)
     assert [r.date for r in result.data] == ["202607"] * july + ["202608"] * august
     assert {r.country_code for r in result.data} == {"IC"}
     assert isinstance(result.data[0].value, Decimal)
@@ -989,12 +1007,27 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
 ) -> None:
     """A range of one month is the month task's records, endpoint and vintage; only
     ``meta.request`` differs, by its parameters."""
-    cases: list[tuple[Callable[..., Any], Callable[..., Any], str, str, str]] = [
-        (tasks.get_census_export_series, tasks.get_census_exports, EXPORTS, EXPORT_RELEASES, "CH"),
-        (tasks.get_census_import_series, tasks.get_census_imports, IMPORTS, IMPORT_RELEASES, "CH"),
+    cases: list[tuple[Callable[..., Any], Callable[..., Any], str, str, str, str]] = [
+        (
+            tasks.get_census_export_series,
+            tasks.get_census_exports,
+            "GATSData_GetCensusExports",
+            EXPORTS,
+            EXPORT_RELEASES,
+            "CH",
+        ),
+        (
+            tasks.get_census_import_series,
+            tasks.get_census_imports,
+            "GATSData_GetCensusImport",
+            IMPORTS,
+            IMPORT_RELEASES,
+            "CH",
+        ),
         (
             tasks.get_census_reexport_series,
             tasks.get_census_reexports,
+            "GATSData_GetCensusReExports",
             RE_EXPORTS,
             EXPORT_RELEASES,
             "IC",
@@ -1002,12 +1035,12 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
     ]
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(IMPORT_RELEASES, "all")
-    for series_task, month_task, endpoint, release_list, partner in cases:
-        data = replay_fixture(endpoint, f"{partner}_2026_8")
+    for series_task, month_task, endpoint, fixture, release_list, partner in cases:
+        data = replay_fixture(fixture, f"{partner}_2026_8")
         series = series_task(partner, 2026, 8, 2026, 8)
         month = month_task(partner, 2026, 8)
         assert series.data == month.data
-        assert len(series.data) == len(_recorded(endpoint, f"{partner}_2026_8"))
+        assert len(series.data) == len(_recorded(fixture, f"{partner}_2026_8"))
         assert series.meta.endpoint == month.meta.endpoint == endpoint
         assert series.meta.vintage == month.meta.vintage == _release_time(release_list, "202608")
         _published_naive(series.meta)
@@ -1192,10 +1225,24 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("tool", "endpoint", "release_list", "total", "cut"),
+    ("tool", "endpoint", "fixture", "release_list", "total", "cut"),
     [
-        ("usda_gats_get_census_export_series", EXPORTS, EXPORT_RELEASES, 777, 200),
-        ("usda_gats_get_census_import_series", IMPORTS, IMPORT_RELEASES, 3294, 185),
+        (
+            "usda_gats_get_census_export_series",
+            "GATSData_GetCensusExports",
+            EXPORTS,
+            EXPORT_RELEASES,
+            777,
+            200,
+        ),
+        (
+            "usda_gats_get_census_import_series",
+            "GATSData_GetCensusImport",
+            IMPORTS,
+            IMPORT_RELEASES,
+            3294,
+            185,
+        ),
     ],
     ids=["exports", "imports"],
 )
@@ -1203,6 +1250,7 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     replay_fixture: ReplayFixture,
     tool: str,
     endpoint: str,
+    fixture: str,
     release_list: str,
     total: int,
     cut: int,
@@ -1212,7 +1260,7 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     exports rows and at 185 imports rows, where the 64 KB cap cuts the wider rows first,
     as the month tools are cut; the chapter filter comes back whole."""
     replay_fixture(release_list, "all")
-    data = replay_fixture(endpoint, "CH_2026_8")
+    data = replay_fixture(fixture, "CH_2026_8")
     arguments: dict[str, object] = {
         "partner_code": "CH",
         "start_year": 2026,
@@ -1275,7 +1323,7 @@ async def test_the_reexport_series_tool_end_to_end(
         "value": first["value"],
     }, "Decimal values are JSON numbers (ADR-0008)"
     assert isinstance(payload["data"][0]["value"], float)
-    assert payload["meta"]["endpoint"] == RE_EXPORTS
+    assert payload["meta"]["endpoint"] == "GATSData_GetCensusReExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
     assert sent_urls(data) == [_ic_url("censusReExports", 7), _ic_url("censusReExports", 8)]
     for name in (
@@ -1528,11 +1576,11 @@ def test_the_entry_point_applies_series_months_or_exits_with_status_2(
         tasks.mcp_apply_options(argparse.Namespace(series_months=61), server)
 
 
-UN_EXPORTS = "GATSData_GetUNTradeExports"
-UN_IMPORTS = "GATSData_GetUNTradeImports"
-UN_RE_EXPORTS = "GATSData_GetUNTradeReExports"
-UN_EXPORT_RELEASES = "GATSData_GetUNTradeExportDataReleaseInfo"
-UN_IMPORT_RELEASES = "GATSData_GetUNTradeImportDataReleaseInfo"
+UN_EXPORTS = "get_un_trade_exports"
+UN_IMPORTS = "get_un_trade_imports"
+UN_RE_EXPORTS = "get_un_trade_re_exports"
+UN_EXPORT_RELEASES = "get_un_trade_export_data_release_info"
+UN_IMPORT_RELEASES = "get_un_trade_import_data_release_info"
 UN_EXPORT_RELEASES_URL = f"{BASE_URL}/api/gats/UNTrade/data/exports/dataReleaseDates"
 UN_IMPORT_RELEASES_URL = f"{BASE_URL}/api/gats/UNTrade/data/imports/dataReleaseDates"
 IC_UN_EXPORTS_URL = f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/IC/year/2019"
@@ -1570,10 +1618,11 @@ def _partners_and_codes(records: list[Any]) -> list[tuple[str, str]]:
 
 
 @pytest.mark.parametrize(
-    ("task", "endpoint", "case", "release_list", "release_url", "url", "count", "first"),
+    ("task", "endpoint", "fixture", "case", "release_list", "release_url", "url", "count", "first"),
     [
         (
             tasks.get_un_exports,
+            "GATSData_GetUNTradeExports",
             UN_EXPORTS,
             "IC_2019",
             UN_EXPORT_RELEASES,
@@ -1584,6 +1633,7 @@ def _partners_and_codes(records: list[Any]) -> list[tuple[str, str]]:
         ),
         (
             tasks.get_un_imports,
+            "GATSData_GetUNTradeImports",
             UN_IMPORTS,
             "TP_2019",
             UN_IMPORT_RELEASES,
@@ -1594,6 +1644,7 @@ def _partners_and_codes(records: list[Any]) -> list[tuple[str, str]]:
         ),
         (
             tasks.get_un_reexports,
+            "GATSData_GetUNTradeReExports",
             UN_RE_EXPORTS,
             "MC_2019",
             UN_EXPORT_RELEASES,
@@ -1609,6 +1660,7 @@ def test_un_data_tasks(
     replay_fixture: ReplayFixture,
     task: Callable[..., Any],
     endpoint: str,
+    fixture: str,
     case: str,
     release_list: str,
     release_url: str,
@@ -1621,14 +1673,14 @@ def test_un_data_tasks(
     for exports and, by assumption, re-exports; a request for the other would fail."""
     reporter_code = case[:2]
     releases = replay_fixture(release_list, "all")
-    data = replay_fixture(endpoint, case)
+    data = replay_fixture(fixture, case)
     result = task(reporter_code, 2019)
     assert len(result.data) == count
     head = result.data[0]
     assert (head.partner_country_code, head.hs6_code, head.value, head.quantity1) == first
     assert isinstance(head.value, Decimal)
     assert _partners_and_codes(result.data) == [
-        (r["partnerCountryCode"], r["hS6Code"]) for r in _recorded(endpoint, case)
+        (r["partnerCountryCode"], r["hS6Code"]) for r in _recorded(fixture, case)
     ], "every record, in upstream order"
     assert {(r.year, r.reporter_country_code) for r in result.data} == {("2019", reporter_code)}
     assert result.meta.source == "usda-gats"
@@ -1748,7 +1800,7 @@ def test_a_listed_reporter_year_without_re_exports_is_an_empty_result(
     assert result.data == []
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
     _published_naive(result.meta)
-    assert result.meta.endpoint == UN_RE_EXPORTS
+    assert result.meta.endpoint == "GATSData_GetUNTradeReExports"
     assert sent_urls(data) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
 
@@ -1889,10 +1941,11 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
 
 
 @pytest.mark.parametrize(
-    ("product_type", "endpoint", "url", "count", "reporters", "first"),
+    ("product_type", "endpoint", "fixture", "url", "count", "reporters", "first"),
     [
         (
             ProductType.X,
+            "GATSData_GetUNTradeExportDataReleaseInfo",
             UN_EXPORT_RELEASES,
             UN_EXPORT_RELEASES_URL,
             3796,
@@ -1901,6 +1954,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
         ),
         (
             ProductType.M,
+            "GATSData_GetUNTradeImportDataReleaseInfo",
             UN_IMPORT_RELEASES,
             UN_IMPORT_RELEASES_URL,
             3832,
@@ -1914,6 +1968,7 @@ def test_get_un_release_dates(
     replay_fixture: ReplayFixture,
     product_type: ProductType,
     endpoint: str,
+    fixture: str,
     url: str,
     count: int,
     reporters: int,
@@ -1921,7 +1976,7 @@ def test_get_un_release_dates(
 ) -> None:
     """The whole list from the wire, then from the cache with the entry's stored time as
     ``retrieved_at`` (conventions §4), proved by the route's call count."""
-    route = replay_fixture(endpoint, "all")
+    route = replay_fixture(fixture, "all")
     result = tasks.get_un_release_dates(product_type)
     assert len(result.data) == count
     head = result.data[0]
@@ -1970,10 +2025,11 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("tool", "endpoint", "case", "release_list", "count", "narrow", "narrowed"),
+    ("tool", "endpoint", "fixture", "case", "release_list", "count", "narrow", "narrowed"),
     [
         (
             "usda_gats_get_un_exports",
+            "GATSData_GetUNTradeExports",
             UN_EXPORTS,
             "IC_2019",
             UN_EXPORT_RELEASES,
@@ -1983,6 +2039,7 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
         ),
         (
             "usda_gats_get_un_imports",
+            "GATSData_GetUNTradeImports",
             UN_IMPORTS,
             "TP_2019",
             UN_IMPORT_RELEASES,
@@ -1992,6 +2049,7 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
         ),
         (
             "usda_gats_get_un_reexports",
+            "GATSData_GetUNTradeReExports",
             UN_RE_EXPORTS,
             "MC_2019",
             UN_EXPORT_RELEASES,
@@ -2006,6 +2064,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     replay_fixture: ReplayFixture,
     tool: str,
     endpoint: str,
+    fixture: str,
     case: str,
     release_list: str,
     count: int,
@@ -2015,12 +2074,12 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     """Over MCP each reporter-year is cut at the default cap with a note naming
     ``partner_code`` and ``hs6_code`` (ADR-0016); a filtered call comes back whole."""
     replay_fixture(release_list, "all")
-    data = replay_fixture(endpoint, case)
+    data = replay_fixture(fixture, case)
     url = {
         UN_EXPORTS: IC_UN_EXPORTS_URL,
         UN_IMPORTS: TP_UN_IMPORTS_URL,
         UN_RE_EXPORTS: MC_UN_RE_EXPORTS_URL,
-    }[endpoint]
+    }[fixture]
     arguments: dict[str, object] = {"reporter_code": case[:2], "year": 2019}
     payload = await mcp_call(server, tool, arguments)
     shown = len(payload["data"])
@@ -2028,7 +2087,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     assert payload["note"] == (
         f"showing {shown} of {count} rows (cap: 200 rows or 65536 bytes); {UN_DATA_NOTE}"
     )
-    first = _recorded(endpoint, case)[0]
+    first = _recorded(fixture, case)[0]
     assert payload["data"][0] == {
         "year": "2019",
         "reporter_country_code": case[:2],

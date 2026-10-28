@@ -39,16 +39,16 @@ from xippios.usda.gats.models import (
 pytestmark = pytest.mark.anyio
 
 SNAPSHOT = Path(__file__).parents[1] / "docs" / "upstream" / "openapi" / "portal-document.json"
-EXPORTS = "GATSData_GetCensusExports"
-RE_EXPORTS = "GATSData_GetCensusReExports"
-DISTRICT_EXPORTS = "GATSData_GetCustomsDistrictsExports"
-DISTRICT_IMPORTS = "GATSData_GetCustomsDistrictsImports"
-DISTRICT_RE_EXPORTS = "GATSData_GetCustomsDistrictsReExports"
-UN_EXPORTS = "GATSData_GetUNTradeExports"
-UN_IMPORTS = "GATSData_GetUNTradeImports"
-UN_RE_EXPORTS = "GATSData_GetUNTradeReExports"
-UN_EXPORT_RELEASES = "GATSData_GetUNTradeExportDataReleaseInfo"
-UN_IMPORT_RELEASES = "GATSData_GetUNTradeImportDataReleaseInfo"
+EXPORTS = "get_census_exports"
+RE_EXPORTS = "get_census_re_exports"
+DISTRICT_EXPORTS = "get_customs_districts_exports"
+DISTRICT_IMPORTS = "get_customs_districts_imports"
+DISTRICT_RE_EXPORTS = "get_customs_districts_re_exports"
+UN_EXPORTS = "get_un_trade_exports"
+UN_IMPORTS = "get_un_trade_imports"
+UN_RE_EXPORTS = "get_un_trade_re_exports"
+UN_EXPORT_RELEASES = "get_un_trade_export_data_release_info"
+UN_IMPORT_RELEASES = "get_un_trade_import_data_release_info"
 
 
 def recorded_keys(fixtures_dir: Path, endpoint: str, case: str) -> set[tuple[str, ...]]:
@@ -73,8 +73,8 @@ def units(record: CensusExport | CustomsDistrictExport) -> tuple[int, int, int, 
 
 
 async def test_get_countries(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCountries", "all")
-    countries = await api.GATSData_GetCountries()
+    route = replay_fixture("get_countries", "all")
+    countries = await api.get_countries()
     assert len(countries) == 322
     by_code = {c.country_code: c for c in countries}
     assert len(by_code) == 322, "no code twice"
@@ -99,8 +99,8 @@ async def test_get_countries(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> None:
-    replay_fixture("GATSData_GetCountries", "all")
-    country = (await api.GATSData_GetCountries())[0]
+    replay_fixture("get_countries", "all")
+    country = (await api.get_countries())[0]
     assert country.model_dump(mode="json") == {
         "country_code": "01",
         "region_code": "R99",
@@ -114,16 +114,16 @@ async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> Non
 
 
 async def test_get_regions(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetRegions", "all")
-    replay_fixture("GATSData_GetCountries", "all")
-    regions = await api.GATSData_GetRegions()
+    route = replay_fixture("get_regions", "all")
+    replay_fixture("get_countries", "all")
+    regions = await api.get_regions()
     assert len(regions) == 15
     assert regions[0] == Region(region_code="R05", region_name="North America")
     by_code = {r.region_code: r.region_name for r in regions}
     assert len(by_code) == 15, "no code twice"
     assert [r.region_code for r in regions] == sorted(by_code), "in code order"
     assert by_code["R40"] == "East Asia"
-    countries = await api.GATSData_GetCountries()
+    countries = await api.get_countries()
     assert {c.region_code for c in countries} <= set(by_code), "every country's region"
     assert sent_urls(route) == [f"{BASE_URL}/api/gats/regions"]
 
@@ -132,8 +132,8 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
     """The HS10 list whole: 24,936 records, 8,383,278 bytes as a fixture file, the largest
     in the family. Product types ``T`` and ``B`` carry seven digits padded with three
     spaces, kept as sent; code, product type and start month are unique together."""
-    route = replay_fixture("GATSData_GetCommodities", "all")
-    records, retrieved_at = await api.GATSData_GetCommodities()
+    route = replay_fixture("get_commodities", "all")
+    records, retrieved_at = await api.get_commodities()
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(records) == 24936
@@ -193,8 +193,8 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
     """The HS6 list whole: 2,909 records, 720,749 bytes as a fixture file."""
-    route = replay_fixture("GATSData_GetHS6Commodities", "all")
-    records = await api.GATSData_GetHS6Commodities()
+    route = replay_fixture("get_hs6_commodities", "all")
+    records = await api.get_hs6_commodities()
     assert len(records) == 2909
     assert records[0] == HS6Commodity(
         hs6_code="010110",
@@ -213,8 +213,8 @@ async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetUnitsOfMeasure", "all")
-    records = await api.GATSData_GetUnitsOfMeasure()
+    route = replay_fixture("get_units_of_measure", "all")
+    records = await api.get_units_of_measure()
     assert [u.unit_of_measure_id for u in records] == list(range(108)), "0 to 107, no gap"
     by_id = {u.unit_of_measure_id: u for u in records}
     assert by_id[47] == UnitOfMeasure(
@@ -231,8 +231,8 @@ async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCustomsDistricts", "all")
-    records = await api.GATSData_GetCustomsDistricts()
+    route = replay_fixture("get_customs_districts", "all")
+    records = await api.get_customs_districts()
     assert len(records) == 53
     ids = [d.customs_district_id for d in records]
     assert ids == sorted(set(ids)), "in id order, no id twice"
@@ -252,8 +252,8 @@ async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    releases, retrieved_at = await api.GATSData_GetCensusExportDataReleaseInfo()
+    route = replay_fixture("get_census_export_data_release_info", "all")
+    releases, retrieved_at = await api.get_census_export_data_release_info()
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(releases) == 716
@@ -277,10 +277,10 @@ async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) ->
 
 
 async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    imports, _ = await api.GATSData_GetCensusImportDataReleaseInfo()
-    exports, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    route = replay_fixture("get_census_import_data_release_info", "all")
+    replay_fixture("get_census_export_data_release_info", "all")
+    imports, _ = await api.get_census_import_data_release_info()
+    exports, _ = await api.get_census_export_data_release_info()
     assert len(imports) == 716
     assert imports[0] == DataReleaseInfo(
         statistical_year_month="202608",
@@ -304,7 +304,7 @@ async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) ->
 async def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
     """One partner-month across all products, whole: 777 records, 153,835 bytes."""
     route = replay_fixture(EXPORTS, "CH_2026_8")
-    records = await api.GATSData_GetCensusExports("CH", 2026, 8)
+    records = await api.get_census_exports("CH", 2026, 8)
     assert len(records) == 777
     assert records[0] == CensusExport(
         date="202608",
@@ -329,8 +329,8 @@ async def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_census_import(replay_fixture: ReplayFixture) -> None:
     """The largest answer in the family so far: 3,294 records, 1,099,638 bytes."""
-    route = replay_fixture("GATSData_GetCensusImport", "CH_2026_8")
-    records = await api.GATSData_GetCensusImport("CH", 2026, 8)
+    route = replay_fixture("get_census_import", "CH_2026_8")
+    records = await api.get_census_import("CH", 2026, 8)
     assert len(records) == 3294
     assert records[0] == CensusImport(
         consumption_quantity1=Decimal("9640.0"),
@@ -391,7 +391,7 @@ async def test_the_census_and_district_answers_carry_the_models_fields_in_order(
 
 async def test_get_census_re_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(RE_EXPORTS, "IC_2026_8")
-    records = await api.GATSData_GetCensusReExports("IC", 2026, 8)
+    records = await api.get_census_re_exports("IC", 2026, 8)
     assert len(records) == 12
     assert records[0] == CensusExport(
         date="202608",
@@ -415,7 +415,7 @@ async def test_get_census_re_exports(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_customs_districts_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
-    records = await api.GATSData_GetCustomsDistrictsExports("IC", 2026, 8)
+    records = await api.get_customs_districts_exports("IC", 2026, 8)
     assert len(records) == 107
     assert records[0] == CustomsDistrictExport(
         customs_district_id=1,
@@ -444,17 +444,17 @@ async def test_get_customs_districts_exports(replay_fixture: ReplayFixture) -> N
     ("wrapper", "district_endpoint", "national", "national_endpoint", "partner_code", "count"),
     [
         (
-            api.GATSData_GetCustomsDistrictsExports,
+            api.get_customs_districts_exports,
             DISTRICT_EXPORTS,
-            api.GATSData_GetCensusExports,
+            api.get_census_exports,
             EXPORTS,
             "CH",
             1697,
         ),
         (
-            api.GATSData_GetCustomsDistrictsReExports,
+            api.get_customs_districts_re_exports,
             DISTRICT_RE_EXPORTS,
-            api.GATSData_GetCensusReExports,
+            api.get_census_re_exports,
             RE_EXPORTS,
             "IC",
             13,
@@ -494,7 +494,7 @@ async def test_district_records_add_up_to_the_census_record_of_their_code(
 
 async def test_get_customs_districts_exports_for_china(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_EXPORTS, "CH_2026_8")
-    records = await api.GATSData_GetCustomsDistrictsExports("CH", 2026, 8)
+    records = await api.get_customs_districts_exports("CH", 2026, 8)
     assert len(records) == 1697
     assert len({r.customs_district_id for r in records}) == 31
     assert len({r.hs10_code for r in records}) == 777, "the codes of the Census exports"
@@ -506,7 +506,7 @@ async def test_get_customs_districts_exports_for_china(replay_fixture: ReplayFix
 
 async def test_get_customs_districts_imports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_IMPORTS, "IC_2026_8")
-    records = await api.GATSData_GetCustomsDistrictsImports("IC", 2026, 8)
+    records = await api.get_customs_districts_imports("IC", 2026, 8)
     assert len(records) == 123
     assert records[0] == CustomsDistrictImport(
         customs_district_id=1,
@@ -538,7 +538,7 @@ async def test_get_customs_districts_imports(replay_fixture: ReplayFixture) -> N
 
 async def test_get_customs_districts_re_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_RE_EXPORTS, "IC_2026_8")
-    records = await api.GATSData_GetCustomsDistrictsReExports("IC", 2026, 8)
+    records = await api.get_customs_districts_re_exports("IC", 2026, 8)
     assert len(records) == 13
     assert records[0] == CustomsDistrictExport(
         customs_district_id=1,
@@ -566,30 +566,30 @@ async def test_the_lists_name_every_unit_district_and_hs6_code_the_answers_carry
 ) -> None:
     """Every unit-of-measure id and customs district in the recorded Census answers is
     listed, and the first six digits of every HS10 code are a listed HS6 code."""
-    for endpoint in ("GATSData_GetUnitsOfMeasure", "GATSData_GetCustomsDistricts"):
+    for endpoint in ("get_units_of_measure", "get_customs_districts"):
         replay_fixture(endpoint, "all")
-    replay_fixture("GATSData_GetHS6Commodities", "all")
+    replay_fixture("get_hs6_commodities", "all")
     for endpoint, case in [
         (EXPORTS, "CH_2026_8"),
-        ("GATSData_GetCensusImport", "CH_2026_8"),
+        ("get_census_import", "CH_2026_8"),
         (RE_EXPORTS, "IC_2026_8"),
         (DISTRICT_EXPORTS, "IC_2026_8"),
         (DISTRICT_IMPORTS, "IC_2026_8"),
         (DISTRICT_RE_EXPORTS, "IC_2026_8"),
     ]:
         replay_fixture(endpoint, case)
-    unit_ids = {u.unit_of_measure_id for u in await api.GATSData_GetUnitsOfMeasure()}
-    district_ids = {d.customs_district_id for d in await api.GATSData_GetCustomsDistricts()}
-    hs6_codes = {c.hs6_code for c in await api.GATSData_GetHS6Commodities()}
+    unit_ids = {u.unit_of_measure_id for u in await api.get_units_of_measure()}
+    district_ids = {d.customs_district_id for d in await api.get_customs_districts()}
+    hs6_codes = {c.hs6_code for c in await api.get_hs6_commodities()}
     census: list[CensusExport | CensusImport] = [
-        *await api.GATSData_GetCensusExports("CH", 2026, 8),
-        *await api.GATSData_GetCensusImport("CH", 2026, 8),
-        *await api.GATSData_GetCensusReExports("IC", 2026, 8),
+        *await api.get_census_exports("CH", 2026, 8),
+        *await api.get_census_import("CH", 2026, 8),
+        *await api.get_census_re_exports("IC", 2026, 8),
     ]
     districts: list[CustomsDistrictExport | CustomsDistrictImport] = [
-        *await api.GATSData_GetCustomsDistrictsExports("IC", 2026, 8),
-        *await api.GATSData_GetCustomsDistrictsImports("IC", 2026, 8),
-        *await api.GATSData_GetCustomsDistrictsReExports("IC", 2026, 8),
+        *await api.get_customs_districts_exports("IC", 2026, 8),
+        *await api.get_customs_districts_imports("IC", 2026, 8),
+        *await api.get_customs_districts_re_exports("IC", 2026, 8),
     ]
     records = [*census, *districts]
     assert {
@@ -609,12 +609,12 @@ async def test_the_lists_name_every_unit_district_and_hs6_code_the_answers_carry
 @pytest.mark.parametrize(
     ("wrapper", "path"),
     [
-        (api.GATSData_GetCensusExports, "censusExports"),
-        (api.GATSData_GetCensusImport, "censusImports"),
-        (api.GATSData_GetCensusReExports, "censusReExports"),
-        (api.GATSData_GetCustomsDistrictsExports, "customsDistrictExports"),
-        (api.GATSData_GetCustomsDistrictsImports, "customsDistrictImports"),
-        (api.GATSData_GetCustomsDistrictsReExports, "customsDistrictReExports"),
+        (api.get_census_exports, "censusExports"),
+        (api.get_census_import, "censusImports"),
+        (api.get_census_re_exports, "censusReExports"),
+        (api.get_customs_districts_exports, "customsDistrictExports"),
+        (api.get_customs_districts_imports, "customsDistrictImports"),
+        (api.get_customs_districts_re_exports, "customsDistrictReExports"),
     ],
     ids=[
         "exports",
@@ -658,7 +658,7 @@ async def test_unknown_partner_future_month_and_no_trade_all_answer_an_empty_lis
     release and a listed partner without trade (Bouvet Island) answer alike, HTTP 200 with
     ``[]``; nothing in the answer tells them apart."""
     route = replay_fixture(EXPORTS, case)
-    assert await api.GATSData_GetCensusExports(partner_code, year, month) == []
+    assert await api.get_census_exports(partner_code, year, month) == []
     assert sent_urls(route) == [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/{partner_code}/year/{year}/month/{month}"
     ]
@@ -678,7 +678,7 @@ async def test_a_month_out_of_range_is_an_empty_404_and_a_not_found_error(
     route = replay_fixture(EXPORTS, case)
     path = f"/api/gats/censusExports/partnerCode/CH/year/2026/month/{month}"
     with pytest.raises(NotFoundError) as info:
-        await api.GATSData_GetCensusExports("CH", 2026, month)
+        await api.get_census_exports("CH", 2026, month)
     assert info.value.message == f"404 from GET {path}: Not Found"
     assert "api.fas.usda.gov" not in info.value.message, "host-free (conventions §5)"
     assert route.call_count == 1, "a 404 is never retried"
@@ -703,10 +703,10 @@ async def test_product_type_members_are_the_release_records_codes(
 ) -> None:
     """The members are upstream's ``productType`` codes, equal to the records' own: ``X``
     throughout the exports list, ``M`` throughout the imports list."""
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    exports, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
-    imports, _ = await api.GATSData_GetCensusImportDataReleaseInfo()
+    replay_fixture("get_census_export_data_release_info", "all")
+    replay_fixture("get_census_import_data_release_info", "all")
+    exports, _ = await api.get_census_export_data_release_info()
+    imports, _ = await api.get_census_import_data_release_info()
     assert [m.value for m in ProductType] == ["X", "M"]
     assert {r.product_type for r in exports} == {ProductType.X}
     assert {r.product_type for r in imports} == {ProductType.M}
@@ -743,7 +743,7 @@ async def test_get_un_trade_export_release_dates(replay_fixture: ReplayFixture) 
     """One record per reporter and statistical year, 1989 to 2019, the newest released
     on 2021-01-18: 3,796 records, 464,555 bytes as a fixture file."""
     route = replay_fixture(UN_EXPORT_RELEASES, "all")
-    releases, retrieved_at = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    releases, retrieved_at = await api.get_un_trade_export_data_release_info()
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(releases) == 3796
@@ -772,8 +772,8 @@ async def test_get_un_trade_import_release_dates(replay_fixture: ReplayFixture) 
     list's: 32 pairs are only in the exports list, 68 only in this one."""
     route = replay_fixture(UN_IMPORT_RELEASES, "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
-    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
-    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    imports, _ = await api.get_un_trade_import_data_release_info()
+    exports, _ = await api.get_un_trade_export_data_release_info()
     assert route.call_count == 1
     assert len(imports) == 3832
     assert imports[0] == UNTradeDataReleaseInfo(
@@ -800,8 +800,8 @@ async def test_each_recorded_reporter_year_has_its_flows_release_record(
     lists, India's latest is 2016, and no reporter has one after 2019."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    exports, _ = await api.get_un_trade_export_data_release_info()
+    imports, _ = await api.get_un_trade_import_data_release_info()
     x = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in exports}
     m = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in imports}
     assert x[("IC", "2019")] == datetime(2020, 6, 3, 5, 50, 46)
@@ -822,12 +822,12 @@ async def test_the_un_release_lists_name_reporters_by_gats_country_code(
     the list marks discontinued are listed for years after their ``discontinuedOn``
     (Norway's ``NO``, discontinued 198712, has 2018), and their same-name successors
     (``N3``) never: the codes are not the countries list's current ones."""
-    replay_fixture("GATSData_GetCountries", "all")
+    replay_fixture("get_countries", "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    countries = {c.country_code: c for c in await api.GATSData_GetCountries()}
-    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    countries = {c.country_code: c for c in await api.get_countries()}
+    exports, _ = await api.get_un_trade_export_data_release_info()
+    imports, _ = await api.get_un_trade_import_data_release_info()
     releases = [*exports, *imports]
     reporters = {r.reporter_code for r in releases}
     assert reporters <= set(countries)
@@ -849,7 +849,7 @@ async def test_get_un_trade_exports(replay_fixture: ReplayFixture) -> None:
     """One reporter-year across all partners and HS6 codes, whole: 3,980 records,
     1,005,809 bytes as a fixture file, for Iceland in 2019."""
     route = replay_fixture(UN_EXPORTS, "IC_2019")
-    records = await api.GATSData_GetUNTradeExports("IC", "2019")
+    records = await api.get_un_trade_exports("IC", "2019")
     assert len(records) == 3980
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -882,7 +882,7 @@ async def test_get_un_trade_imports(replay_fixture: ReplayFixture) -> None:
     """Sao Tome and Principe in 2019: 2,377 records, 597,815 bytes as a fixture file.
     Iceland's 2019 imports, 23,396 records and 5,180,537 bytes of JSON, are not kept."""
     route = replay_fixture(UN_IMPORTS, "TP_2019")
-    records = await api.GATSData_GetUNTradeImports("TP", "2019")
+    records = await api.get_un_trade_imports("TP", "2019")
     assert len(records) == 2377
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -909,7 +909,7 @@ async def test_get_un_trade_imports(replay_fixture: ReplayFixture) -> None:
 async def test_get_un_trade_re_exports(replay_fixture: ReplayFixture) -> None:
     """Macau in 2019: 421 records, 106,083 bytes as a fixture file, every quantity 0."""
     route = replay_fixture(UN_RE_EXPORTS, "MC_2019")
-    records = await api.GATSData_GetUNTradeReExports("MC", "2019")
+    records = await api.get_un_trade_re_exports("MC", "2019")
     assert len(records) == 421
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -935,7 +935,7 @@ async def test_iceland_has_no_un_re_exports_for_2019(replay_fixture: ReplayFixtu
     """As recorded: a reporter with 2019 exports and imports answers HTTP 200 with ``[]``
     for its 2019 re-exports; re-exports have no release list to tell."""
     route = replay_fixture(UN_RE_EXPORTS, "IC_2019")
-    assert await api.GATSData_GetUNTradeReExports("IC", "2019") == []
+    assert await api.get_un_trade_re_exports("IC", "2019") == []
     assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
 
@@ -963,20 +963,20 @@ async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
     countries list, every HS6 code one of the HS6 list and every unit id one of the units
     list. Partners include codes the countries list marks discontinued (``NO``, Norway,
     198712) and never their same-name successors."""
-    replay_fixture("GATSData_GetCountries", "all")
-    replay_fixture("GATSData_GetHS6Commodities", "all")
-    replay_fixture("GATSData_GetUnitsOfMeasure", "all")
+    replay_fixture("get_countries", "all")
+    replay_fixture("get_hs6_commodities", "all")
+    replay_fixture("get_units_of_measure", "all")
     replay_fixture(UN_EXPORTS, "IC_2019")
     replay_fixture(UN_IMPORTS, "TP_2019")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")
-    countries = {c.country_code: c for c in await api.GATSData_GetCountries()}
-    hs6_codes = {c.hs6_code for c in await api.GATSData_GetHS6Commodities()}
-    unit_ids = {u.unit_of_measure_id for u in await api.GATSData_GetUnitsOfMeasure()}
-    exports = await api.GATSData_GetUNTradeExports("IC", "2019")
+    countries = {c.country_code: c for c in await api.get_countries()}
+    hs6_codes = {c.hs6_code for c in await api.get_hs6_commodities()}
+    unit_ids = {u.unit_of_measure_id for u in await api.get_units_of_measure()}
+    exports = await api.get_un_trade_exports("IC", "2019")
     records = [
         *exports,
-        *await api.GATSData_GetUNTradeImports("TP", "2019"),
-        *await api.GATSData_GetUNTradeReExports("MC", "2019"),
+        *await api.get_un_trade_imports("TP", "2019"),
+        *await api.get_un_trade_re_exports("MC", "2019"),
     ]
     codes = {r.reporter_country_code for r in records} | {r.partner_country_code for r in records}
     assert codes <= set(countries)
@@ -1002,9 +1002,9 @@ async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
 @pytest.mark.parametrize(
     ("wrapper", "path"),
     [
-        (api.GATSData_GetUNTradeExports, "UNTradeExports"),
-        (api.GATSData_GetUNTradeImports, "UNTradeImports"),
-        (api.GATSData_GetUNTradeReExports, "UNTradeReExports"),
+        (api.get_un_trade_exports, "UNTradeExports"),
+        (api.get_un_trade_imports, "UNTradeImports"),
+        (api.get_un_trade_re_exports, "UNTradeReExports"),
     ],
     ids=["exports", "imports", "re_exports"],
 )
@@ -1038,7 +1038,7 @@ async def test_unknown_reporter_future_and_unreleased_years_answer_an_empty_list
     HTTP 200 with ``[]``, as Iceland's 2019 re-exports do; nothing in the answer tells them
     apart."""
     route = replay_fixture(UN_EXPORTS, case)
-    assert await api.GATSData_GetUNTradeExports(reporter_code, year) == []
+    assert await api.get_un_trade_exports(reporter_code, year) == []
     assert sent_urls(route) == [
         f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/{reporter_code}/year/{year}"
     ]
@@ -1057,7 +1057,7 @@ async def test_a_year_that_is_not_a_number_is_an_empty_404_and_a_not_found_error
     route = replay_fixture(UN_EXPORTS, "year_text")
     path = "/api/gats/UNTradeExports/reporterCode/IC/year/abc"
     with pytest.raises(NotFoundError) as info:
-        await api.GATSData_GetUNTradeExports("IC", "abc")
+        await api.get_un_trade_exports("IC", "abc")
     assert info.value.message == f"404 from GET {path}: Not Found"
     assert "api.fas.usda.gov" not in info.value.message, "host-free (conventions §5)"
     assert route.call_count == 1, "a 404 is never retried"
@@ -1084,8 +1084,8 @@ async def test_the_un_release_lists_carry_the_product_type_codes_too(
     the exports list, ``M`` throughout the imports list."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    exports, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    imports, _ = await api.GATSData_GetUNTradeImportDataReleaseInfo()
+    exports, _ = await api.get_un_trade_export_data_release_info()
+    imports, _ = await api.get_un_trade_import_data_release_info()
     assert {r.product_type for r in exports} == {ProductType.X}
     assert {r.product_type for r in imports} == {ProductType.M}
 

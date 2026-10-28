@@ -48,6 +48,23 @@ All notable changes to this project are documented here. The format follows
   are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
   fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
 
+### Fixed
+
+- The Census data tasks and series refused every code GATS marks discontinued for the
+  months after its `discontinuedOn`, parent codes included, although GATS answers a
+  parent for current months with the aggregate of its children: as recorded for
+  2026-08, `Y1` (Leeward-Windward Islands) holds every HS10 code of `AC` (Antigua and
+  Barbuda) at no lower a value, and `AS` (Australia) answers the records of `A2`. A
+  parent, a code another record names as its `countryParentCode` (21 of them, 19
+  discontinued), now passes for every month. The seven discontinued codes that are no
+  other code's parent (`D1`, `DA`, `GC`, `GE`, `RB`, `YE`, `YS`) are still refused after
+  their month, and the refusal says so and names the code's own parent where it has one;
+  `GC` answered 2026-08 with an empty list. The numbered codes `01` to `18` are
+  documented as Census residual and grouping codes that pass and may answer an empty
+  list, which means no data, as `01` and `18` did for 2026-08. Eight recorded answers
+  for 2026-08 back this, for `18`, `AS`, `A2`, `Y1`, `NF`, `AC`, `GC` and `01`, under
+  `tests/fixtures/get_census_exports/`.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

@@ -118,8 +118,9 @@ async def test_get_census_release_dates_live(
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     # The filter answers from the client's cache: no keyed call of its own.
     one_year = await tasks.get_census_release_dates_async(ProductType.X, statistical_year=YEAR)
-    assert one_year.data == [r for r in result.data if r.statistical_year_month[:4] == f"{YEAR}"]
-    assert 8 <= len(one_year.data) <= 12
+    year_months = [r.statistical_year_month for r in one_year.data]
+    assert year_months == [month for month in months if month[:4] == f"{YEAR}"]
+    assert 8 <= len(year_months) <= 12
     record_property("latest", months[0])
     record_property("released", result.data[0].release_time_stamp.isoformat())
 

@@ -19,6 +19,7 @@ from xippios.usda.gats.params import (
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
+    validate_hs6_prefix,
     validate_hs10_code,
     validate_month,
     validate_partner_code,
@@ -665,11 +666,22 @@ def test_a_full_hs6_code_the_list_lacks_names_the_codes_sharing_its_digits(
 )
 def test_other_hs6_filters_are_refused(code: object) -> None:
     """Seven digits, punctuation, spaces, letters, full-width or superscript digits, a
-    number: refused as malformed, before any list is read."""
-    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text") as info:
-        validate_hs6_code(code)  # type: ignore[arg-type]
-    assert not isinstance(info.value, UnknownCode)
-    assert "list_hs6_commodities lists the codes" in info.value.message
+    number: refused as malformed, before any list is read, by both HS6 checks."""
+    for check in (validate_hs6_code, validate_hs6_prefix):
+        with pytest.raises(
+            InvalidRequestError, match="hs6_code must be 1 to 6 digits as text"
+        ) as info:
+            check(code)  # type: ignore[arg-type]
+        assert not isinstance(info.value, UnknownCode)
+        assert "list_hs6_commodities lists the codes" in info.value.message
+
+
+@pytest.mark.parametrize("code", ["030444", "020119", "999999", "0201", "02", "0"])
+def test_the_hs6_prefix_check_is_the_shape_alone(code: str) -> None:
+    """``list_hs6_commodities``'s filter: 1 to 6 digits pass, a six-digit code the packaged
+    list lacks (``"020119"``) included, since it selects nothing from that list; the UN
+    Trade filter's check refuses that code."""
+    assert validate_hs6_prefix(code) == code
 
 
 def test_the_year_message_names_both_data_series() -> None:

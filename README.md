@@ -191,14 +191,15 @@ from xippios.usda.gats.enums import UnitOfMeasureId
 
 list_countries(search="CHN").data  # [Country(country_code="CH", ..., iso3_code="CHN", ...)]
 list_countries(region_code="R05").data  # CA, GL, MX, SB, US (North America)
-list_hs6_commodities(search="0201").data  # the three HS6 codes of heading 0201
+list_hs6_commodities(hs6_code="0201").data  # the three HS6 codes of heading 0201
 UnitOfMeasureId.KILOGRAMS  # 47, the unit id of the data records
 ```
 
 `list_regions()` (15), `list_countries(region_code=None, search=None)` (322 codes,
 current and discontinued; `search` on the code, the name, the ISO and the GENC code),
-`list_hs6_commodities(search=None)` (2,909; `search` on the code, the name and the
-description), `list_units_of_measure()` (108, ids 0 to 107, which `enums.UnitOfMeasureId`
+`list_hs6_commodities(search=None, hs6_code=None)` (2,909; `search` on the code, the
+name and the description, `hs6_code` a prefix of the code, as `list_commodities`'
+`hs10_code`), `list_units_of_measure()` (108, ids 0 to 107, which `enums.UnitOfMeasureId`
 names) and `list_customs_districts()` (53, e.g. 10 NEW YORK, N.Y.).
 
 The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commodities(search=None,
@@ -230,8 +231,8 @@ for exports to China in August 2026, 3,294 for imports, 1,697 by customs distric
 the notes of the Census data tools name `hs10_code`, and those of the customs-district
 tools `customs_district_id` too, while the series tools' notes say the rows run oldest
 month first and name `hs10_code` and fewer months; `usda_gats_list_hs6_commodities`
-names `search`, `usda_gats_list_commodities` its three filters. The UN Trade data tools name
-`partner_code` and `hs6_code` (one reporter-year is one row per partner and HS6 code,
+names `search` and `hs6_code`, `usda_gats_list_commodities` its three filters. The UN
+Trade data tools name `partner_code` and `hs6_code` (one reporter-year is one row per partner and HS6 code,
 3,980 rows for Iceland's 2019 exports), and `usda_gats_get_un_release_dates` names
 `reporter_code` and `year` (3,796 reporter-years in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
@@ -278,7 +279,7 @@ server, per process.
 | `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
 | `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
 | `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks the Census `partner_code` and the UN Trade `reporter_code` and `partner_code` filter | `usda_gats_list_countries` | alpha |
-| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None)`, packaged as `reference/HS6Commodities.json`, which checks a six-digit `hs6_code` | `usda_gats_list_hs6_commodities` | alpha |
+| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None, hs6_code=None)`, packaged as `reference/HS6Commodities.json`, which checks a six-digit UN Trade `hs6_code` | `usda_gats_list_hs6_commodities` | alpha |
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 

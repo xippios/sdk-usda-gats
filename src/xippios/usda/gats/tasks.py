@@ -109,7 +109,7 @@ fetch date is none. ``list_commodities`` is the exception: the HS10 list, 24,936
 7.6 MB, is not packaged, so it makes one live request (``GATSData_GetCommodities``),
 which the client keeps for a day (``_client.COMMODITIES_TTL``); its ``meta.retrieved_at``
 is when the list was fetched, from the cache's stored time on a hit, and ``vintage``
-stays empty. The lists' filters (``search``, ``region_code``, ``hs10_code``,
+stays empty. The lists' filters (``search``, ``region_code``, ``hs6_code``, ``hs10_code``,
 ``product_type``) only select records, which keep upstream's order and values;
 ``meta.request`` carries those given and leaves out one not given. ``meta.total`` stays
 unset: upstream reports no count.
@@ -155,6 +155,7 @@ from xippios.usda.gats.params import (
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
+    validate_hs6_prefix,
     validate_hs10_code,
     validate_partner_month,
     validate_reporter_code,
@@ -246,10 +247,10 @@ COUNTRIES_NOTE = (
 lets the 322 packaged codes through whole, so only a list grown past it is cut."""
 
 HS6_NOTE = (
-    "filter by search, on the code, the name and the description, e.g. '0201' or "
-    "'wheat', to see the rest"
+    "filter by search, on the code, the name and the description, e.g. 'wheat', or by "
+    "hs6_code (a code or a prefix such as '0201') to see the rest"
 )
-"""What the cut HS6 list tells the agent: the one filter the tool has."""
+"""What the cut HS6 list tells the agent: the two filters the tool has."""
 
 COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
@@ -306,7 +307,8 @@ past the default 200 rows, and about 57 KB of compact JSON, so its cap of 400 ro
 100,000 bytes lets it through whole, with a note naming its filters for a list that
 outgrows it. ``list_hs6_commodities`` (2,909 codes, about 0.7 MB) and
 ``list_commodities`` (24,936 records, about 7 MB) are too large to serve whole: they keep
-the default bounds with notes naming their filters. ``list_regions`` (15),
+the default bounds with notes naming their filters, ``search`` and ``hs6_code`` for the
+HS6 list. ``list_regions`` (15),
 ``list_units_of_measure`` (108) and ``list_customs_districts`` (53) fit the default.
 """
 
@@ -1731,7 +1733,9 @@ async def list_countries_async(
     return Result(data=selected, meta=packaged.meta(SOURCE, request=request))
 
 
-async def list_hs6_commodities_async(search: str | None = None) -> Result[list[HS6Commodity]]:
+async def list_hs6_commodities_async(
+    search: str | None = None, hs6_code: str | None = None
+) -> Result[list[HS6Commodity]]:
     """List GATS's HS6 commodities with their codes, names and units of measure.
 
     Answered from ``GATSData_GetHS6Commodities`` as packaged with this version
@@ -1742,22 +1746,31 @@ async def list_hs6_commodities_async(search: str | None = None) -> Result[list[H
     Re-export data records obtained by querying UN Trade Data"; the first six digits of
     every HS10 code in the Census records are a listed code. For HS10 codes use
     ``list_commodities``. ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-26); ``meta.vintage`` stays empty.
+    (2026-10-26); ``meta.vintage`` stays empty. The filters only select codes, in code
+    order.
 
     Args:
         search: Keep the commodities where this text occurs, ignoring case, in the code,
             the name or the description, e.g. ``"wheat"`` (15 codes, durum and other
             wheat, wheat flour, buckwheat), ``"0201"`` (the three codes of heading 0201,
             bovine meat fresh or chilled), ``"bovine"``. Omit (``None``) for all.
+        hs6_code: Keep the codes that start with this, 1 to 6 digits as text: a full
+            code such as ``"100190"`` or a prefix such as ``"0201"`` (heading 0201, three
+            codes) or ``"02"`` (chapter 02, 81 codes). A prefix no code starts with
+            yields an empty list. Omit (``None``) for all.
     """
     _search(search)
+    if hs6_code is not None:
+        validate_hs6_prefix(hs6_code)
     packaged = PackagedList.load(PACKAGE, "HS6Commodities")
     selected = [
         c
         for c in packaged.parse(HS6Commodity, source=SOURCE)
-        if matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
+        if (hs6_code is None or c.hs6_code.startswith(hs6_code))
+        and matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
     ]
-    return Result(data=selected, meta=packaged.meta(SOURCE, request={"search": search}))
+    request = {"search": search, "hs6_code": hs6_code}
+    return Result(data=selected, meta=packaged.meta(SOURCE, request=request))
 
 
 async def list_units_of_measure_async() -> Result[list[UnitOfMeasure]]:

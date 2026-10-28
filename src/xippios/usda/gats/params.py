@@ -18,8 +18,9 @@ a customs district id against ``customsDistricts`` (``validate_customs_district_
 a full HS6 code against ``HS6Commodities`` (``validate_hs6_code``). The UN Trade tasks
 check membership only: their data keeps codes the countries list marks discontinued in
 1987, such as ``DA`` (Denmark), for 2019. The other checks need no list: a four-digit
-year, a month from 1 to 12, an HS10 code or prefix of 1 to 10 digits and an HS6 prefix of
-1 to 5. All of them run before any call.
+year, a month from 1 to 12, an HS10 code or prefix of 1 to 10 digits, an HS6 prefix of 1
+to 5 and, for the ``list_hs6_commodities`` filter, an HS6 code or prefix of 1 to 6
+(``validate_hs6_prefix``). All of them run before any call.
 
 Refresh policy: ``/refresh-reference-data`` runs inside ``/release-prep``, and whenever
 a validation failure names a code the package lacks.
@@ -40,6 +41,7 @@ __all__ = [
     "validate_country_code",
     "validate_customs_district_id",
     "validate_hs6_code",
+    "validate_hs6_prefix",
     "validate_hs10_code",
     "validate_month",
     "validate_partner_code",
@@ -501,6 +503,35 @@ def _sharing_digits(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
     return [(code, codes[code]) for code in ranked[:3]]
 
 
+def validate_hs6_prefix(hs6_code: str) -> str:
+    """Check that an HS6 filter is 1 to 6 ASCII digits as text: a full code or a prefix.
+
+    The shape alone, as ``validate_hs10_code`` checks an HS10 filter: the filter of
+    ``list_hs6_commodities`` keeps the packaged codes that start with it, so a code or a
+    prefix the list lacks selects nothing, an empty list. ``validate_hs6_code``, the UN
+    Trade filter's check, runs it first. Digits only: a dot or a space would match
+    nothing.
+
+    Args:
+        hs6_code: E.g. ``"100190"`` (Wheat, except Durum, one code), ``"0201"`` (an HS
+            heading), ``"02"`` (chapter 02).
+
+    Returns:
+        The filter, unchanged.
+
+    Raises:
+        InvalidRequestError: When it is not text of 1 to 6 digits from 0 to 9.
+    """
+    if not isinstance(hs6_code, str) or _HS6.fullmatch(hs6_code) is None:
+        raise InvalidRequestError(
+            "hs6_code must be 1 to 6 digits as text: a full HS6 code such as "
+            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. '
+            "list_hs6_commodities lists the codes.",
+            source=SOURCE,
+        )
+    return hs6_code
+
+
 def validate_hs6_code(hs6_code: str) -> str:
     """Check an HS6 filter: 1 to 6 ASCII digits as text, a full code only if it is packaged.
 
@@ -519,18 +550,13 @@ def validate_hs6_code(hs6_code: str) -> str:
         The filter, unchanged.
 
     Raises:
-        InvalidRequestError: When it is not text of 1 to 6 digits from 0 to 9.
+        InvalidRequestError: When it is not text of 1 to 6 digits from 0 to 9
+            (``validate_hs6_prefix``).
         UnknownCode: When it is a six-digit code the packaged list lacks, naming up to
             three listed codes that share the most leading digits with it, with their
             upstream names.
     """
-    if not isinstance(hs6_code, str) or _HS6.fullmatch(hs6_code) is None:
-        raise InvalidRequestError(
-            "hs6_code must be 1 to 6 digits as text: a full HS6 code such as "
-            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. '
-            "list_hs6_commodities lists the codes.",
-            source=SOURCE,
-        )
+    validate_hs6_prefix(hs6_code)
     if len(hs6_code) < 6:
         return hs6_code
     fetched, codes = _codes("HS6Commodities", "hS6Code", "commodityName")

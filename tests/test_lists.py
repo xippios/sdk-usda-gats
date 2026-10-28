@@ -67,8 +67,8 @@ CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"
 HS6_NOTE = (
-    "filter by search, on the code, the name and the description, e.g. '0201' or "
-    "'wheat', to see the rest"
+    "filter by search, on the code, the name and the description, e.g. 'wheat', or by "
+    "hs6_code (a code or a prefix such as '0201') to see the rest"
 )
 COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
@@ -276,12 +276,74 @@ def test_list_hs6_commodities_search(respx_mock: respx.MockRouter) -> None:
     assert not respx_mock.calls
 
 
-@pytest.mark.anyio
-async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_search(
+@pytest.mark.parametrize(
+    ("hs6_code", "count", "first"),
+    [
+        ("0201", 3, ("020110", "Bovine Carcass Fr/Ch")),
+        ("02", 81, ("020110", "Bovine Carcass Fr/Ch")),
+        ("0", 704, ("010110", "Purebred Breeding Animal")),
+        ("100190", 1, ("100190", "Wheat, except Durum")),
+    ],
+    ids=["heading", "chapter", "one_digit", "full_code"],
+)
+def test_list_hs6_commodities_hs6_code_keeps_the_codes_it_starts(
+    respx_mock: respx.MockRouter, hs6_code: str, count: int, first: tuple[str, str]
+) -> None:
+    """``hs6_code`` keeps the packaged codes that start with it, as ``list_commodities``'
+    ``hs10_code`` does, in code order, and ``meta.request`` carries it."""
+    every = tasks.list_hs6_commodities().data
+    result = tasks.list_hs6_commodities(hs6_code=hs6_code)
+    assert len(result.data) == count
+    assert (result.data[0].hs6_code, result.data[0].commodity_name) == first
+    assert result.data == [c for c in every if c.hs6_code.startswith(hs6_code)], "code order"
+    assert result.meta.request == {"hs6_code": hs6_code}
+    assert result.meta.retrieved_at == _fetched("HS6Commodities")
+    assert not respx_mock.calls
+
+
+def test_list_hs6_commodities_hs6_code_with_search_and_without_a_match(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """2,909 codes keep the default cap: 200 rows or 64 KB, with a note naming ``search``,
-    the one filter the tool has; a search comes back whole."""
+    """The heading 0201 is the three codes the README names; with ``search`` the two
+    filters narrow together; a prefix or a full code no packaged code starts with, a
+    chapter the list lacks (``"99"``) or a code it does not list (``"020119"``), is an
+    empty list, not an error, and ``meta.request`` records it."""
+    heading = tasks.list_hs6_commodities(hs6_code="0201").data
+    assert [c.hs6_code for c in heading] == ["020110", "020120", "020130"]
+    assert heading == tasks.list_hs6_commodities(search="0201").data
+    wheat = tasks.list_hs6_commodities(search="wheat", hs6_code="1001")
+    assert [c.hs6_code for c in wheat.data] == [
+        "100110",
+        "100111",
+        "100119",
+        "100190",
+        "100191",
+        "100199",
+    ]
+    assert wheat.meta.request == {"search": "wheat", "hs6_code": "1001"}
+    for nothing in ("99", "020119", "000000"):
+        empty = tasks.list_hs6_commodities(hs6_code=nothing)
+        assert empty.data == [], nothing
+        assert empty.meta.request == {"hs6_code": nothing}
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("hs6_code", ["", "0304441", "03.04", " 03", "ab", 3])
+def test_list_hs6_commodities_refuses_an_hs6_code_that_is_not_digits(
+    respx_mock: respx.MockRouter, hs6_code: object
+) -> None:
+    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text"):
+        tasks.list_hs6_commodities(hs6_code=hs6_code)  # type: ignore[arg-type]
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_the_filters(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """2,909 codes keep the default cap: 200 rows or 64 KB, with a note naming ``search``
+    and ``hs6_code``, the two filters the tool has; a search or a chapter comes back
+    whole."""
     payload = await mcp_call(server, "usda_gats_list_hs6_commodities", {})
     shown = len(payload["data"])
     assert 0 < shown <= CAP
@@ -292,6 +354,10 @@ async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_search(
     wheat = await mcp_call(server, "usda_gats_list_hs6_commodities", {"search": "wheat"})
     assert len(wheat["data"]) == 15
     assert "note" not in wheat
+    chapter = await mcp_call(server, "usda_gats_list_hs6_commodities", {"hs6_code": "02"})
+    assert len(chapter["data"]) == 81
+    assert "note" not in chapter
+    assert chapter["meta"]["request"] == {"hs6_code": "02"}
     assert not respx_mock.calls
 
 
@@ -446,6 +512,8 @@ def test_list_routes_over_http(replay_fixture: ReplayFixture) -> None:
     assert datetime.fromisoformat(east_asia["meta"]["retrieved_at"]) == _fetched("countries")
     hs6 = http.get("/usda-gats/list_hs6_commodities").json()
     assert len(hs6["data"]) == 2909
+    heading = http.get("/usda-gats/list_hs6_commodities", params={"hs6_code": "0201"}).json()
+    assert [row["hs6_code"] for row in heading["data"]] == ["020110", "020120", "020130"]
     fillets = http.get(
         "/usda-gats/list_commodities", params={"hs10_code": "0304", "product_type": "X"}
     ).json()

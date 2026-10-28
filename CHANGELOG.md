@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format follows
   as recorded); a year the list lacks gives an empty list. The filter applies after the
   one request and is recorded in `meta.request`; the MCP tool's note on a cut list names
   it.
+- `list_hs6_commodities(search=None, hs6_code=None)`: `hs6_code` keeps the packaged codes
+  that start with it, 1 to 6 digits, as `list_commodities`' `hs10_code` does (`"0201"`
+  gives the three codes of heading 0201); a prefix no code starts with gives an empty
+  list. `meta.request` records it, and the MCP tool's note names it beside `search`.
+  `params.validate_hs6_prefix` is its check.
 
 ### Changed
 

@@ -39,9 +39,13 @@ jobs:
             echo "::error::CHANGELOG.md has no entry under Unreleased (conventions §12)"
             exit 1
           fi
-      # ADR-0019: the fixture files a PR adds or changes stay under 256 KiB. --no-renames
-      # lists a moved fixture as added, so one moved and grown is seen. LEVEL is error from
-      # template v0.3.0, when the cap binds a source; v0.2.1 and v0.2.2 warned.
+      # ADR-0019: the fixture files a PR adds or changes stay under 256 KiB. An exact move
+      # (R100) is a rename, which --diff-filter=AM leaves out, so a fixture directory renamed
+      # under conventions 1.22 §10 is not re-judged; a moved file that also changed falls
+      # below 100 % and is listed as added, so one moved and grown is still seen. A hand edit
+      # (it was --no-renames): the template's fix is queued (row 164), and the next copier
+      # update reconciles it. LEVEL is error from template v0.3.0, when the cap binds a
+      # source; v0.2.1 and v0.2.2 warned.
       - name: Fixture files under 256 KiB
         if: github.event_name == 'pull_request'
         env:
@@ -55,7 +59,7 @@ jobs:
               echo "::${LEVEL} file=${path}::${size} bytes, over the 256 KiB cap (ADR-0019)"
               over=1
             fi
-          done < <(git diff -z --name-only --no-renames --diff-filter=AM "origin/${BASE}...HEAD" -- tests/fixtures/)
+          done < <(git diff -z --name-only --find-renames=100% --diff-filter=AM "origin/${BASE}...HEAD" -- tests/fixtures/)
           if [ "$LEVEL" = error ]; then
             exit "$over"
           fi

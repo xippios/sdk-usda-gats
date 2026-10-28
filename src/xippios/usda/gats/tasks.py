@@ -1580,11 +1580,10 @@ async def get_un_release_dates_async(
     ``reporter_code`` and ``release_time_stamp``, the time of the reporter-year's latest
     release as upstream states it, without a time zone (``2020-06-03T05:50:46`` for
     Iceland's 2019 exports). The UN Trade feed is frozen: as recorded on 2026-10-26 the
-    lists cover 1989 to 2019:
-    3,796 exports records for 206 reporters and 3,832 imports records for 207, 32
-    reporters for 2019 in each; the newest release time is 2021-01-18 (the Netherlands'
-    2014), and no reporter-year has been released since. The two lists differ:
-    32 reporter-years are listed only for exports, 68 only for imports. The three UN data
+    lists cover 1989 to 2019: 3,796 exports records for 206 reporters and 3,832 imports
+    records for 207, 32 reporters for 2019 in each; the newest release time is 2021-01-18
+    (the Netherlands' 2014), and no reporter-year has been released since. The two lists
+    differ: 32 reporter-years are listed only for exports, 68 only for imports. The three UN data
     tasks check a reporter-year against this list and give its time as ``meta.vintage``,
     the re-exports task the exports list's, since re-exports have no list of their own.
     One request, kept by the client for an hour; ``meta.retrieved_at`` is when it was

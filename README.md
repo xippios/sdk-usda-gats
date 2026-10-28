@@ -157,9 +157,8 @@ list, so a reporter-year the list lacks raises `NotFoundError` naming the report
 listed years and the latest year; a listed reporter-year without trade is an empty list
 (Iceland's 2019 re-exports). `meta.vintage` is the reporter-year's release time as
 upstream states it, and `meta.published_at` that time parsed, naive, as for the Census
-tasks. One
-reporter-year can be large: Iceland's 2019 imports are 23,396 records (about 5.2 MB),
-India's 2016 exports 75,919 (about 17 MB). `get_un_release_dates(product_type,
+tasks. One reporter-year can be large: Iceland's 2019 imports are 23,396 records (about
+5.2 MB), India's 2016 exports 75,919 (about 17 MB). `get_un_release_dates(product_type,
 reporter_code=None, year=None)` returns either list, one record per reporter and year,
 3,796 for exports and 3,832 for imports as recorded.
 

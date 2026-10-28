@@ -24,8 +24,9 @@ year, a month from 1 to 12, an HS10 code or prefix of 1 to 10 digits, an HS6 pre
 to 5 and, for the ``list_hs6_commodities`` filter, an HS6 code or prefix of 1 to 6
 (``validate_hs6_prefix``). All of them run before any call.
 
-Refresh policy: ``/refresh-reference-data`` runs inside ``/release-prep``, and whenever
-a validation failure names a code the package lacks.
+Refresh policy: ``/refresh-reference-data`` runs as a PR of its own before the release
+PR, never inside it (conventions §12), and whenever a validation failure names a code the
+package lacks.
 """
 
 import functools

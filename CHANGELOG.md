@@ -94,9 +94,9 @@ All notable changes to this project are documented here. The format follows
   customs districts) were refreshed from GATS on 2026-10-28, and no record changed: 15
   regions, 322 countries, 2,909 HS6 codes, 108 units and 53 customs districts, as
   before. Each file's `fetched` is now the UTC time of the fetch to the second, where it
-  was a bare day, and the list tasks' `meta.retrieved_at` is that time; a refusal of an
-  unknown code names the new day. `enums.py` was re-rendered: `UnitOfMeasureId` keeps
-  its name and its 108 members, and its docstring names the new day.
+  was a bare day; the refusals that name the list's fetch day name the new day.
+  `enums.py` was re-rendered: `UnitOfMeasureId` keeps its name and its 108 members, and
+  its docstring names the new day.
 
 ### Fixed
 

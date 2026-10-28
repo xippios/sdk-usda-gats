@@ -46,7 +46,7 @@ All notable changes to this project are documented here. The format follows
   in `api/get_census_import.py`, and `tests/fixtures/GATSData_GetUNTradeExports/` is
   `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
   are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
-  fixture-cap step counts an exact move as a rename, ahead of the template's fix (row 164).
+  fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
 
 ## [0.1.0] - 2026-10-26
 

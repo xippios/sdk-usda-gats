@@ -1171,8 +1171,9 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     nothing, not July's 105 records. The wait is read through the client, so it is the
     snapshot's from now, ``Retry-After``'s 3151 s give or take ``CLOCK_SLACK``: a fraction
     under, or over where this host's clock steps back. NOT RECORDED here: GATS has no
-    recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself,
-    which the plugin leaves on, not the quota policy's pause, which it turns off."""
+    recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not
+    marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which
+    the plugin leaves on, not the quota policy's pause, which it turns off."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
     august = respx_mock.get(_ic_url("censusExports", 8)).mock(

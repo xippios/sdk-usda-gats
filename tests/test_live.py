@@ -25,7 +25,7 @@ is gone and what is new; ``/refresh-reference-data`` then refreshes the package.
 ``list_commodities`` fetches the HS10 list live, one call of about 7.6 MB. The tests
 record what they answered as test properties (``--junitxml`` shows them), never a key.
 Next to them, the template's reachability check, ``test_upstream_answers``, sends no key:
-a plain request to ``BASE_URL`` that spends no quota call.
+a plain request to ``BASE_URL`` that spends no keyed call.
 """
 
 import json
@@ -54,9 +54,8 @@ RELEASE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
 async def test_upstream_answers() -> None:
     """The base URL answers without a server error (sdk-template's reachability check).
 
-    A plain request, not the package's client, so no key goes out and no call counts
-    against the key's quota; a keyed gateway's answer to it (a 403 or a 404, say) still
-    shows the host is up.
+    A plain request, not the package's client, so no key goes out and it spends no keyed
+    call; a keyed gateway's answer to it (a 403 or a 404, say) still shows the host is up.
     """
     async with httpx.AsyncClient(
         headers={"User-Agent": config.user_agent},

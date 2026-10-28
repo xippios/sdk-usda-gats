@@ -1567,13 +1567,14 @@ async def get_un_exports_async(
     exports release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the
     client for a day) to check that the reporter-year is listed, then the year
     (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
-    75,919 records, about 17 MB). The arguments are checked before either: an unknown
-    reporter or partner code raises ``InvalidRequestError`` naming up to three close codes
-    (``"ISL"`` leads to ``"IC"``), or pointing to ``list_countries``; the Census tasks'
-    discontinuation check does not apply. An ISO or GENC code several listed codes share
-    is refused once the release list is read, naming first the codes the list holds as
-    reporters: ``"AUS"`` names ``"AS"``, the code the UN data uses, before ``"A2"``;
-    ``"FRA"`` names ``"F1"`` before ``"FR"``. A reporter-year the list lacks raises
+    75,919 records, about 17 MB). The arguments are checked before either request, but
+    for an ISO or GENC code several listed codes share: an unknown reporter or partner
+    code raises ``InvalidRequestError`` naming up to three close codes (``"ISL"`` leads
+    to ``"IC"``), or pointing to ``list_countries``; the Census tasks' discontinuation
+    check does not apply. A shared ISO or GENC code is refused once the release list is
+    read, naming first the codes the list holds as reporters: ``"AUS"`` names ``"AS"``,
+    the code the UN data uses, before ``"A2"``; ``"FRA"`` names ``"F1"`` before
+    ``"FR"``; unranked when the list cannot be read. A reporter-year the list lacks raises
     ``NotFoundError`` naming the reporter's listed years and the list's latest year; a
     listed reporter-year without exports gives an empty list. ``meta.vintage`` is the
     reporter-year's release time from that list, as upstream states it
@@ -1935,7 +1936,7 @@ async def list_commodities_async(
     repeats across product types and with a later ``start_date`` (``"0207410000"`` under
     ``"M"`` is chicken cuts from ``"198901"`` and ducks from ``"201201"``). Not packaged,
     for its size: one request, kept by the client for a day and parsed into records once
-    for it, so a search after the first sends nothing and parses nothing anew;
+    for it, so a search after the first sends nothing and builds no records anew;
     ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
     and ``meta.published_at`` stay empty: upstream gives the list no version or date. The
     filters apply after the one request; for HS6 codes use ``list_hs6_commodities``.

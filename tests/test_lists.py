@@ -10,9 +10,11 @@ empties every ``MemoryCache`` around each offline test (ADR-0013).
 """
 
 import json
+import sys
 from collections import Counter
 from datetime import UTC, datetime
 from importlib import resources
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -20,10 +22,16 @@ import pytest
 import respx
 from xippios.core import InvalidRequestError, PackagedList
 from xippios.core.client import cache_key
-from xippios.core.testing import ReplayFixture, mcp_call, sent_urls
+from xippios.core.testing import (
+    ReplayFixture,
+    assert_time_between,
+    load_fixture,
+    mcp_call,
+    sent_urls,
+)
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, cache
+from xippios.usda.gats._client import BASE_URL, cache, commodities_cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
@@ -66,9 +74,12 @@ countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
 CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"
+COMMODITIES_FIXTURE = Path(__file__).parent / "fixtures" / "get_commodities" / "all.json"
+WRAPPER = sys.modules["xippios.usda.gats.api.get_commodities"]
+"""The wrapper's module: ``api.get_commodities`` is the function, which shadows it."""
 HS6_NOTE = (
-    "filter by search, on the code, the name and the description, e.g. '0201' or "
-    "'wheat', to see the rest"
+    "filter by search, on the code, the name and the description, e.g. 'wheat', or by "
+    "hs6_code (a code or a prefix such as '0201') to see the rest"
 )
 COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
@@ -276,12 +287,78 @@ def test_list_hs6_commodities_search(respx_mock: respx.MockRouter) -> None:
     assert not respx_mock.calls
 
 
-@pytest.mark.anyio
-async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_search(
+@pytest.mark.parametrize(
+    ("hs6_code", "count", "first"),
+    [
+        ("0201", 3, ("020110", "Bovine Carcass Fr/Ch")),
+        ("02", 81, ("020110", "Bovine Carcass Fr/Ch")),
+        ("0", 704, ("010110", "Purebred Breeding Animal")),
+        ("100190", 1, ("100190", "Wheat, except Durum")),
+    ],
+    ids=["heading", "chapter", "one_digit", "full_code"],
+)
+def test_list_hs6_commodities_hs6_code_keeps_the_codes_it_starts(
+    respx_mock: respx.MockRouter, hs6_code: str, count: int, first: tuple[str, str]
+) -> None:
+    """``hs6_code`` keeps the packaged codes that start with it, as ``list_commodities``'
+    ``hs10_code`` does, in code order, and ``meta.request`` carries it."""
+    every = tasks.list_hs6_commodities().data
+    result = tasks.list_hs6_commodities(hs6_code=hs6_code)
+    assert len(result.data) == count
+    assert (result.data[0].hs6_code, result.data[0].commodity_name) == first
+    assert result.data == [c for c in every if c.hs6_code.startswith(hs6_code)], "code order"
+    assert result.meta.request == {"hs6_code": hs6_code}
+    assert result.meta.retrieved_at == _fetched("HS6Commodities")
+    assert not respx_mock.calls
+
+
+def test_list_hs6_commodities_hs6_code_with_search_and_without_a_match(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """2,909 codes keep the default cap: 200 rows or 64 KB, with a note naming ``search``,
-    the one filter the tool has; a search comes back whole."""
+    """The heading 0201 is the three codes the README names; with ``search`` the two
+    filters narrow together; a prefix or a full code no packaged code starts with, a
+    chapter the list lacks (``"99"``) or a code it does not list (``"020119"``), is an
+    empty list, not an error, and ``meta.request`` records it."""
+    heading = tasks.list_hs6_commodities(hs6_code="0201").data
+    assert [c.hs6_code for c in heading] == ["020110", "020120", "020130"]
+    assert heading == tasks.list_hs6_commodities(search="0201").data
+    wheat = tasks.list_hs6_commodities(search="wheat", hs6_code="1001")
+    assert [c.hs6_code for c in wheat.data] == [
+        "100110",
+        "100111",
+        "100119",
+        "100190",
+        "100191",
+        "100199",
+    ]
+    assert wheat.meta.request == {"search": "wheat", "hs6_code": "1001"}
+    for nothing in ("99", "020119", "000000"):
+        empty = tasks.list_hs6_commodities(hs6_code=nothing)
+        assert empty.data == [], nothing
+        assert empty.meta.request == {"hs6_code": nothing}
+    assert not respx_mock.calls
+
+
+@pytest.mark.parametrize("hs6_code", ["", "0304441", "03.04", " 03", "ab", 3])
+def test_list_hs6_commodities_refuses_an_hs6_code_that_is_not_digits(
+    respx_mock: respx.MockRouter, hs6_code: object
+) -> None:
+    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text") as info:
+        tasks.list_hs6_commodities(hs6_code=hs6_code)  # type: ignore[arg-type]
+    assert info.value.message.endswith(
+        "search finds the codes by name or description, e.g. 'wheat'."
+    ), "the tool's own search, not the tool itself"
+    assert "list_hs6_commodities lists the codes" not in info.value.message
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_the_filters(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """2,909 codes keep the default cap: 200 rows or 64 KB, with a note naming ``search``
+    and ``hs6_code``, the two filters the tool has; a search or a chapter comes back
+    whole."""
     payload = await mcp_call(server, "usda_gats_list_hs6_commodities", {})
     shown = len(payload["data"])
     assert 0 < shown <= CAP
@@ -292,6 +369,10 @@ async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_search(
     wheat = await mcp_call(server, "usda_gats_list_hs6_commodities", {"search": "wheat"})
     assert len(wheat["data"]) == 15
     assert "note" not in wheat
+    chapter = await mcp_call(server, "usda_gats_list_hs6_commodities", {"hs6_code": "02"})
+    assert len(chapter["data"]) == 81
+    assert "note" not in chapter
+    assert chapter["meta"]["request"] == {"hs6_code": "02"}
     assert not respx_mock.calls
 
 
@@ -393,6 +474,107 @@ def test_list_commodities_filters(replay_fixture: ReplayFixture) -> None:
     assert route.call_count == 1
 
 
+def _count_parses(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Count the wrapper's calls of core's ``parse``, each record list it builds."""
+    sizes: list[int] = []
+    real = WRAPPER.parse
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        records = real(*args, **kwargs)
+        sizes.append(len(records))
+        return records
+
+    monkeypatch.setattr(WRAPPER, "parse", counted)
+    return sizes
+
+
+def _entry_time() -> datetime:
+    entry = cache.get(cache_key("GET", httpx.URL(COMMODITIES_URL)))
+    assert entry is not None
+    return datetime.fromtimestamp(entry.stored_at, UTC)
+
+
+def test_list_commodities_parses_the_list_once_per_cache_entry(
+    replay_fixture: ReplayFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recorded HS10 list, one request: three searches within the day's entry parse
+    it once and share the records it parsed, the same objects; ``meta.retrieved_at`` is
+    still the entry's stored time on every hit. A new entry, here after the cache was
+    cleared as an expired entry would be dropped, is fetched and parsed again: equal
+    records, new objects, the new entry's time."""
+    parses = _count_parses(monkeypatch)
+    route = replay_fixture("get_commodities", "all")
+    before = datetime.now(UTC)
+    every = tasks.list_commodities()
+    assert_time_between(every.meta.retrieved_at, before, datetime.now(UTC))
+    wheat = tasks.list_commodities(search="wheat")
+    fillets = tasks.list_commodities(hs10_code="0304")
+    again = tasks.list_commodities()
+    assert parses == [24936], "parsed once for the entry"
+    assert route.call_count == 1
+    stored = _entry_time()
+    for result in (wheat, fillets, again):
+        assert result.meta.retrieved_at == stored, "the entry's time on a hit"
+    assert all(a is b for a, b in zip(again.data, every.data, strict=True)), "the same records"
+    by_id = {id(c) for c in every.data}
+    assert {id(c) for c in wheat.data} <= by_id
+    assert (len(wheat.data), len(fillets.data)) == (168, 548)
+    cache.clear()
+    renewed = tasks.list_commodities()
+    assert route.call_count == 2, "a new entry from the wire"
+    assert parses == [24936, 24936], "and parsed again"
+    assert renewed.data == every.data
+    assert not any(a is b for a, b in zip(renewed.data, every.data, strict=True))
+    assert renewed.meta.retrieved_at >= stored
+    tasks.list_commodities(search="swine")
+    assert parses == [24936, 24936], "the new entry's records serve the next search"
+    assert sent_urls(route) == [COMMODITIES_URL, COMMODITIES_URL]
+
+
+def test_a_slot_never_answers_for_another_answer(
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NOT RECORDED as such: the second answer is the recorded list's first record alone,
+    a stand-in for a list upstream changed. Once the first answer's entry is gone, the
+    slot it filled does not answer for the new one, which is parsed and returned."""
+    parses = _count_parses(monkeypatch)
+    body = load_fixture(COMMODITIES_FIXTURE).response.body
+    assert isinstance(body, str)
+    first_record = json.loads(body)[:1]
+    route = respx_mock.get(COMMODITIES_URL).mock(
+        side_effect=[
+            httpx.Response(200, content=body.encode("utf-8")),
+            httpx.Response(200, json=first_record),
+        ]
+    )
+    assert len(tasks.list_commodities().data) == 24936
+    assert len(tasks.list_commodities().data) == 24936, "from the entry and the slot"
+    cache.clear()
+    changed = tasks.list_commodities()
+    assert [c.hs10_code for c in changed.data] == [first_record[0]["hS10Code"]]
+    hit = tasks.list_commodities()
+    assert hit.data == changed.data
+    assert hit.meta.retrieved_at == _entry_time()
+    assert parses == [24936, 1]
+    assert route.call_count == 2
+
+
+def test_an_answer_the_cache_does_not_keep_is_parsed_every_time(
+    replay_fixture: ReplayFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An answer the cache does not store, one over the cache's bound say, has no entry
+    to tie records to: each call fetches and parses it, and the slot stays empty, so it
+    cannot answer for the entry a later answer gets."""
+    parses = _count_parses(monkeypatch)
+    route = replay_fixture("get_commodities", "all")
+    monkeypatch.setattr(commodities_cache, "set", lambda key, value: None)
+    tasks.list_commodities(search="wheat")
+    tasks.list_commodities(search="swine")
+    assert route.call_count == 2
+    assert parses == [24936, 24936]
+    assert WRAPPER._parsed is None
+
+
 def test_list_commodities_checks_hs10_code_before_the_request(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -446,6 +628,8 @@ def test_list_routes_over_http(replay_fixture: ReplayFixture) -> None:
     assert datetime.fromisoformat(east_asia["meta"]["retrieved_at"]) == _fetched("countries")
     hs6 = http.get("/usda-gats/list_hs6_commodities").json()
     assert len(hs6["data"]) == 2909
+    heading = http.get("/usda-gats/list_hs6_commodities", params={"hs6_code": "0201"}).json()
+    assert [row["hs6_code"] for row in heading["data"]] == ["020110", "020120", "020130"]
     fillets = http.get(
         "/usda-gats/list_commodities", params={"hs10_code": "0304", "product_type": "X"}
     ).json()

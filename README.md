@@ -34,6 +34,8 @@ result.meta.retrieved_at
 
 releases = get_census_release_dates(ProductType.X)  # X exports, M imports
 releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-06 08:00 (naive)
+this_year = get_census_release_dates(ProductType.X, statistical_year=2026)
+len(this_year.data)  # 8: 202608 back to 202601; an unreleased or pre-1967 year gives []
 ```
 
 `partner_code` is GATS's own two-character code, not ISO (`"CH"` China, `"MX"` Mexico,
@@ -88,7 +90,8 @@ a revised month the previous release's time, or refuse a month just released, an
 refusal says when the list was fetched: an accepted lag. `meta.published_at` is the same
 release time parsed and kept without a zone, since FAS states none for its release times,
 with `meta.published_at_naive` set; `get_census_release_dates` returns them as upstream
-states them.
+states them, every month's or, with `statistical_year`, one year's, a filter applied after
+the one request and recorded in `meta.request`.
 
 ### Month series
 
@@ -162,11 +165,18 @@ list marks `AS` (Australia), `DA` (Denmark), `IT` (Italy), `NO` (Norway) and `NZ
 Zealand) discontinued in 1987, yet the UN data uses them for later years and never their
 same-name successors (`A2`, `N3`, ...). So the UN tasks check both country codes for
 membership in the packaged list only; the Census tasks' discontinuation rule does not
-apply. Before the data request a task checks the reporter-year against the flow's UN
-release list: the imports task the imports list, the exports task and, by assumption,
-the re-exports task the exports list, since upstream publishes no re-export list. GATS
-answers an unknown reporter, a future year and an unreleased year alike with an empty
-list, so a reporter-year the list lacks raises `NotFoundError` naming the reporter's
+apply. An ISO or GENC code that several listed codes share is refused naming first the
+codes the flow's UN release list holds as reporters: `"AUS"` names `AS` before `A2`,
+`"FRA"` names `F1` before `FR`. The lists follow no rule on the codes themselves (the
+parent reports for Australia, its child for France, both for Germany), so such a refusal
+reads the list first, still before the data request, and comes unranked when the list
+cannot be read; the Census tasks keep the current code first. Before the data request a
+task checks the reporter-year against the flow's UN release list, which the client keeps
+for a day, the feed being frozen: the imports task the imports list, the exports task
+and, by assumption, the re-exports task the
+exports list, since upstream publishes no re-export list. GATS answers an unknown
+reporter, a future year and an unreleased year alike with an empty list, so a
+reporter-year the list lacks raises `NotFoundError` naming the reporter's
 listed years and the latest year; a listed reporter-year without trade is an empty list
 (Iceland's 2019 re-exports). `meta.vintage` is the reporter-year's release time as
 upstream states it, and `meta.published_at` that time parsed, naive, as for the Census
@@ -187,23 +197,25 @@ from xippios.usda.gats.enums import UnitOfMeasureId
 
 list_countries(search="CHN").data  # [Country(country_code="CH", ..., iso3_code="CHN", ...)]
 list_countries(region_code="R05").data  # CA, GL, MX, SB, US (North America)
-list_hs6_commodities(search="0201").data  # the three HS6 codes of heading 0201
+list_hs6_commodities(hs6_code="0201").data  # the three HS6 codes of heading 0201
 UnitOfMeasureId.KILOGRAMS  # 47, the unit id of the data records
 ```
 
 `list_regions()` (15), `list_countries(region_code=None, search=None)` (322 codes,
 current and discontinued; `search` on the code, the name, the ISO and the GENC code),
-`list_hs6_commodities(search=None)` (2,909; `search` on the code, the name and the
-description), `list_units_of_measure()` (108, ids 0 to 107, which `enums.UnitOfMeasureId`
+`list_hs6_commodities(search=None, hs6_code=None)` (2,909; `search` on the code, the
+name and the description, `hs6_code` a prefix of the code, as `list_commodities`'
+`hs10_code`), `list_units_of_measure()` (108, ids 0 to 107, which `enums.UnitOfMeasureId`
 names) and `list_customs_districts()` (53, e.g. 10 NEW YORK, N.Y.).
 
 The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commodities(search=None,
 hs10_code=None, product_type=None)` fetches it live, in one request the client keeps for
-a day, and filters it: `search` on the name and the description, `hs10_code` a prefix of
-the code, `product_type` exact. Upstream's product types are `"X"` (exports, 5,919
-records), `"M"` (imports, 14,469), `"T"` (2,704) and `"B"` (1,844); upstream documents
-none of them, and the `T` and `B` records carry seven-digit codes padded with three
-spaces, kept as sent. On a cache hit `meta.retrieved_at` is when the list was fetched.
+a day and parses into records once for that day, and filters it: `search` on the name
+and the description, `hs10_code` a prefix of the code, `product_type` exact.
+Upstream's product types are `"X"` (exports, 5,919 records), `"M"` (imports, 14,469),
+`"T"` (2,704) and `"B"` (1,844); upstream documents none of them, and the `T` and `B`
+records carry seven-digit codes padded with three spaces, kept as sent. On a cache hit
+`meta.retrieved_at` is when the list was fetched.
 
 ## MCP
 
@@ -226,14 +238,15 @@ for exports to China in August 2026, 3,294 for imports, 1,697 by customs distric
 the notes of the Census data tools name `hs10_code`, and those of the customs-district
 tools `customs_district_id` too, while the series tools' notes say the rows run oldest
 month first and name `hs10_code` and fewer months; `usda_gats_list_hs6_commodities`
-names `search`, `usda_gats_list_commodities` its three filters. The UN Trade data tools name
-`partner_code` and `hs6_code` (one reporter-year is one row per partner and HS6 code,
-3,980 rows for Iceland's 2019 exports), and `usda_gats_get_un_release_dates` names
-`reporter_code` and `year` (3,796 reporter-years in the exports list).
+names `search` and `hs6_code`, `usda_gats_list_commodities` its three filters. The UN
+Trade data tools name `partner_code` and `hs6_code` (one reporter-year is one row per
+partner and HS6 code, 3,980 rows for Iceland's 2019 exports), and
+`usda_gats_get_un_release_dates` names `reporter_code` and `year` (3,796 reporter-years
+in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
-codes arrive whole. `usda_gats_get_census_release_dates`, which has no filter, returns
-the newest 200 months, more than sixteen years, with a note that says so. `--http`
-serves streamable HTTP instead of stdio.
+codes arrive whole. `usda_gats_get_census_release_dates` returns the newest 200 months,
+more than sixteen years, with a note that says so and names `statistical_year`, which
+keeps one year's months. `--http` serves streamable HTTP instead of stdio.
 
 `--series-months MONTHS` sets the most months one series tool call spans, a whole number
 from 1 to 60. The server starts with 24: two years, 24 requests, about 24 seconds at the
@@ -264,8 +277,8 @@ server, per process.
 | `GATSData_GetCustomsDistrictsExports` (`customsDistrictExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_exports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_exports` | alpha |
 | `GATSData_GetCustomsDistrictsImports` (`customsDistrictImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_imports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_imports` | alpha |
 | `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |
-| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by the exports and re-exports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
-| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by the imports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X", statistical_year=None)`; read by the exports and re-exports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M", statistical_year=None)`; read by the imports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
 | `GATSData_GetUNTradeExports` (`UNTradeExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_exports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_exports` | frozen, last release 2021-01-18 |
 | `GATSData_GetUNTradeImports` (`UNTradeImports/reporterCode/{reporterCode}/year/{year}`) | `get_un_imports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_imports` | frozen, last release 2021-01-18 |
 | `GATSData_GetUNTradeReExports` (`UNTradeReExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_reexports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_reexports` | frozen, last release 2021-01-18 |
@@ -274,7 +287,7 @@ server, per process.
 | `GATSData_GetCommodities` (`commodities`) | `list_commodities(search=None, hs10_code=None, product_type=None)`, live, cached for a day | `usda_gats_list_commodities` | alpha |
 | `GATSData_GetRegions` (`regions`) | `list_regions()`, packaged as `reference/regions.json` | `usda_gats_list_regions` | alpha |
 | `GATSData_GetCountries` (`countries`) | `list_countries(region_code=None, search=None)`, packaged as `reference/countries.json`, which checks the Census `partner_code` and the UN Trade `reporter_code` and `partner_code` filter | `usda_gats_list_countries` | alpha |
-| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None)`, packaged as `reference/HS6Commodities.json`, which checks a six-digit `hs6_code` | `usda_gats_list_hs6_commodities` | alpha |
+| `GATSData_GetHS6Commodities` (`HS6Commodities`) | `list_hs6_commodities(search=None, hs6_code=None)`, packaged as `reference/HS6Commodities.json`, which checks a six-digit UN Trade `hs6_code` | `usda_gats_list_hs6_commodities` | alpha |
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
@@ -287,11 +300,13 @@ feed's last release, 2021-01-18, as recorded on 2026-10-26.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and
-xippios-usda-esr among them); a release list answered from the client's cache spends
-none, and so does the commodities list answered from it within its day. A month series
-spends one request per month. The client
-keeps its own pace of one request per second; once the quota is spent it
-waits for the quota to come back when that takes at most 30 s, and otherwise raises
+xippios-usda-esr among them); an answer from the client's cache spends none. The client
+caches five answers and nothing else: the two Census release lists for an hour, the two
+UN Trade release lists for a day, since that feed is frozen, and the HS10 commodities
+list for a day; it stores a body of up to 16 MiB, twice core's default, so that the
+7.6 MB commodities list stays cached if it grows. A month series spends one request per
+month. The client keeps its own pace of one request per second; once the quota is spent
+it waits for the quota to come back when that takes at most 30 s, and otherwise raises
 `RateLimitError` with `retry_after` instead of sending.
 
 ## Upstream terms and attribution

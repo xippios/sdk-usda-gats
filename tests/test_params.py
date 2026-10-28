@@ -16,9 +16,11 @@ from xippios.usda.gats.models import Country, UnitOfMeasure
 from xippios.usda.gats.params import (
     PACKAGE,
     PACKAGED_LISTS,
+    shared_three_letter_code,
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
+    validate_hs6_prefix,
     validate_hs10_code,
     validate_month,
     validate_partner_code,
@@ -551,6 +553,103 @@ def test_the_membership_check_names_the_parameter_it_was_given_as() -> None:
     )
 
 
+def _shared_groups() -> dict[str, list[str]]:
+    """Every ISO or GENC code of the packaged countries list that several codes share."""
+    groups: dict[str, list[str]] = {}
+    for record in PackagedList.load(PACKAGE, "countries").records:
+        for field in ("isO3Code", "gencCode"):
+            three = record[field]
+            if isinstance(three, str) and len(three.strip()) == 3:
+                codes = groups.setdefault(three, [])
+                if record["countryCode"] not in codes:
+                    codes.append(str(record["countryCode"]))
+    return {three: codes for three, codes in groups.items() if len(codes) > 1}
+
+
+def _reporters(endpoint: str) -> set[str]:
+    return {str(r["reporterCode"]) for r in _fixture_records(endpoint, "all")}
+
+
+def test_the_un_release_lists_show_no_rule_for_codes_sharing_an_iso_code() -> None:
+    """Which of the codes sharing an ISO or GENC code report UN Trade data, by the two
+    recorded release lists (2026-10-26): a parent code and never its same-name child for
+    Australia, Norway, New Zealand, Israel, Italy and the Netherlands Antilles, but the
+    child and never the parent for France, Switzerland and Ethiopia, and both, for
+    different years, for Germany and Sudan. No rule on the codes ranks them, so a UN task
+    ranks a refusal's close codes by the release list itself (``tasks._un_ranked``). The
+    two lists agree on every one of these codes."""
+    groups = _shared_groups()
+    assert len(groups) == 23
+    assert all(shared_three_letter_code(three) for three in groups)
+    exports, imports = (_reporters(endpoint) for endpoint in UN_RELEASES)
+    members = {code for codes in groups.values() for code in codes}
+    assert members & exports == members & imports, "the two lists agree on these codes"
+    parent_of = {
+        str(r["countryCode"]): str(r["countryParentCode"])
+        for r in PackagedList.load(PACKAGE, "countries").records
+    }
+    reported = {three: [c for c in codes if c in exports] for three, codes in groups.items()}
+    for three, parent, child in [
+        ("AUS", "AS", "A2"),
+        ("NOR", "NO", "N3"),
+        ("NZL", "NZ", "N1"),
+        ("ISR", "IS", "I2"),
+        ("ITA", "IT", "I1"),
+        ("ANT", "NT", "N2"),
+    ]:
+        assert parent_of[child] == parent, three
+        assert reported[three] == [parent], f"{three}: the parent reports, never the child"
+    for three, parent, child in [("FRA", "FR", "F1"), ("CHE", "SZ", "SR"), ("ETH", "ET", "E1")]:
+        assert parent_of[child] == parent, three
+        assert reported[three] == [child], f"{three}: the child reports, never the parent"
+    for three, parent, child in [("DEU", "GM", "GE"), ("SDN", "SU", "S2")]:
+        assert parent_of[child] == parent, three
+        assert sorted(reported[three]) == sorted([parent, child]), f"{three}: both report"
+
+
+@pytest.mark.parametrize(
+    ("value", "shared"),
+    [
+        ("AUS", True),
+        ("aus", True),
+        ("FRA", True),
+        ("ISL", False),
+        ("CHN", False),
+        ("AS", False),
+        ("ZZZ", False),
+        (2, False),
+        (None, False),
+    ],
+)
+def test_shared_three_letter_code(value: object, shared: bool) -> None:
+    """``AUS`` is the ISO code of ``A2`` and ``AS``, read in capitals; ``ISL`` and ``CHN``
+    lead to one code each; a listed code, unknown text or no text is no shared code."""
+    assert shared_three_letter_code(value) is shared
+
+
+def test_reporters_rank_only_the_codes_a_shared_iso_code_leads_to() -> None:
+    """Without reporters the current code comes first (``A2``); with the UN Trade release
+    list's reporters, the one it holds (``AS``). The codes core's ``closest`` adds keep
+    their place after the three-letter matches: ``CH`` (China) stays third for ``CHE``
+    though it reports and ``SZ`` does not."""
+    reporters = _reporters("get_un_trade_export_data_release_info")
+    with pytest.raises(UnknownCode) as plain:
+        validate_reporter_code("AUS")
+    assert plain.value.closest[:2] == (("A2", "Australia"), ("AS", "Australia"))
+    with pytest.raises(UnknownCode) as ranked:
+        validate_reporter_code("AUS", reporters=reporters)
+    assert ranked.value.closest[:2] == (("AS", "Australia"), ("A2", "Australia"))
+    assert "Did you mean AS (Australia), A2 (Australia)" in ranked.value.message
+    with pytest.raises(UnknownCode) as partner:
+        validate_country_code("NOR", "partner_code", reason=UN_PARTNER_REASON, reporters=reporters)
+    assert partner.value.closest[:2] == (("NO", "Norway"), ("N3", "Norway"))
+    with pytest.raises(UnknownCode) as swiss:
+        validate_reporter_code("CHE", reporters=reporters)
+    assert [code for code, _ in swiss.value.closest] == ["SR", "SZ", "CH"]
+    assert "CH" in reporters
+    assert validate_reporter_code("AS", reporters=reporters) == "AS"
+
+
 def test_every_un_reporter_and_partner_recorded_passes_without_a_discontinuation_check() -> None:
     """Every reporter of both recorded release lists and every reporter and partner of the
     three recorded answers is a listed code; nine reporters are listed for years after
@@ -665,11 +764,22 @@ def test_a_full_hs6_code_the_list_lacks_names_the_codes_sharing_its_digits(
 )
 def test_other_hs6_filters_are_refused(code: object) -> None:
     """Seven digits, punctuation, spaces, letters, full-width or superscript digits, a
-    number: refused as malformed, before any list is read."""
-    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text") as info:
-        validate_hs6_code(code)  # type: ignore[arg-type]
-    assert not isinstance(info.value, UnknownCode)
-    assert "list_hs6_commodities lists the codes" in info.value.message
+    number: refused as malformed, before any list is read, by both HS6 checks."""
+    for check in (validate_hs6_code, validate_hs6_prefix):
+        with pytest.raises(
+            InvalidRequestError, match="hs6_code must be 1 to 6 digits as text"
+        ) as info:
+            check(code)  # type: ignore[arg-type]
+        assert not isinstance(info.value, UnknownCode)
+        assert "list_hs6_commodities lists the codes" in info.value.message
+
+
+@pytest.mark.parametrize("code", ["030444", "020119", "999999", "0201", "02", "0"])
+def test_the_hs6_prefix_check_is_the_shape_alone(code: str) -> None:
+    """``list_hs6_commodities``'s filter: 1 to 6 digits pass, a six-digit code the packaged
+    list lacks (``"020119"``) included, since it selects nothing from that list; the UN
+    Trade filter's check refuses that code."""
+    assert validate_hs6_prefix(code) == code
 
 
 def test_the_year_message_names_both_data_series() -> None:
@@ -679,3 +789,6 @@ def test_the_year_message_names_both_data_series() -> None:
         "year must be a four-digit year such as 2026, got 19. GATS's Census data starts in "
         "January 1967, its UN Trade data in 1989."
     )
+    with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit"):
+        validate_year(19, "statistical_year")
+    assert validate_year(1987, "statistical_year") == 1987

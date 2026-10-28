@@ -36,10 +36,12 @@ released in that hour is refused, and the refusal says when the list was fetched
 ``meta.published_at`` is the same release time parsed, without a zone as FAS prints it,
 with ``meta.published_at_naive`` set (ADR-0022, rule 2): an invented zone could shift it
 by hours in an as-of store, so a consumer that knows the publisher's zone assigns it.
-``get_census_release_dates`` returns every month's time as upstream states it and leaves
-``vintage`` and ``published_at`` empty, since it answers no single release; its
-``meta.retrieved_at`` is the time the client's cache stored the list when the cache
-answered (conventions §4), else the time the list arrived.
+``get_census_release_dates`` returns every month's time as upstream states it, or one
+statistical year's months (``statistical_year``, a filter applied after the one request
+and recorded in ``meta.request``), and leaves ``vintage`` and ``published_at`` empty,
+since it answers no single release; its ``meta.retrieved_at`` is the time the client's
+cache stored the list when the cache answered (conventions §4), else the time the list
+arrived.
 
 The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
 and ``get_census_reexport_series``, answer one partner over a range of months from the
@@ -77,7 +79,13 @@ upstream's words, under GATS's own codes. Reporter, partner and HS6 codes stay G
 source's codes (ADR-0003). Before the call they check the arguments, the two country
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
-list, cached like the Census ones. GATS answers an unknown reporter, a year far ahead and
+list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
+frozen. An ISO or GENC code that several listed codes share (``"AUS"``: ``A2``, ``AS``),
+given as a country code, is refused after that list is read, naming first the codes it
+holds as reporters (``AS``), since the recorded lists follow no rule on the codes
+themselves (``_un_ranked``); when the list cannot be read the refusal comes unranked, and
+every other refusal comes before any request. GATS answers an unknown reporter, a year
+far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
 ``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
@@ -106,7 +114,7 @@ fetch date is none. ``list_commodities`` is the exception: the HS10 list, 24,936
 7.6 MB, is not packaged, so it makes one live request (``GATSData_GetCommodities``),
 which the client keeps for a day (``_client.COMMODITIES_TTL``); its ``meta.retrieved_at``
 is when the list was fetched, from the cache's stored time on a hit, and ``vintage``
-stays empty. The lists' filters (``search``, ``region_code``, ``hs10_code``,
+stays empty. The lists' filters (``search``, ``region_code``, ``hs6_code``, ``hs10_code``,
 ``product_type``) only select records, which keep upstream's order and values;
 ``meta.request`` carries those given and leaves out one not given. ``meta.total`` stays
 unset: upstream reports no count.
@@ -124,6 +132,8 @@ from xippios.core import (
     Result,
     ResultCap,
     ResultMeta,
+    UnknownCode,
+    XippiosError,
     matches,
     sync,
 )
@@ -149,9 +159,11 @@ from xippios.usda.gats.models import (
 )
 from xippios.usda.gats.params import (
     PACKAGE,
+    shared_three_letter_code,
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
+    validate_hs6_prefix,
     validate_hs10_code,
     validate_partner_month,
     validate_reporter_code,
@@ -201,7 +213,13 @@ SERIES_NOTE = (
     "prefix such as the chapter '03', or ask for fewer months to see the rest"
 )
 """What a cut Census series tells the agent: which rows it got, its one filter and a
-shorter range, the two ways to narrow it."""
+shorter range, the two ways to narrow it.
+
+The longest range is the entry point's to set: ``xippios-usda-gats-mcp`` starts the MCP
+server with a ceiling of 24 months (``MCP_SERIES_MAX_MONTHS``), which its
+``--series-months`` sets from 1 to 60, against 60 in Python and over HTTP
+(``SERIES_MAX_MONTHS``, ``series_ceiling``). A range past the ceiling is refused before
+any request, naming it; this note only asks for fewer months."""
 
 SERIES_MAX_MONTHS = 60
 """Most months one Census series call spans in Python and over HTTP, five years, a
@@ -217,10 +235,11 @@ years: 24 requests, about 24 seconds at the client's pace, for one tool call. It
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
-    "200 months reach back more than sixteen years"
+    "200 months reach back more than sixteen years; filter by statistical_year, e.g. "
+    "1987, to see the rest"
 )
-"""What a cut release-date list tells the agent: which months it got. The tool has no
-filter, so the note names none (ADR-0016)."""
+"""What a cut release-date list tells the agent: which months it got and its one filter,
+``statistical_year``, which keeps one year's months, twelve at most (ADR-0016)."""
 
 UN_DATA_NOTE = (
     "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
@@ -242,10 +261,10 @@ COUNTRIES_NOTE = (
 lets the 322 packaged codes through whole, so only a list grown past it is cut."""
 
 HS6_NOTE = (
-    "filter by search, on the code, the name and the description, e.g. '0201' or "
-    "'wheat', to see the rest"
+    "filter by search, on the code, the name and the description, e.g. 'wheat', or by "
+    "hs6_code (a code or a prefix such as '0201') to see the rest"
 )
-"""What the cut HS6 list tells the agent: the one filter the tool has."""
+"""What the cut HS6 list tells the agent: the two filters the tool has."""
 
 COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
@@ -287,8 +306,9 @@ months' (197 records for exports to Iceland over July and August 2026, all of th
 the bounds; 777 for exports to China in August 2026 alone, which are cut).
 ``get_census_release_dates`` keeps the default bounds with a note of its own,
 ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive, 202608
-back to 201001 as recorded, 16 years and 8 months; the tool has no filter, so the note
-names none. The UN Trade data tools keep the default bounds too, with a note naming
+back to 201001 as recorded, 16 years and 8 months; the note names its one filter,
+``statistical_year``, which keeps one year's months, twelve at most, so any year fits.
+The UN Trade data tools keep the default bounds too, with a note naming
 their two filters, ``partner_code`` and ``hs6_code``: one reporter-year is one record per
 partner and HS6 code, about 240 bytes each, so 200 rows arrive within 64 KB; 3,980
 records for Iceland's 2019 exports, 23,396 (about 5.2 MB) for its imports, 75,919
@@ -301,7 +321,8 @@ past the default 200 rows, and about 57 KB of compact JSON, so its cap of 400 ro
 100,000 bytes lets it through whole, with a note naming its filters for a list that
 outgrows it. ``list_hs6_commodities`` (2,909 codes, about 0.7 MB) and
 ``list_commodities`` (24,936 records, about 7 MB) are too large to serve whole: they keep
-the default bounds with notes naming their filters. ``list_regions`` (15),
+the default bounds with notes naming their filters, ``search`` and ``hs6_code`` for the
+HS6 list. ``list_regions`` (15),
 ``list_units_of_measure`` (108) and ``list_customs_districts`` (53) fit the default.
 """
 
@@ -1053,8 +1074,10 @@ async def get_census_export_series_async(
     end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date`` (``"202607"``), and a month
     without exports adds none. 197 records for Iceland (``"IC"``) over July and August
-    2026, 105 and 92. Up to 60 months in Python and over HTTP; the MCP server starts with
-    24 (``--series-months`` raises it, up to 60). Requests: the exports release list
+    2026, 105 and 92. Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusExports`` request per month, one after
     another at the client's pace of one request per second, never at once. Each spends
@@ -1086,8 +1109,8 @@ async def get_census_export_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0203292000"`` for one
@@ -1124,8 +1147,10 @@ async def get_census_import_series_async(
     upstream order, with their consumption and CIF fields; every record carries its month
     in ``date``, and a month without imports adds none. 157 records for Iceland
     (``"IC"``) over July and August 2026, 83 and 74, of which 85 are fish (``hs10_code``
-    ``"03"``). Up to 60 months in Python and over HTTP; the MCP server starts with 24
-    (``--series-months`` raises it, up to 60). Requests: the imports release list
+    ``"03"``). Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the imports release list
     (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusImport`` request per month, one after
     another at the client's pace of one request per second, never at once, each one of
@@ -1149,8 +1174,8 @@ async def get_census_import_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0302140003"`` for one
@@ -1186,8 +1211,10 @@ async def get_census_reexport_series_async(
     the end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date``, and a month without
     re-exports adds none. 31 records for Iceland (``"IC"``) over July and August 2026, 19
-    and 12. Up to 60 months in Python and over HTTP; the MCP server starts with 24
-    (``--series-months`` raises it, up to 60). Requests: the exports release list
+    and 12. Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusReExports`` request per month, one
     after another at the client's pace of one request per second, never at once, each one
@@ -1212,8 +1239,8 @@ async def get_census_reexport_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"62"`` (chapter 62, 7 of Iceland's 31 records), or a full code such as
@@ -1236,7 +1263,7 @@ async def get_census_reexport_series_async(
 
 
 async def get_census_release_dates_async(
-    product_type: ProductType,
+    product_type: ProductType, statistical_year: int | None = None
 ) -> Result[list[DataReleaseInfo]]:
     """When GATS last released each month of US Census exports or imports: poll for releases.
 
@@ -1248,47 +1275,127 @@ async def get_census_release_dates_async(
     ``2026-06-24T08:00:00``. Compare it with a stored one to fetch only the months that
     changed; the six Census data tasks give their month's time as ``meta.vintage``, the
     three series tasks the newest among their months, the re-export forms the exports
-    list's, since re-exports have no list of their own. One request, kept by the client
-    for an hour; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
-    ``meta.vintage`` stay empty: the list is no single release.
+    list's, since re-exports have no list of their own. ``statistical_year`` keeps one
+    year's months, newest first. One request, kept by the client for an hour, the filter
+    applied after it; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at``
+    and ``meta.vintage`` stay empty: the list is no single release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
             (``GATSData_GetCensusExportDataReleaseInfo``), ``"M"`` imports
             (``GATSData_GetCensusImportDataReleaseInfo``).
+        statistical_year: Keep only the months of this statistical year, four digits,
+            e.g. ``2026`` (202608 back to 202601, eight months as recorded), ``2025``
+            (twelve, all re-released at ``2026-06-24T08:00:00``), ``1987`` (twelve, all
+            at ``2008-01-01T08:00:00``). A year the list lacks, before 1967 or not
+            released yet, gives an empty list. ``None`` (the default) keeps every month.
     """
     code = _product_type(product_type)
+    if statistical_year is not None:
+        validate_year(statistical_year, "statistical_year")
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
         releases, retrieved_at = await api.get_census_export_data_release_info()
     else:
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
         releases, retrieved_at = await api.get_census_import_data_release_info()
+    year = None if statistical_year is None else f"{statistical_year:04d}"
+    selected = [r for r in releases if year is None or r.statistical_year_month.startswith(year)]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
-        request={"product_type": code.value},
+        request={"product_type": code.value, "statistical_year": statistical_year},
     )
-    return Result(data=releases, meta=meta)
+    return Result(data=selected, meta=meta)
 
 
 def _un_check(
-    reporter_code: str, year: int, partner_code: str | None, hs6_code: str | None
+    reporter_code: str,
+    year: int,
+    partner_code: str | None,
+    hs6_code: str | None,
+    reporters: frozenset[str] | None = None,
 ) -> None:
-    """Every argument of a UN Trade data task, before any call; see ``params``.
+    """Every argument of a UN Trade data task, before the data call; see ``params``.
 
     Both country codes are checked for membership in the packaged countries list only:
     the Census tasks' ``discontinuedOn`` rule (``validate_partner_month``) does not apply,
     since the UN data keeps GATS's older codes for 2019, among them ``DA`` (Denmark,
-    discontinued 198712), a leaf that rule refuses after its month.
+    discontinued 198712), a leaf that rule refuses after its month. ``reporters`` ranks
+    the close codes of a refusal (``_un_ranked``).
     """
-    validate_reporter_code(reporter_code)
+    validate_reporter_code(reporter_code, reporters=reporters)
     validate_year(year)
     if partner_code is not None:
-        validate_country_code(partner_code, "partner_code", reason=UN_PARTNER_REASON)
+        validate_country_code(
+            partner_code, "partner_code", reason=UN_PARTNER_REASON, reporters=reporters
+        )
     if hs6_code is not None:
         validate_hs6_code(hs6_code)
+
+
+async def _un_releases(
+    product_type: ProductType,
+) -> tuple[list[UNTradeDataReleaseInfo], datetime]:
+    """The UN Trade release list of ``product_type`` and when it was retrieved.
+
+    One request, or none while the cache holds the list (``_client.UN_RELEASE_DATES_TTL``,
+    a day); the time is the cache's stored time on a hit, else the time the list arrived.
+    """
+    if product_type is ProductType.X:
+        return await api.get_un_trade_export_data_release_info()
+    return await api.get_un_trade_import_data_release_info()
+
+
+async def _un_ranked(
+    product_type: ProductType, check: Callable[[frozenset[str] | None], None]
+) -> None:
+    """Run a UN Trade task's argument checks; rank a shared ISO or GENC code's refusal.
+
+    ``check`` runs first with no reporters, before any request. A refusal of a country
+    code passes through unless the value is an ISO or GENC code several listed codes
+    share (``params.shared_three_letter_code``: ``"AUS"`` leads to ``A2`` and ``AS``).
+    For that one the flow's release list is read, which the task reads before its data
+    anyway, and ``check`` runs again with the list's reporters: the refusal names the
+    codes the list holds as reporters first, still before the data call. No rule on the
+    codes themselves ranks them: as recorded on 2026-10-26 both lists hold ``AS`` and
+    never ``A2`` (Australia), ``NO`` and never ``N3`` (Norway), but ``F1`` and never
+    ``FR`` (France), ``SR`` and never ``SZ`` (Switzerland), and both ``GM`` and ``GE``
+    (Germany) for different years. The list only ranks the refusal: when it cannot be
+    read (no key, a refused key, a spent quota, the network), the refusal is raised as
+    the first check made it, unranked, since a refused argument is refused whatever the
+    list does.
+
+    Args:
+        product_type: The flow whose list ranks the codes: ``ProductType.X`` for the
+            exports and re-exports tasks, ``ProductType.M`` for the imports task.
+        check: The task's checks with the reporters to rank by, e.g.
+            ``lambda reporters: _un_check("AUS", 2019, None, None, reporters)``.
+
+    Raises:
+        UnknownCode: A country code, a six-digit ``hs6_code``, the packaged lists lack;
+            for a shared ISO or GENC code ranked by the release list's reporters, or in
+            the countries list's order when the list cannot be read. Never the list's
+            own error: a ``ConfigError``, ``AuthError``, ``RateLimitError`` or
+            ``TransportError`` from reading it gives way to the refusal.
+        InvalidRequestError: Another argument is not valid.
+    """
+    refused: UnknownCode | None = None
+    try:
+        check(None)
+    except UnknownCode as unknown:
+        shared = shared_three_letter_code(unknown.value)
+        if unknown.param not in {"reporter_code", "partner_code"} or not shared:
+            raise
+        refused = unknown
+    if refused is None:
+        return
+    try:
+        releases, _ = await _un_releases(product_type)
+    except XippiosError:
+        raise refused from None
+    check(frozenset(release.reporter_code for release in releases))
 
 
 def _years(years: Iterable[str]) -> str:
@@ -1352,8 +1459,8 @@ def _un_release_of(
     asked = data or flow
     listed = {r.statistical_year for r in releases if r.reporter_code == reporter_code}
     when = (
-        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for an "
-        "hour; a reporter-year released since then is refused until it is fetched again."
+        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for a "
+        "day; a reporter-year released since then is refused until it is fetched again."
     )
     own = (
         f" GATS publishes no UN Trade release list for {asked}: the package checks the {flow} list."
@@ -1392,10 +1499,7 @@ async def _un_release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
-    if product_type is ProductType.X:
-        releases, fetched = await api.get_un_trade_export_data_release_info()
-    else:
-        releases, fetched = await api.get_un_trade_import_data_release_info()
+    releases, fetched = await _un_releases(product_type)
     flow, operation = UN_RELEASE_LISTS[product_type]
     return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
 
@@ -1461,13 +1565,16 @@ async def get_un_exports_async(
     with statistical year 2019, their newest release on 2021-01-18, as recorded on
     2026-10-26; ``get_un_release_dates`` lists every reporter-year. Two requests: the
     exports release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the
-    client for an hour) to check that the reporter-year is listed, then the year
+    client for a day) to check that the reporter-year is listed, then the year
     (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
-    75,919 records, about 17 MB). The arguments are checked before either: an unknown
-    reporter or partner code raises ``InvalidRequestError`` naming up to three close codes
-    (``"ISL"`` leads to ``"IC"``; ``"AUS"`` names ``"A2"`` before ``"AS"``, which is the
-    code the UN data uses), or pointing to ``list_countries``; the Census tasks'
-    discontinuation check does not apply. A reporter-year the list lacks raises
+    75,919 records, about 17 MB). The arguments are checked before either request, but
+    for an ISO or GENC code several listed codes share: an unknown reporter or partner
+    code raises ``InvalidRequestError`` naming up to three close codes (``"ISL"`` leads
+    to ``"IC"``), or pointing to ``list_countries``; the Census tasks' discontinuation
+    check does not apply. A shared ISO or GENC code is refused once the release list is
+    read, naming first the codes the list holds as reporters: ``"AUS"`` names ``"AS"``,
+    the code the UN data uses, before ``"A2"``; ``"FRA"`` names ``"F1"`` before
+    ``"FR"``; unranked when the list cannot be read. A reporter-year the list lacks raises
     ``NotFoundError`` naming the reporter's listed years and the list's latest year; a
     listed reporter-year without exports gives an empty list. ``meta.vintage`` is the
     reporter-year's release time from that list, as upstream states it
@@ -1490,7 +1597,10 @@ async def get_un_exports_async(
             ``"0304"`` for a heading. ``None`` (the default) keeps every product. Both
             filters apply after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.X,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.X, reporter_code, year)
     records = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
@@ -1513,10 +1623,12 @@ async def get_un_imports_async(
     the exports. The UN Trade data is frozen at statistical year 2019, last released on
     2021-01-18, as recorded on 2026-10-26. Two requests: the
     imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
-    for an hour), then the year (``GATSData_GetUNTradeImports``). The imports list is not
+    for a day), then the year (``GATSData_GetUNTradeImports``). The imports list is not
     the exports list: 68 reporter-years are listed only for imports, 32 only for exports.
-    The arguments are checked before either request as for ``get_un_exports``, membership
-    only. A reporter-year the imports list lacks raises ``NotFoundError`` naming the
+    The arguments are checked as for ``get_un_exports``, membership only and before
+    either request, but for an ISO code several listed codes share, refused once the
+    imports list is read, its reporters named first (``"NOR"`` names ``"NO"`` before
+    ``"N3"``). A reporter-year the imports list lacks raises ``NotFoundError`` naming the
     reporter's listed years; a listed reporter-year without imports gives an empty list.
     ``meta.vintage`` is the reporter-year's release time from that list
     (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at`` is
@@ -1537,7 +1649,10 @@ async def get_un_imports_async(
             for a heading. ``None`` (the default) keeps every product. Both filters apply
             after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.M,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.M, reporter_code, year)
     records = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
     meta = _un_meta(
@@ -1558,16 +1673,17 @@ async def get_un_reexports_async(
     1987, kept by the UN data). Iceland, listed for 2019 exports, answers an empty list
     for its 2019 re-exports. The UN Trade data is frozen at statistical year 2019, last
     released on 2021-01-18, as recorded on 2026-10-26. Two requests: the exports release list
-    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for an hour), then
+    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day), then
     the year (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export
     release list, so the package checks the exports list, by assumption, as the Census
     re-export tasks do: a reporter-year it lacks raises ``NotFoundError`` naming the
     reporter's listed export years, and ``meta.vintage`` is that list's release time for
     the reporter-year (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release,
-    not one the re-exports state. The arguments are checked before either request as for
-    ``get_un_exports``, membership only. A listed reporter-year without re-exports gives
-    an empty list; ``meta.published_at`` is the release time, naive
-    (``meta.published_at_naive``).
+    not one the re-exports state. The arguments are checked as for ``get_un_exports``,
+    membership only and before either request, but for an ISO code several listed codes
+    share, refused once the exports list is read, its reporters named first. A listed
+    reporter-year without re-exports gives an empty list; ``meta.published_at`` is the
+    release time, naive (``meta.published_at_naive``).
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
@@ -1584,13 +1700,26 @@ async def get_un_reexports_async(
             for a heading. ``None`` (the default) keeps every product. Both filters apply
             after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.X,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.X, reporter_code, year, "re-exports")
     records = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeReExports", release, reporter_code, year, partner_code, hs6_code
     )
     return Result(data=_un_selected(records, partner_code, hs6_code), meta=meta)
+
+
+def _un_release_dates_check(
+    reporter_code: str | None, year: int | None, reporters: frozenset[str] | None = None
+) -> None:
+    """The filters of ``get_un_release_dates``, those given; ``reporters`` as for ``_un_check``."""
+    if reporter_code is not None:
+        validate_reporter_code(reporter_code, reporters=reporters)
+    if year is not None:
+        validate_year(year)
 
 
 async def get_un_release_dates_async(
@@ -1609,9 +1738,10 @@ async def get_un_release_dates_async(
     differ: 32 reporter-years are listed only for exports, 68 only for imports. The three UN data
     tasks check a reporter-year against this list and give its time as ``meta.vintage``,
     the re-exports task the exports list's, since re-exports have no list of their own.
-    One request, kept by the client for an hour; ``meta.retrieved_at`` is when it was
-    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
-    release. The filters apply after the request.
+    One request, kept by the client for a day, since the feed is frozen;
+    ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
+    ``meta.vintage`` stay empty: the list is no single release. The filters apply after
+    the request.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
@@ -1620,20 +1750,17 @@ async def get_un_release_dates_async(
         reporter_code: Keep only this reporter's years, GATS's two-character code as
             ``list_countries`` lists it, e.g. ``"IC"`` (Iceland, 31 years, 1989 to
             2019), ``"MC"`` (Macau, 12 years), ``"IN"`` (India, to 2016). Checked
-            against the packaged list, membership only. ``None`` (the default) keeps
-            every reporter.
+            against the packaged list, membership only; an ISO code several listed
+            codes share is refused naming first the code the list holds (``"AUS"``
+            names ``"AS"``). ``None`` (the default) keeps every reporter.
         year: Keep only this statistical year, four digits, e.g. ``2019`` (32
             reporters), ``2016``. ``None`` (the default) keeps every year.
     """
     code = _product_type(product_type)
-    if reporter_code is not None:
-        validate_reporter_code(reporter_code)
-    if year is not None:
-        validate_year(year)
-    if code is ProductType.X:
-        releases, retrieved_at = await api.get_un_trade_export_data_release_info()
-    else:
-        releases, retrieved_at = await api.get_un_trade_import_data_release_info()
+    await _un_ranked(
+        code, lambda reporters: _un_release_dates_check(reporter_code, year, reporters)
+    )
+    releases, retrieved_at = await _un_releases(code)
     statistical_year = None if year is None else f"{year:04d}"
     selected = [
         r
@@ -1715,7 +1842,9 @@ async def list_countries_async(
     return Result(data=selected, meta=packaged.meta(SOURCE, request=request))
 
 
-async def list_hs6_commodities_async(search: str | None = None) -> Result[list[HS6Commodity]]:
+async def list_hs6_commodities_async(
+    search: str | None = None, hs6_code: str | None = None
+) -> Result[list[HS6Commodity]]:
     """List GATS's HS6 commodities with their codes, names and units of measure.
 
     Answered from ``GATSData_GetHS6Commodities`` as packaged with this version
@@ -1726,22 +1855,33 @@ async def list_hs6_commodities_async(search: str | None = None) -> Result[list[H
     Re-export data records obtained by querying UN Trade Data"; the first six digits of
     every HS10 code in the Census records are a listed code. For HS10 codes use
     ``list_commodities``. ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-26); ``meta.vintage`` stays empty.
+    (2026-10-26); ``meta.vintage`` stays empty. The filters only select codes, in code
+    order.
 
     Args:
         search: Keep the commodities where this text occurs, ignoring case, in the code,
             the name or the description, e.g. ``"wheat"`` (15 codes, durum and other
             wheat, wheat flour, buckwheat), ``"0201"`` (the three codes of heading 0201,
             bovine meat fresh or chilled), ``"bovine"``. Omit (``None``) for all.
+        hs6_code: Keep the codes that start with this, 1 to 6 digits as text: a full
+            code such as ``"100190"`` or a prefix such as ``"0201"`` (heading 0201, three
+            codes) or ``"02"`` (chapter 02, 81 codes). A prefix no code starts with
+            yields an empty list. Omit (``None``) for all.
     """
     _search(search)
+    if hs6_code is not None:
+        validate_hs6_prefix(
+            hs6_code, hint="search finds the codes by name or description, e.g. 'wheat'."
+        )
     packaged = PackagedList.load(PACKAGE, "HS6Commodities")
     selected = [
         c
         for c in packaged.parse(HS6Commodity, source=SOURCE)
-        if matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
+        if (hs6_code is None or c.hs6_code.startswith(hs6_code))
+        and matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
     ]
-    return Result(data=selected, meta=packaged.meta(SOURCE, request={"search": search}))
+    request = {"search": search, "hs6_code": hs6_code}
+    return Result(data=selected, meta=packaged.meta(SOURCE, request=request))
 
 
 async def list_units_of_measure_async() -> Result[list[UnitOfMeasure]]:
@@ -1797,8 +1937,9 @@ async def list_commodities_async(
     spaces (``"0011010   "``) and no description, kept as sent. A code is not unique: it
     repeats across product types and with a later ``start_date`` (``"0207410000"`` under
     ``"M"`` is chicken cuts from ``"198901"`` and ducks from ``"201201"``). Not packaged,
-    for its size: one request, kept by the client for a day, so a search after the first
-    sends nothing; ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
+    for its size: one request, kept by the client for a day and parsed into records once
+    for it, so a search after the first sends nothing and builds no records anew;
+    ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
     and ``meta.published_at`` stay empty: upstream gives the list no version or date. The
     filters apply after the one request; for HS6 codes use ``list_hs6_commodities``.
 

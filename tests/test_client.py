@@ -41,12 +41,15 @@ from xippios.core.testing import (
 from xippios.usda.gats import api
 from xippios.usda.gats._client import (
     BASE_URL,
+    CACHE_MAX_BYTES,
     CACHED_PATHS,
     COMMODITIES_PATH,
     COMMODITIES_TTL,
     RATE_LIMIT,
     RELEASE_DATES_PATHS,
     RELEASE_DATES_TTL,
+    UN_RELEASE_DATES_PATHS,
+    UN_RELEASE_DATES_TTL,
     PathCaches,
     auth,
     cache,
@@ -57,6 +60,7 @@ from xippios.usda.gats._client import (
     config,
     gateway,
     release_dates_cache,
+    un_release_dates_cache,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -347,24 +351,33 @@ async def test_core_retries_a_429_only_within_its_backoff(
 
 
 def test_the_client_caches_five_paths_and_nothing_else() -> None:
-    """Core's cache on the four release-date paths, Census and UN Trade, for an hour, and
-    the commodities path, for a day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per
-    TTL behind ``PathCaches``): the data, the countries and every other path go to the
-    wire."""
+    """Core's cache on the two Census release-date paths for an hour, the two UN Trade
+    release-date paths for a day, the feed being frozen, and the commodities path for a
+    day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per TTL behind ``PathCaches``):
+    the data, the countries and every other path go to the wire. A body of up to 16 MiB
+    is stored, twice core's default (ADR-0019, decision 3)."""
     assert config.cache is cache
     assert config.cache_filter is cache_filter
+    assert config.cache_max_bytes == CACHE_MAX_BYTES == 16 * 1024 * 1024
     assert isinstance(cache, PathCaches)
-    assert release_dates_cache.ttl == RELEASE_DATES_TTL == 3600.0
-    assert commodities_cache.ttl == COMMODITIES_TTL == 86400.0
-    releases = {EXPORT_RELEASES, IMPORT_RELEASES, UN_EXPORT_RELEASES, UN_IMPORT_RELEASES}
-    assert releases == RELEASE_DATES_PATHS
+    assert (release_dates_cache.ttl, release_dates_cache.maxsize) == (RELEASE_DATES_TTL, 2)
+    assert RELEASE_DATES_TTL == 3600.0
+    assert (un_release_dates_cache.ttl, un_release_dates_cache.maxsize) == (
+        UN_RELEASE_DATES_TTL,
+        2,
+    )
+    assert UN_RELEASE_DATES_TTL == 86400.0
+    assert (commodities_cache.ttl, commodities_cache.maxsize) == (COMMODITIES_TTL, 1)
+    assert COMMODITIES_TTL == 86400.0
+    assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
+    assert {UN_EXPORT_RELEASES, UN_IMPORT_RELEASES} == UN_RELEASE_DATES_PATHS
     assert COMMODITIES_PATH == "/api/gats/commodities"
-    assert {*releases, COMMODITIES_PATH} == CACHED_PATHS
+    assert {*RELEASE_DATES_PATHS, *UN_RELEASE_DATES_PATHS, COMMODITIES_PATH} == CACHED_PATHS
     assert cache.by_path == {
         EXPORT_RELEASES: release_dates_cache,
         IMPORT_RELEASES: release_dates_cache,
-        UN_EXPORT_RELEASES: release_dates_cache,
-        UN_IMPORT_RELEASES: release_dates_cache,
+        UN_EXPORT_RELEASES: un_release_dates_cache,
+        UN_IMPORT_RELEASES: un_release_dates_cache,
         COMMODITIES_PATH: commodities_cache,
     }
     for path, cached in [
@@ -391,29 +404,38 @@ def _entry(stored_at: float) -> CachedResponse:
 
 
 def test_each_path_keeps_its_own_ttl() -> None:
-    """``PathCaches`` with clocks of its own: two hours on, the release list's entry has
-    expired and the commodities entry still answers; past a day, it has expired too. A
-    key of no path named, or of a named path with a query, is neither stored nor looked
-    up, and ``by_path`` cannot be changed under the routing."""
+    """``PathCaches`` with clocks of its own, routed as the client's: two hours on, the
+    Census release list's entry has expired while the UN Trade release list's and the
+    commodities entry still answer; past a day, they have expired too. A key of no path
+    named, or of a named path with a query, is neither stored nor looked up, and
+    ``by_path`` cannot be changed under the routing."""
     now = [1_000_000.0]
-    hourly = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8, clock=lambda: now[0])
+    hourly = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=2, clock=lambda: now[0])
+    un_daily = MemoryCache(ttl=UN_RELEASE_DATES_TTL, maxsize=2, clock=lambda: now[0])
     daily = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1, clock=lambda: now[0])
-    caches = PathCaches({EXPORT_RELEASES: hourly, COMMODITIES_PATH: daily})
+    caches = PathCaches(
+        {EXPORT_RELEASES: hourly, UN_EXPORT_RELEASES: un_daily, COMMODITIES_PATH: daily}
+    )
     with pytest.raises(TypeError):
         caches.by_path[REGIONS] = hourly  # type: ignore[index]
     releases = cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}"))
+    un_releases = cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}"))
     commodities = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
     other = cache_key("GET", httpx.URL(f"{BASE_URL}{REGIONS}"))
     queried = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}", params={"a": "1"}))
-    for key in (releases, commodities, other, queried):
+    for key in (releases, un_releases, commodities, other, queried):
         caches.set(key, _entry(now[0]))
-    assert (len(hourly), len(daily), len(caches)) == (1, 1, 2), "the other keys are dropped"
+    assert (len(hourly), len(un_daily), len(daily), len(caches)) == (1, 1, 1, 3), (
+        "the other keys are dropped"
+    )
     assert caches.get(other) is None
     assert caches.get(queried) is None
     now[0] += 2 * 3600
     assert caches.get(releases) is None, "an hour has passed"
+    assert caches.get(un_releases) is not None, "a day has not"
     assert caches.get(commodities) is not None, "a day has not"
-    now[0] += COMMODITIES_TTL
+    now[0] += 86400.0
+    assert caches.get(un_releases) is None
     assert caches.get(commodities) is None
     caches.set(commodities, _entry(now[0]))
     caches.clear()
@@ -439,6 +461,18 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
     assert len(again) == len(first) == 24936
     assert commodities.call_count == 1
     assert sent_urls(commodities) == [f"{BASE_URL}{COMMODITIES_PATH}"]
+
+
+def test_the_recorded_hs10_list_fits_the_cache_bound_with_room() -> None:
+    """ADR-0019, decision 3: core's default bound, 8 MiB, would leave the recorded HS10
+    list less than 10 % of room, so the package raises it to 16 MiB. The recorded body,
+    as ``httpx`` gives the client its bytes, must stay under three quarters of the bound:
+    a re-recording that grew towards it fails here, before the day's cache silently stops
+    storing the list."""
+    body = load_fixture(FIXTURES / "get_commodities" / "all.json").response.body
+    assert isinstance(body, str)
+    size = len(body.encode("utf-8"))
+    assert size <= CACHE_MAX_BYTES * 3 // 4, f"{size} bytes, past 75 % of {CACHE_MAX_BYTES}"
 
 
 @pytest.mark.anyio
@@ -476,12 +510,12 @@ async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> Non
 
 
 @pytest.mark.anyio
-async def test_the_un_release_lists_land_in_the_release_dates_store(
+async def test_the_un_release_lists_land_in_the_days_store(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Through the real client: each UN Trade list is an entry of the hour's store, beside
-    the Census lists, never the day's; the second call sends nothing and says when the
-    entry was stored."""
+    """Through the real client: each UN Trade list is an entry of its own day's store,
+    never the Census lists' hour's store nor the commodities list's; the second call
+    sends nothing and says when the entry was stored."""
     exports = replay_fixture("get_un_trade_export_data_release_info", "all")
     imports = replay_fixture("get_un_trade_import_data_release_info", "all")
     replay_fixture("get_census_export_data_release_info", "all")
@@ -489,10 +523,12 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
     await api.get_un_trade_import_data_release_info()
     await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
-    assert (len(release_dates_cache), len(commodities_cache)) == (3, 0)
+    stores = (len(un_release_dates_cache), len(release_dates_cache), len(commodities_cache))
+    assert stores == (2, 1, 0)
     for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
         key = cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
-        assert release_dates_cache.get(key) is not None, path
+        assert un_release_dates_cache.get(key) is not None, path
+        assert release_dates_cache.get(key) is None, path
         assert commodities_cache.get(key) is None, path
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None

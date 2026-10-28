@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `get_census_release_dates(product_type, statistical_year=None)`: `statistical_year`
+  keeps one year's months, newest first (2026 gives the eight months 202601 to 202608
+  as recorded); a year the list lacks gives an empty list. The filter applies after the
+  one request and is recorded in `meta.request`; the MCP tool's note on a cut list names
+  it.
+- `list_hs6_commodities(search=None, hs6_code=None)`: `hs6_code` keeps the packaged codes
+  that start with it, 1 to 6 digits, as `list_commodities`' `hs10_code` does (`"0201"`
+  gives the three codes of heading 0201); a prefix no code starts with gives an empty
+  list. `meta.request` records it, and the MCP tool's note names it beside `search`.
+  `params.validate_hs6_prefix` is its check.
+
 ### Changed
 
 - Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15),
@@ -47,6 +60,36 @@ All notable changes to this project are documented here. The format follows
   `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
   are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
   fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
+- The client keeps the two UN Trade release-date lists for a day, where it kept them for
+  an hour with the Census ones: the UN Trade feed is frozen (statistical year 2019 its
+  latest, 2021-01-18 its last release), so a UN task spends one request per flow per day
+  on its list. A refusal from the cached UN list says it is kept for a day. The Census
+  release lists stay at an hour (`_client.UN_RELEASE_DATES_TTL`,
+  `_client.un_release_dates_cache`).
+- `list_commodities` parses the HS10 list into records once for each day the client
+  keeps it, where it parsed the 24,936 records on every search: the endpoint wrapper
+  keeps the records beside the cache entry they came from and returns them for every
+  answer from that entry; a new entry is parsed again. `meta.retrieved_at` is still the
+  entry's stored time.
+- The UN Trade tasks refuse an ISO or GENC code that several listed codes share naming
+  first the codes the flow's release list holds as reporters: `get_un_exports("AUS",
+  2019)` names `AS`, the code the UN data uses, before `A2`, where it named `A2` first.
+  The recorded lists follow no rule on the codes (the parent reports for Australia and
+  Norway, the child for France and Switzerland, both for Germany), so such a refusal
+  reads the list first, which the task reads anyway, and still comes before the data
+  request; when the list cannot be read (no key, a spent quota, the network) the refusal
+  comes unranked, never as the list's error. Every other refusal still comes before any
+  request, and the Census tasks keep the current code first.
+  `params.validate_country_code` and `params.validate_reporter_code` take the
+  `reporters` to rank by; `params.shared_three_letter_code` says when a value is such a
+  code.
+- The three Census series tasks' descriptions, the MCP tools' text, say that the entry
+  point `xippios-usda-gats-mcp` starts the MCP server with a ceiling of 24 months, which
+  its `--series-months` sets from 1 to 60, against 60 in Python and over HTTP; they said
+  the MCP server starts with 24.
+- The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
+  core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
+  default, and a list grown past it would no longer have been cached for the day.
 
 ### Fixed
 

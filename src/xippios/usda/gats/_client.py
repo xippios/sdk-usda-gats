@@ -15,12 +15,16 @@ gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to ``RateLimitError`` 
 error answers to a valid key included; the gateway sends no reset header.
 
 Core's response cache keeps five answers and nothing else (``cache``, ``cache_filter``,
-``CACHED_PATHS``): the Census and UN Trade release-date lists for an hour, since every
-Census data task fetches its flow's list before the data and would otherwise cost two
-requests against the hourly quota, and the HS10 commodities list for a day, 7.6 MB that
+``CACHED_PATHS``): the two Census release-date lists for an hour, since every Census data
+task fetches its flow's list before the data and would otherwise cost two requests
+against the hourly quota; the two UN Trade release-date lists for a day, since the UN
+Trade feed is frozen (both lists end with statistical year 2019, last released on
+2021-01-18, as recorded on 2026-10-26), so a UN task costs one keyed call per flow per day
+for its list instead of one per hour; and the HS10 commodities list for a day, 7.6 MB that
 ``tasks.list_commodities`` fetches whole for every search. Core's ``MemoryCache`` has one
-TTL, so ``cache`` is a ``CacheBackend`` of the package's own over two of them,
-``PathCaches``.
+TTL, so ``cache`` is a ``CacheBackend`` of the package's own over three of them,
+``PathCaches``. The cache stores a body of up to ``CACHE_MAX_BYTES``, 16 MiB, twice
+core's default, so that the HS10 list stays cached when it grows (ADR-0019, decision 3).
 
 GATS's own answers to an unknown partner, a month out of range or a month without data
 are not mapped here: what they are is recorded under
@@ -65,11 +69,9 @@ RELEASE_DATES_PATHS: frozenset[str] = frozenset(
     {
         "/api/gats/census/data/exports/dataReleaseDates",
         "/api/gats/census/data/imports/dataReleaseDates",
-        "/api/gats/UNTrade/data/exports/dataReleaseDates",
-        "/api/gats/UNTrade/data/imports/dataReleaseDates",
     }
 )
-"""The Census and UN Trade release-date lists, cached for ``RELEASE_DATES_TTL``.
+"""The two Census release-date lists, cached for ``RELEASE_DATES_TTL``, an hour.
 
 Each Census data task (``tasks.get_census_exports`` and the five others) first fetches its
 flow's list, ``GATSData_GetCensusExportDataReleaseInfo`` or
@@ -82,14 +84,25 @@ statistical month and changes only when a month is released or revised: as recor
 (``tests/fixtures/get_census_export_data_release_info/all.json``), 2026-08 was
 released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released
 2023-01 to 2025-12 on 2026-06-24.
+"""
 
-The UN Trade lists, ``GATSData_GetUNTradeExportDataReleaseInfo`` and
-``GATSData_GetUNTradeImportDataReleaseInfo``, are one record per reporter and statistical
-year, about 400 KB of JSON each, and as recorded on 2026-10-26 they end with 2019, last
-released on 2021-01-18
-(``tests/fixtures/get_un_trade_export_data_release_info/all.json``); they are cached
-alike, so that a task that reads one before the data costs one request per flow per
-``RELEASE_DATES_TTL`` too.
+UN_RELEASE_DATES_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/gats/UNTrade/data/exports/dataReleaseDates",
+        "/api/gats/UNTrade/data/imports/dataReleaseDates",
+    }
+)
+"""The two UN Trade release-date lists, cached for ``UN_RELEASE_DATES_TTL``, a day.
+
+``GATSData_GetUNTradeExportDataReleaseInfo`` and
+``GATSData_GetUNTradeImportDataReleaseInfo`` are one record per reporter and statistical
+year, about 400 KB of JSON each. Each UN Trade data task (``tasks.get_un_exports`` and
+the two others) reads its flow's list before the data to check the reporter-year, and
+``tasks.get_un_release_dates`` answers from it; from the cache a task costs one request
+per flow per ``UN_RELEASE_DATES_TTL``. As recorded on 2026-10-26 both lists end with
+statistical year 2019 and their newest release is dated 2021-01-18
+(``tests/fixtures/get_un_trade_export_data_release_info/all.json``): the feed is frozen,
+so a day's cache loses nothing an hour's would catch.
 """
 
 COMMODITIES_PATH = "/api/gats/commodities"
@@ -100,16 +113,27 @@ One answer of 24,936 records and about 7.6 MB of JSON, the largest in the family
 no request for a day.
 """
 
-CACHED_PATHS: frozenset[str] = RELEASE_DATES_PATHS | {COMMODITIES_PATH}
+CACHED_PATHS: frozenset[str] = RELEASE_DATES_PATHS | UN_RELEASE_DATES_PATHS | {COMMODITIES_PATH}
 """The only paths the client caches; the data answers, the countries list and every other
 path are never cached."""
 
 RELEASE_DATES_TTL = 3600.0
-"""Seconds a cached release-date list answers: one hour.
+"""Seconds a cached Census release-date list answers: one hour.
 
 Within that hour after a release the cached list can lag upstream: a task can refuse a
 month Census has just released, as not released yet, until the entry expires. Its
 ``NotFoundError`` then says when the list was fetched.
+"""
+
+UN_RELEASE_DATES_TTL = 86400.0
+"""Seconds a cached UN Trade release-date list answers: one day.
+
+The UN Trade feed is frozen: as recorded on 2026-10-26 both lists end with statistical
+year 2019, and their newest release is dated 2021-01-18, so nothing has been released
+for years and an hour's cache would spend one keyed call per flow per hour for the same
+answer; a day spends one per flow per day. Should GATS release a reporter-year after all,
+a task can refuse it as not listed for up to a day, and its ``NotFoundError`` says when
+the list was fetched.
 """
 
 COMMODITIES_TTL = 86400.0
@@ -119,6 +143,18 @@ The list names codes, their start months and their units, which change with the 
 revisions and Census's schedule changes, not from hour to hour; a day keeps a code added
 upstream out of a search for at most a day, and ``meta.retrieved_at`` says when the list
 was fetched.
+"""
+
+CACHE_MAX_BYTES = 16 * 1024 * 1024
+"""The largest body the client's cache stores, 16 MiB: ``ClientConfig.cache_max_bytes``.
+
+Core's default is 8 MiB, and a source that caches a larger answer raises the bound and
+says why (ADR-0019, decision 3). The HS10 commodities list was 7,592,916 bytes as
+recorded on 2026-10-26 (``tests/fixtures/get_commodities/all.json``), 795,692 bytes
+(9.5 %) under the default: a refresh upstream that grew it past 8 MiB would silently stop
+the day's cache, and every ``tasks.list_commodities`` search would fetch the 7.6 MB again.
+16 MiB leaves it room to double; the release-date lists, about 81 KB and 400 KB, are far
+below either bound.
 """
 
 
@@ -178,9 +214,13 @@ class PathCaches:
         return sum(len(store) for store in self._stores)
 
 
-release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=8)
-"""The release-date lists' cache: four entries, the Census lists of about 81 KB of JSON
-each and the UN Trade lists of about 400 KB, so eight are plenty."""
+release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=2)
+"""The Census release-date lists' cache: its two entries, about 81 KB of JSON each, kept
+for an hour."""
+
+un_release_dates_cache = MemoryCache(ttl=UN_RELEASE_DATES_TTL, maxsize=2)
+"""The UN Trade release-date lists' cache: its two entries, about 400 KB of JSON each,
+kept for a day."""
 
 commodities_cache = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1)
 """The HS10 commodities list's cache: its one entry, about 7.6 MB, kept for a day."""
@@ -188,14 +228,16 @@ commodities_cache = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1)
 cache = PathCaches(
     {
         **dict.fromkeys(sorted(RELEASE_DATES_PATHS), release_dates_cache),
+        **dict.fromkeys(sorted(UN_RELEASE_DATES_PATHS), un_release_dates_cache),
         COMMODITIES_PATH: commodities_cache,
     }
 )
 """Core's response cache, shared by every caller of ``client`` in the process.
 
-Only HTTP 200 answers are stored, and only for ``CACHED_PATHS`` (``cache_filter``): the
-release-date lists for an hour, the commodities list for a day. A hit sends nothing, so
-the rate limiter and the quota policy never see it (ADR-0015).
+Only HTTP 200 answers of up to ``CACHE_MAX_BYTES`` are stored, and only for
+``CACHED_PATHS`` (``cache_filter``): the Census release-date lists for an hour, the UN
+Trade release-date lists and the commodities list for a day. A hit sends nothing, so the
+rate limiter and the quota policy never see it (ADR-0015).
 """
 
 
@@ -233,6 +275,7 @@ config = gateway.install(
         rate_limit=RATE_LIMIT,
         cache=cache,
         cache_filter=cache_filter,
+        cache_max_bytes=CACHE_MAX_BYTES,
         headers={"Accept": "application/json"},
         classify=classify,
     )
@@ -246,12 +289,15 @@ __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
     "CACHED_PATHS",
+    "CACHE_MAX_BYTES",
     "COMMODITIES_PATH",
     "COMMODITIES_TTL",
     "RATE_LIMIT",
     "RELEASE_DATES_PATHS",
     "RELEASE_DATES_TTL",
     "SOURCE",
+    "UN_RELEASE_DATES_PATHS",
+    "UN_RELEASE_DATES_TTL",
     "PathCaches",
     "auth",
     "cache",
@@ -262,4 +308,5 @@ __all__ = [
     "config",
     "gateway",
     "release_dates_cache",
+    "un_release_dates_cache",
 ]

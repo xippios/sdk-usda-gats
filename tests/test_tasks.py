@@ -19,7 +19,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, NotFoundError, RateLimitError
+from xippios.core import InvalidRequestError, NotFoundError, RateLimitError, UnknownCode
 from xippios.core.client import cache_key
 from xippios.core.mcp import build_parser, main
 from xippios.core.testing import (
@@ -32,7 +32,6 @@ from xippios.core.testing import (
 
 from xippios.usda.gats import __version__, tasks
 from xippios.usda.gats._client import BASE_URL, cache
-from xippios.usda.gats.errors import UnknownCode
 from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
 
@@ -330,7 +329,7 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
     """respx is active with no routes mounted, so any upstream call would fail loudly."""
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         tasks.get_census_exports("ZZ", 2026, 8)
-    assert unknown.value.closest == []
+    assert unknown.value.closest == ()
     assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
     assert "list_countries lists every one" in unknown.value.message
     with pytest.raises(UnknownCode, match=r"Did you mean CH \(China\)") as close:
@@ -410,7 +409,7 @@ def test_an_iso_code_leads_to_the_partner_code_before_any_request(
     (Comoros), which difflib finds close by its letters."""
     with pytest.raises(UnknownCode) as info:
         tasks.get_census_exports("CHN", 2026, 8)
-    assert info.value.closest[:2] == [("CH", "China"), ("CN", "Comoros")]
+    assert info.value.closest[:2] == (("CH", "China"), ("CN", "Comoros"))
     assert "Did you mean CH (China), CN (Comoros)?" in info.value.message
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
         tasks.get_customs_district_imports("ISL", 2026, 8)
@@ -423,13 +422,13 @@ def test_an_unknown_customs_district_is_refused_before_any_request(
 ) -> None:
     with pytest.raises(UnknownCode) as info:
         task("IC", 2026, 8, customs_district_id=12)
-    assert info.value.closest == [
+    assert info.value.closest == (
         ("11", "PHILADELPHIA, PA."),
         ("13", "BALTIMORE, MD."),
         ("10", "NEW YORK, N.Y."),
-    ]
+    )
     assert info.value.message.startswith(
-        "12 is not a customs_district_id in GATS's customsDistricts list"
+        "12 is not a customs_district_id in the packaged customsDistricts list"
     )
     with pytest.raises(InvalidRequestError, match="customs_district_id must be an integer"):
         task("IC", 2026, 8, customs_district_id=True)
@@ -1101,7 +1100,7 @@ def test_series_arguments_are_checked_before_any_request(
         task("SZ", 2026, 6, 2026, 8)
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         task("ZZ", 2026, 6, 2026, 8)
-    assert unknown.value.closest == []
+    assert unknown.value.closest == ()
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
         task("ISL", 2026, 6, 2026, 8)
     with pytest.raises(InvalidRequestError, match="hs10_code must be 1 to 10 digits"):
@@ -1873,7 +1872,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
     for task in UN_TASKS:
         with pytest.raises(UnknownCode, match="'ZZ' is not a reporter_code") as unknown:
             task("ZZ", 2019)
-        assert unknown.value.closest == []
+        assert unknown.value.closest == ()
         assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
         assert "GATS answers an unknown reporter code with an empty result" in (
             unknown.value.message
@@ -1894,7 +1893,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
             task("IC", 2019, hs6_code="020119")
         assert absent.value.closest[0] == ("020110", "Bovine Carcass Fr/Ch")
         assert absent.value.message.startswith(
-            "'020119' is not a hs6_code in GATS's HS6Commodities list"
+            "'020119' is not a hs6_code in the packaged HS6Commodities list"
         )
     with pytest.raises(InvalidRequestError, match='product_type must be "X" \\(exports\\)'):
         tasks.get_un_release_dates("R")  # type: ignore[arg-type]

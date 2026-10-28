@@ -101,18 +101,19 @@ time is 2021-01-18. ``get_un_release_dates`` returns either list, whole or filte
 reporter or year, with ``retrieved_at`` from the cache as for the Census list.
 
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
-make no upstream call (sdk-usda-psd's shape): ``meta.endpoint`` is the operation the list
-was fetched from (``"GATSData_GetCountries"``), ``meta.retrieved_at`` is when the task
-answered, and ``meta.vintage`` is the day the package fetched the list (``"2026-10-26"``,
-UTC), the ``fetched`` date as the file stores it: upstream gives these lists no version
-identifier. ``list_commodities`` is the exception: the HS10 list, 24,936 records and
+make no upstream call, through core's ``PackagedList`` (ADR-0022, rule 1):
+``meta.endpoint`` is the operation the list was fetched from (``"GATSData_GetCountries"``),
+``meta.retrieved_at`` is when the package fetched it, the file's ``fetched`` (a bare day
+such as ``"2026-10-26"`` reads as its 00:00 UTC until the next refresh writes the time),
+and ``meta.vintage`` stays empty: upstream gives these lists no version identifier, and a
+fetch date is none. ``list_commodities`` is the exception: the HS10 list, 24,936 records and
 7.6 MB, is not packaged, so it makes one live request (``GATSData_GetCommodities``),
 which the client keeps for a day (``_client.COMMODITIES_TTL``); its ``meta.retrieved_at``
 is when the list was fetched, from the cache's stored time on a hit, and ``vintage``
 stays empty. The lists' filters (``search``, ``region_code``, ``hs10_code``,
 ``product_type``) only select records, which keep upstream's order and values;
-``meta.request`` carries them, ``None`` when not given. ``meta.total`` stays unset:
-upstream reports no count.
+``meta.request`` carries those given and leaves out one not given. ``meta.total`` stays
+unset: upstream reports no count.
 """
 
 import argparse
@@ -120,7 +121,15 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
-from xippios.core import InvalidRequestError, NotFoundError, Result, ResultMeta, parse, sync
+from xippios.core import (
+    InvalidRequestError,
+    NotFoundError,
+    PackagedList,
+    Result,
+    ResultMeta,
+    matches,
+    sync,
+)
 
 from xippios.usda.gats import api
 from xippios.usda.gats._client import SOURCE
@@ -142,8 +151,7 @@ from xippios.usda.gats.models import (
     UNTradeRecord,
 )
 from xippios.usda.gats.params import (
-    PackagedList,
-    packaged_values,
+    PACKAGE,
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
@@ -1629,37 +1637,6 @@ async def get_un_release_dates_async(
     return Result(data=selected, meta=meta)
 
 
-def _packaged[M](name: str, kind: type[list[M]]) -> tuple[list[M], PackagedList]:
-    """The packaged list ``name`` parsed into ``kind``, in upstream order, with its file."""
-    packaged = packaged_values(name)
-    if packaged is None:  # pragma: no cover - the five lists ship with the package
-        raise KeyError(name)
-    return parse(kind, packaged.records, source=SOURCE, endpoint=packaged.endpoint), packaged
-
-
-def _packaged_meta(packaged: PackagedList, request: dict[str, str | None]) -> ResultMeta:
-    """Answered now, from the list the package fetched on ``packaged.fetched``."""
-    return ResultMeta(
-        source=SOURCE,
-        endpoint=packaged.endpoint,
-        vintage=packaged.fetched.isoformat(),
-        request=request,
-    )
-
-
-def _matches(search: str | None, *fields: str | None) -> bool:
-    """Case-insensitive substring match of ``search`` in any of ``fields``.
-
-    A ``search`` of ``None`` matches every record; a field that is ``None`` (a country
-    without a GENC code, a commodity without a description) matches nothing. Fields are
-    matched one at a time, never joined.
-    """
-    if search is None:
-        return True
-    needle = search.casefold()
-    return any(needle in field.casefold() for field in fields if field is not None)
-
-
 def _search(search: str | None) -> str | None:
     """``search`` unchanged, or ``InvalidRequestError`` when it is neither text nor ``None``."""
     if search is not None and not isinstance(search, str):
@@ -1675,11 +1652,12 @@ async def list_regions_async() -> Result[list[Region]]:
     upstream order, from ``"R05"`` North America, ``"R10"`` Caribbean and ``"R25"``
     European Union-27 to ``"R40"`` East Asia, ``"R70"`` Oceania and ``"R99"``
     Miscellaneous Designated Areas. Every country's ``region_code`` is one of them.
-    ``meta.vintage`` is the day the package fetched the list (``"2026-10-26"``),
-    ``meta.retrieved_at`` when this task answered.
+    ``meta.retrieved_at`` is when the package fetched the list (2026-10-26);
+    ``meta.vintage`` stays empty.
     """
-    regions, packaged = _packaged("regions", list[Region])
-    return Result(data=regions, meta=_packaged_meta(packaged, {}))
+    packaged = PackagedList.load(PACKAGE, "regions")
+    regions = packaged.parse(Region, source=SOURCE)
+    return Result(data=regions, meta=packaged.meta(SOURCE))
 
 
 async def list_countries_async(
@@ -1694,8 +1672,8 @@ async def list_countries_async(
     ``"CH"`` China, ``"MX"`` Mexico, ``"JA"`` Japan, ``"IC"`` Iceland; aggregates such as
     ``"01"`` Caribbean,nes have no GENC code. 26 carry a ``discontinued_on`` month, the
     last a Census task accepts for them (``"SZ"`` Switzerland, ``"198712"``; ``"SR"``
-    Switzerland is current). ``meta.vintage`` is the day the package fetched the list
-    (``"2026-10-25"``), ``meta.retrieved_at`` when this task answered. The MCP server
+    Switzerland is current). ``meta.retrieved_at`` is when the package fetched the list
+    (2026-10-25); ``meta.vintage`` stays empty. The MCP server
     returns the whole list.
 
     Args:
@@ -1712,15 +1690,15 @@ async def list_countries_async(
             country.
     """
     _search(search)
-    countries, packaged = _packaged("countries", list[Country])
+    packaged = PackagedList.load(PACKAGE, "countries")
     selected = [
         c
-        for c in countries
+        for c in packaged.parse(Country, source=SOURCE)
         if (region_code is None or c.region_code == region_code)
-        and _matches(search, c.country_code, c.country_name, c.iso3_code, c.genc_code)
+        and matches(search, c.country_code, c.country_name, c.iso3_code, c.genc_code)
     ]
     request = {"region_code": region_code, "search": search}
-    return Result(data=selected, meta=_packaged_meta(packaged, request))
+    return Result(data=selected, meta=packaged.meta(SOURCE, request=request))
 
 
 async def list_hs6_commodities_async(search: str | None = None) -> Result[list[HS6Commodity]]:
@@ -1733,8 +1711,8 @@ async def list_hs6_commodities_async(search: str | None = None) -> Result[list[H
     (``list_units_of_measure``). Upstream: "Use this to correlate the Import, Export and
     Re-export data records obtained by querying UN Trade Data"; the first six digits of
     every HS10 code in the Census records are a listed code. For HS10 codes use
-    ``list_commodities``. ``meta.vintage`` is the day the package fetched the list
-    (``"2026-10-26"``), ``meta.retrieved_at`` when this task answered. The MCP server
+    ``list_commodities``. ``meta.retrieved_at`` is when the package fetched the list
+    (2026-10-26); ``meta.vintage`` stays empty. The MCP server
     returns at most 200 rows or 64 KB, so pass ``search`` there.
 
     Args:
@@ -1744,13 +1722,13 @@ async def list_hs6_commodities_async(search: str | None = None) -> Result[list[H
             bovine meat fresh or chilled), ``"bovine"``. Omit (``None``) for all.
     """
     _search(search)
-    commodities, packaged = _packaged("HS6Commodities", list[HS6Commodity])
+    packaged = PackagedList.load(PACKAGE, "HS6Commodities")
     selected = [
         c
-        for c in commodities
-        if _matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
+        for c in packaged.parse(HS6Commodity, source=SOURCE)
+        if matches(search, c.hs6_code, c.commodity_name, c.commodity_description)
     ]
-    return Result(data=selected, meta=_packaged_meta(packaged, {"search": search}))
+    return Result(data=selected, meta=packaged.meta(SOURCE, request={"search": search}))
 
 
 async def list_units_of_measure_async() -> Result[list[UnitOfMeasure]]:
@@ -1763,11 +1741,12 @@ async def list_units_of_measure_async() -> Result[list[UnitOfMeasure]]:
     ``census_uom_id2``, ``fas_converted_uom_id`` and ``fas_non_converted_uom_id`` of the
     Census and commodity records are these ids; ``enums.UnitOfMeasureId`` names the same
     ids (``UnitOfMeasureId.KILOGRAMS``). A code is not unique: ``"CRT"`` (Crates) is 33
-    and 105. ``meta.vintage`` is the day the package fetched the list (``"2026-10-26"``),
-    ``meta.retrieved_at`` when this task answered.
+    and 105. ``meta.retrieved_at`` is when the package fetched the list (2026-10-26);
+    ``meta.vintage`` stays empty.
     """
-    units, packaged = _packaged("unitsOfMeasure", list[UnitOfMeasure])
-    return Result(data=units, meta=_packaged_meta(packaged, {}))
+    packaged = PackagedList.load(PACKAGE, "unitsOfMeasure")
+    units = packaged.parse(UnitOfMeasure, source=SOURCE)
+    return Result(data=units, meta=packaged.meta(SOURCE))
 
 
 async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
@@ -1780,12 +1759,12 @@ async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
     COAST DISTRICTS, ``"GL"``, ``"GP"``, ``"WC"``, ``"OP"``). Upstream: "US Customs
     Districts, the point of Entry and Exit for the Commodity Imports and Exports". Id
     ``0`` is Z UNKNOW CDIST CODES; ``60``, ``70``, ``80`` and ``99`` are vessels,
-    shipments under $251, mail and military shipments. ``meta.vintage`` is the day the
-    package fetched the list (``"2026-10-26"``), ``meta.retrieved_at`` when this task
-    answered.
+    shipments under $251, mail and military shipments. ``meta.retrieved_at`` is when the
+    package fetched the list (2026-10-26); ``meta.vintage`` stays empty.
     """
-    districts, packaged = _packaged("customsDistricts", list[CustomsDistrict])
-    return Result(data=districts, meta=_packaged_meta(packaged, {}))
+    packaged = PackagedList.load(PACKAGE, "customsDistricts")
+    districts = packaged.parse(CustomsDistrict, source=SOURCE)
+    return Result(data=districts, meta=packaged.meta(SOURCE))
 
 
 async def list_commodities_async(
@@ -1832,7 +1811,7 @@ async def list_commodities_async(
         for c in commodities
         if (hs10_code is None or c.hs10_code.startswith(hs10_code))
         and (product_type is None or c.product_type == product_type)
-        and _matches(search, c.commodity_name, c.commodity_description)
+        and matches(search, c.commodity_name, c.commodity_description)
     ]
     meta = ResultMeta(
         source=SOURCE,

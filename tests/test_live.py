@@ -35,13 +35,13 @@ from typing import Any
 
 import httpx
 import pytest
-from xippios.core import UpstreamModel
+from xippios.core import PackagedList, UpstreamModel
 from xippios.core.data_gov import Gateway
 
 from xippios.usda.gats import api, tasks
 from xippios.usda.gats._client import BASE_URL, config
 from xippios.usda.gats.models import ProductType
-from xippios.usda.gats.params import packaged_values, validate_partner_code
+from xippios.usda.gats.params import PACKAGE, validate_partner_code
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
@@ -180,8 +180,7 @@ async def test_get_census_reexport_series_live(
 
 
 def _districts() -> set[int]:
-    packaged = packaged_values("customsDistricts")
-    assert packaged is not None
+    packaged = PackagedList.load(PACKAGE, "customsDistricts")
     return {int(record["customsDistrictId"]) for record in packaged.records}
 
 
@@ -244,8 +243,9 @@ async def test_packaged_list_equals_the_live_list(task: str, endpoint: str) -> N
     new = sorted(set(theirs) - set(ours))
     behind = bool(stale or new)
     assert not behind, (
-        f"{task} is behind upstream (packaged {packaged.meta.vintage}): {len(stale)} packaged "
-        f"records upstream no longer sends, {len(new)} upstream records the package lacks; "
+        f"{task} is behind upstream (packaged {packaged.meta.retrieved_at:%Y-%m-%d}): "
+        f"{len(stale)} packaged records upstream no longer sends, {len(new)} upstream "
+        "records the package lacks; "
         f"first of each: {stale[:5]}, {new[:5]}. Refresh with /refresh-reference-data."
     )
     assert ours == theirs, f"{task}: the same records in another order"
@@ -257,8 +257,7 @@ UN_YEAR = 2019
 
 
 def _listed(name: str, field: str) -> set[str]:
-    packaged = packaged_values(name)
-    assert packaged is not None
+    packaged = PackagedList.load(PACKAGE, name)
     return {str(record[field]) for record in packaged.records}
 
 

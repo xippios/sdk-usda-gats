@@ -292,7 +292,7 @@ server, per process.
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
 All nineteen operations of the snapshot (`docs/upstream/`) are wrapped. 0.2.0 covers them
-with twenty tasks, the twenty of 0.1.0, the first release: six Census data tasks, three
+with the same twenty tasks as 0.1.0, the first release: six Census data tasks, three
 month series, the Census release dates, four UN Trade tasks and six list tasks. Alpha:
 the public surface may change in a minor version before 1.0 (conventions §12);
 `CHANGELOG.md` lists every change. The UN Trade tasks wrap a frozen series (conventions

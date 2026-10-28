@@ -11,8 +11,8 @@ All notable changes to this project are documented here. The format follows
 The floor of this release is xippios-core 0.3.0 and sdk-template v0.3.0, with
 conventions 1.22: it depends on `xippios-core~=0.3.0`, a breaking bound while core is
 0.x. The Census data tasks and series and the UN Trade data tasks now set
-`meta.published_at`, upstream's release time kept without a zone, the packaged list
-tasks take their `meta` from the packaged list, and the endpoint wrappers carry the
+`meta.published_at` to upstream's release time, kept without a zone; the packaged list
+tasks take their `meta` from the packaged list; and the endpoint wrappers carry the
 upstream operation names in snake case, while the twenty tasks, their MCP tools and
 their HTTP routes keep their names. Two tasks gain a filter, `get_census_release_dates`
 and `list_hs6_commodities`; the Census data tasks and series accept for every month the

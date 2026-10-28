@@ -122,11 +122,12 @@ def _parent_codes() -> frozenset[str]:
     ``countryParentCode`` is its own code, as 256 are, is no parent by that alone. 19 of
     the 21 carry a ``discontinuedOn``; ``GM`` (Germany) and ``YM`` (Yemen) do not.
     """
-    return frozenset(
-        str(record["countryParentCode"])
-        for code, record in _countries().items()
-        if record["countryParentCode"] and record["countryParentCode"] != code
-    )
+    parents: set[str] = set()
+    for code, record in _countries().items():
+        parent = record.get("countryParentCode")
+        if isinstance(parent, str) and parent and parent != code:
+            parents.add(parent)
+    return frozenset(parents)
 
 
 def _closest(
@@ -331,10 +332,13 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
         if same
         else f"No other listed code carries the name {name!r}; list_countries searches them."
     )
-    parent = str(record["countryParentCode"])
-    if parent and parent != partner_code:
+    # A refreshed list may give a leaf no parent, or one it does not list: name a parent
+    # only when it is another listed code, so the refusal itself never fails.
+    countries = _countries()
+    parent = record.get("countryParentCode")
+    if isinstance(parent, str) and parent != partner_code and parent in countries:
         instead = (
-            f"Its parent code {parent} ({_countries()[parent]['countryName']}) is accepted "
+            f"Its parent code {parent} ({countries[parent]['countryName']}) is accepted "
             f"for every month. {instead}"
         )
     raise InvalidRequestError(

@@ -10,7 +10,7 @@ from xippios.core import InvalidRequestError, PackagedList, UnknownCode, parse
 from xippios.core.http import status_for
 from xippios.core.testing import load_fixture
 
-from xippios.usda.gats import enums
+from xippios.usda.gats import enums, params
 from xippios.usda.gats.errors import REPORTER_REASON, UN_PARTNER_REASON
 from xippios.usda.gats.models import Country, UnitOfMeasure
 from xippios.usda.gats.params import (
@@ -250,6 +250,28 @@ def test_a_leaf_refusal_names_its_parent_code() -> None:
         "searches them."
     )
     assert validate_partner_month("GM", 2026, 8) == "GM"
+
+
+@pytest.mark.parametrize("parent", [None, "", "QQ", "GE"], ids=["null", "empty", "unlisted", "own"])
+def test_a_leaf_refusal_names_no_parent_the_list_does_not_hold(
+    monkeypatch: pytest.MonkeyPatch, parent: str | None
+) -> None:
+    """A refreshed list may give a leaf no ``countryParentCode``, or one it does not list:
+    the refusal then names no parent and never fails on the lookup."""
+    countries = params._countries()
+    parents = params._parent_codes()
+    changed = {**countries, "GE": {**countries["GE"], "countryParentCode": parent}}
+    monkeypatch.setattr(params, "_countries", lambda: changed)
+    monkeypatch.setattr(params, "_parent_codes", lambda: parents)
+    with pytest.raises(InvalidRequestError) as info:
+        validate_partner_month("GE", 2026, 8)
+    message = info.value.message
+    assert "parent code" not in message
+    assert "None" not in message
+    assert message.endswith(
+        "is refused. No other listed code carries the name "
+        "'Germany, Federal Republic (Former)'; list_countries searches them."
+    )
 
 
 @pytest.mark.parametrize("code", ["SZ", "AS", "Y1"])

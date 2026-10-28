@@ -9,8 +9,10 @@ one with core's ``UnknownCode``, naming the closest known codes, or example code
 none is close (``params``). The same check covers the customs district a task keeps after
 the call, the UN Trade ``reporter_code``, which GATS answers with ``[]`` when unknown
 (``GATSData_GetUNTradeExports/unknown_reporter.json``), and the UN Trade filters
-``partner_code`` and a six-digit ``hs6_code``. The reasons below end ``UnknownCode``'s
-message, one per check.
+``partner_code`` and a six-digit ``hs6_code``. The reasons below go into
+``UnknownCode``'s message as its ``reason=``, before core's closing sentence on refreshing
+the packaged list; the customs-district reason is written inline in
+``params.validate_customs_district_id``.
 """
 
 __all__ = ["HS6_REASON", "PARTNER_REASON", "REPORTER_REASON", "UN_PARTNER_REASON"]

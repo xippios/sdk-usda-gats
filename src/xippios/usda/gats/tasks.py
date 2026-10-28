@@ -53,7 +53,8 @@ Python and over HTTP; the MCP server starts with ``MCP_SERIES_MAX_MONTHS`` (24),
 a host that imports ``xippios.usda.gats.mcp.server`` and serves it another way keeps 60.
 The ceiling is process-wide: a Python or HTTP call made in the MCP server's process meets
 the MCP ceiling too. Every argument is checked first, the partner code for the start and
-for the end month, so a code discontinued inside the range is refused.
+for the end month, so a code discontinued inside the range is refused when it is no other
+code's parent; a parent code passes for every month (``params.validate_partner_month``).
 The flow's release list is fetched once, the imports list for imports and the exports
 list for exports and, by the same assumption, re-exports; a range with a month the list
 lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
@@ -605,10 +606,16 @@ async def get_census_exports_async(
     (``GATSData_GetCensusExports``). The arguments are checked before either: an unknown
     partner code raises ``InvalidRequestError`` naming up to three close codes with their
     names (``"CHN"`` leads to ``"CH"``), or pointing to ``list_countries`` when none is
-    close; a code GATS discontinued before the month (``"SZ"``, Switzerland, after
-    198712) is refused naming the listed codes of the same name (``"SR"``). A month not
-    released yet, or before January 1967, raises ``NotFoundError`` naming the months
-    released; a listed partner without exports that month gives an empty list.
+    close; a code GATS discontinued before the month that is no other code's parent
+    (``"D1"``, Denmark, after 198712) is refused naming the listed codes of the same name
+    (``"9U"``), as ``params.validate_partner_month`` says. A parent code passes for every
+    month and answers the aggregate of its children: for August 2026 ``"Y1"``
+    (Leeward-Windward Islands) holds every product of ``"AC"`` (Antigua and Barbuda) at no
+    lower a value, and ``"AS"`` (Australia) the same records as ``"A2"``. A numbered code
+    such as ``"01"`` (Caribbean,nes) or ``"18"`` (ASEAN), a Census residual or grouping
+    code, passes too; both gave an empty list for August 2026. A month not released yet,
+    or before January 1967, raises ``NotFoundError`` naming the months released; a listed
+    partner without exports that month gives an empty list.
     ``meta.vintage`` is the month's release time from that list, as upstream states it
     (``"2026-10-06T08:00:00"`` for August 2026): the release that last revised the
     figures, since Census applies corrections once a year. For up to an hour after a
@@ -651,8 +658,11 @@ async def get_census_imports_async(
     arguments are checked before either: an unknown partner code raises
     ``InvalidRequestError`` naming up to three close codes with their names (``"CHN"``
     leads to ``"CH"``), or pointing to ``list_countries`` when none is close; a code GATS
-    discontinued before the month (``"SZ"``, Switzerland, after 198712) is refused naming
-    the listed codes of the same name (``"SR"``). A month not released yet, or before
+    discontinued before the month that is no other code's parent (``"D1"``, Denmark,
+    after 198712) is refused naming the listed codes of the same name (``"9U"``). A parent
+    code (``"Y1"``, ``"AS"``) and a numbered code (``"01"``, ``"18"``) pass for every
+    month, as for ``get_census_exports``, an empty list meaning no data
+    (``params.validate_partner_month``). A month not released yet, or before
     January 1967, raises ``NotFoundError`` naming the months released; a listed partner
     without imports that month gives an empty list. ``meta.vintage`` is the month's
     release time from that list, as upstream states it (``"2026-10-06T08:00:00"`` for
@@ -700,8 +710,10 @@ async def get_census_reexports_async(
     (``"2026-10-06T08:00:00"`` for August 2026), the exports' release, not one the
     re-exports state. The arguments are checked before either request as for
     ``get_census_exports``: an unknown partner code names close codes (``"ISL"`` leads to
-    ``"IC"``) or ``list_countries``, a code discontinued before the month is refused. A
-    listed partner without re-exports that month gives an empty list. The month is in
+    ``"IC"``) or ``list_countries``, a code discontinued before the month is refused when
+    it is no other code's parent, and a parent code (``"Y1"``) or a numbered code
+    (``"01"``) passes for every month (``params.validate_partner_month``). A listed
+    partner without re-exports that month gives an empty list. The month is in
     ``meta.request`` and in every record's ``date``; ``meta.published_at`` is the release
     time, naive (``meta.published_at_naive``).
 
@@ -741,7 +753,9 @@ async def get_customs_district_exports_async(
     month (``GATSData_GetCustomsDistrictsExports``). The arguments are checked before
     either, as for ``get_census_exports``, and ``customs_district_id`` against the
     packaged districts list: an id it lacks raises ``InvalidRequestError`` naming the
-    nearest listed ids with their names. A month not released yet raises
+    nearest listed ids with their names. A parent code (``"Y1"``) and a numbered code
+    (``"01"``) pass as there, and a discontinued leaf is refused after its month
+    (``params.validate_partner_month``). A month not released yet raises
     ``NotFoundError``; a listed partner without exports gives an empty list.
     ``meta.vintage`` is the exports list's release time for the month
     (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
@@ -794,9 +808,11 @@ async def get_customs_district_imports_async(
     client for an hour), then the month (``GATSData_GetCustomsDistrictsImports``). The
     arguments are checked before either, as for ``get_census_imports``, and
     ``customs_district_id`` against the packaged districts list: an id it lacks raises
-    ``InvalidRequestError`` naming the nearest listed ids with their names. A month not
-    released yet raises ``NotFoundError``; a listed partner without imports gives an empty
-    list. ``meta.vintage`` is the imports list's release time for the month
+    ``InvalidRequestError`` naming the nearest listed ids with their names. A parent code
+    (``"Y1"``) and a numbered code (``"01"``) pass as there, and a discontinued leaf is
+    refused after its month (``params.validate_partner_month``). A month not released yet
+    raises ``NotFoundError``; a listed partner without imports gives an empty list.
+    ``meta.vintage`` is the imports list's release time for the month
     (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
     (``meta.published_at_naive``).
 
@@ -850,9 +866,11 @@ async def get_customs_district_reexports_async(
     ``NotFoundError``, and ``meta.vintage`` is its release time for the month
     (``"2026-10-06T08:00:00"`` for August 2026), the exports' release. The arguments are
     checked before either request, ``customs_district_id`` against the packaged districts
-    list (an id it lacks names the nearest listed ids). A listed partner without
-    re-exports gives an empty list; ``meta.published_at`` is the release time, naive
-    (``meta.published_at_naive``).
+    list (an id it lacks names the nearest listed ids); a parent code (``"Y1"``) and a
+    numbered code (``"01"``) pass as for ``get_census_exports``, and a discontinued leaf
+    is refused after its month (``params.validate_partner_month``). A listed partner
+    without re-exports gives an empty list; ``meta.published_at`` is the release time,
+    naive (``meta.published_at_naive``).
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries``
@@ -894,10 +912,11 @@ def _series_months(
     """Every argument of a Census series task, checked before any call; its months in order.
 
     ``validate_partner_month`` checks the partner code, the year and the month of the
-    start and then of the end month: a code discontinued inside the range is refused at
-    the end month, naming its ``discontinuedOn``. Then the start must not be after the
-    end, the span must be at most ``series_ceiling()`` months, and ``hs10_code`` must
-    pass ``validate_hs10_code``. A refusal of the span names the ceiling in force and,
+    start and then of the end month: a code discontinued inside the range that is no
+    other code's parent is refused at the end month, naming its ``discontinuedOn``; a
+    parent code passes for every month. Then the start must not be after the end, the
+    span must be at most ``series_ceiling()`` months, and ``hs10_code`` must pass
+    ``validate_hs10_code``. A refusal of the span names the ceiling in force and,
     below ``SERIES_MAX_MONTHS``, that it is the ceiling set for this process, that the MCP
     server starts with 24 by default and that ``--series-months`` raises it, up to 60.
 
@@ -907,10 +926,10 @@ def _series_months(
 
     Raises:
         UnknownCode: The packaged countries list lacks ``partner_code``.
-        InvalidRequestError: A year or a month is not valid, the code was discontinued
-            before the start or the end month, the start is after the end, the range
-            spans more months than ``series_ceiling()``, or ``hs10_code`` is not 1 to 10
-            digits.
+        InvalidRequestError: A year or a month is not valid, the code is a leaf
+            discontinued before the start or the end month, the start is after the end,
+            the range spans more months than ``series_ceiling()``, or ``hs10_code`` is
+            not 1 to 10 digits.
     """
     validate_partner_month(partner_code, start_year, start_month)
     validate_partner_month(partner_code, end_year, end_month)
@@ -1045,11 +1064,14 @@ async def get_census_export_series_async(
     a minute; a quota spent partway raises ``RateLimitError`` and returns none of the
     months. Everything is checked before the first request: the partner code as for
     ``get_census_exports`` (an unknown code names close codes) for the start and for the
-    end month, so a code discontinued inside the range is refused naming its last month
-    (``"SZ"``, Switzerland, 198712, for 1987-06 to 1988-01); a start after the end, or a
-    range of more months than the ceiling, raises ``InvalidRequestError`` naming the
-    ceiling. Every month of the range must be released: the first month the release list
-    lacks raises ``NotFoundError`` naming it and the latest month released, so an end
+    end month, so a code discontinued inside the range that is no other code's parent is
+    refused naming its last month (``"D1"``, Denmark, 198712, for 1987-06 to 1988-01),
+    while a parent code (``"Y1"``, ``"AS"``) and a numbered code (``"01"``, ``"18"``) pass
+    for every month (``params.validate_partner_month``), a month without data adding
+    nothing; a start after the end, or a range of more months than the ceiling, raises
+    ``InvalidRequestError`` naming the ceiling. Every month of the range must be
+    released: the first month the release list lacks raises ``NotFoundError`` naming it
+    and the latest month released, so an end
     month not released yet refuses the series rather than trimming it. ``meta.vintage``
     is the newest release time among the range's months, as upstream states it:
     ``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08, August's release. Across Census's
@@ -1112,9 +1134,11 @@ async def get_census_import_series_async(
     api.data.gov's 1,000 requests per hour for the key: 60 months take about a minute,
     and a quota spent partway raises ``RateLimitError`` and returns none of the months.
     The arguments are checked before the first request as for
-    ``get_census_export_series``; the first month the imports list lacks raises
-    ``NotFoundError`` naming it and the latest month released, so the series is refused,
-    not trimmed. ``meta.vintage`` is the newest release time among the range's months
+    ``get_census_export_series``, a parent or a numbered partner code passing for every
+    month and a discontinued leaf refused after its month; the first month the imports
+    list lacks raises ``NotFoundError`` naming it and the latest month released, so the
+    series is refused, not trimmed. ``meta.vintage`` is the newest release time among
+    the range's months
     in the imports list, as upstream states it (``"2026-10-06T08:00:00"`` for 2026-06 to
     2026-08); each month's own is in ``get_census_release_dates``. ``meta.published_at``
     is that newest time, naive (``meta.published_at_naive``).
@@ -1173,9 +1197,11 @@ async def get_census_reexport_series_async(
     and a quota spent partway raises ``RateLimitError`` and returns none of the months.
     Upstream publishes no re-export release list, so the package checks the exports list,
     by assumption, as ``get_census_reexports`` does. The arguments are checked before the
-    first request as for ``get_census_export_series``; the first month the exports list
-    lacks raises ``NotFoundError`` naming it and the latest month released, so the
-    series is refused, not trimmed. ``meta.vintage`` is the newest release time among the
+    first request as for ``get_census_export_series``, a parent or a numbered partner
+    code passing for every month and a discontinued leaf refused after its month; the
+    first month the exports list lacks raises ``NotFoundError`` naming it and the latest
+    month released, so the series is refused, not trimmed. ``meta.vintage`` is the
+    newest release time among the
     range's months in the exports list (``"2026-10-06T08:00:00"`` for 2026-06 to
     2026-08), the exports' releases, not ones the re-exports state; each month's own is
     in ``get_census_release_dates``. ``meta.published_at`` is that newest time, naive
@@ -1257,8 +1283,8 @@ def _un_check(
 
     Both country codes are checked for membership in the packaged countries list only:
     the Census tasks' ``discontinuedOn`` rule (``validate_partner_month``) does not apply,
-    since the UN data keeps GATS's older codes, ``AS`` (Australia, discontinued 198712)
-    among them, for 2019.
+    since the UN data keeps GATS's older codes for 2019, among them ``DA`` (Denmark,
+    discontinued 198712), a leaf that rule refuses after its month.
     """
     validate_reporter_code(reporter_code)
     validate_year(year)
@@ -1660,10 +1686,12 @@ async def list_countries_async(
     current and discontinued, in upstream order, each with its region (``list_regions``),
     its ISO code and its GENC code where upstream has one. Codes are GATS's own, not ISO:
     ``"CH"`` China, ``"MX"`` Mexico, ``"JA"`` Japan, ``"IC"`` Iceland; aggregates such as
-    ``"01"`` Caribbean,nes have no GENC code. 26 carry a ``discontinued_on`` month, the
-    last a Census task accepts for them (``"SZ"`` Switzerland, ``"198712"``; ``"SR"``
-    Switzerland is current). ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-25); ``meta.vintage`` stays empty.
+    ``"01"`` Caribbean,nes have no GENC code. 26 carry a ``discontinued_on`` month. For
+    the 7 that are no other record's ``country_parent_code`` it is the last a Census task
+    accepts (``"D1"`` Denmark, ``"198712"``); the 19 parents among them pass for every
+    month, as the aggregate of their children (``"SZ"`` Switzerland, the parent of
+    ``"SR"`` Switzerland and ``"LS"`` Liechtenstein). ``meta.retrieved_at`` is when the
+    package fetched the list (2026-10-25); ``meta.vintage`` stays empty.
 
     Args:
         region_code: Keep the countries of this GATS region, spelled exactly as

@@ -19,10 +19,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CensusImport
 
-__all__ = ["GATSData_GetCensusImport"]
+__all__ = ["get_census_import"]
 
 
-async def GATSData_GetCensusImport(partner_code: str, year: int, month: int) -> list[CensusImport]:
+async def get_census_import(partner_code: str, year: int, month: int) -> list[CensusImport]:
     """Call ``GATSData_GetCensusImport``.
 
     Args:

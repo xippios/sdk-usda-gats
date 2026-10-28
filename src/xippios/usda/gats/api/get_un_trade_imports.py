@@ -24,10 +24,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import UNTradeRecord
 
-__all__ = ["GATSData_GetUNTradeImports"]
+__all__ = ["get_un_trade_imports"]
 
 
-async def GATSData_GetUNTradeImports(reporter_code: str, year: str) -> list[UNTradeRecord]:
+async def get_un_trade_imports(reporter_code: str, year: str) -> list[UNTradeRecord]:
     """Call ``GATSData_GetUNTradeImports``.
 
     Args:

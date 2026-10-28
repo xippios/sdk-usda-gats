@@ -29,14 +29,35 @@ from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
 from xippios.usda.gats.params import PACKAGE
 
-LISTS: list[tuple[str, str, str, int, dict[str, Any]]] = [
-    # task, packaged list, operation it came from, records, meta.request without filters,
-    # which leaves out a filter not given (ADR-0022, rule 3)
-    ("list_regions", "regions", "GATSData_GetRegions", 15, {}),
-    ("list_countries", "countries", "GATSData_GetCountries", 322, {}),
-    ("list_hs6_commodities", "HS6Commodities", "GATSData_GetHS6Commodities", 2909, {}),
-    ("list_units_of_measure", "unitsOfMeasure", "GATSData_GetUnitsOfMeasure", 108, {}),
-    ("list_customs_districts", "customsDistricts", "GATSData_GetCustomsDistricts", 53, {}),
+LISTS: list[tuple[str, str, str, str, int, dict[str, Any]]] = [
+    # task, packaged list, its wrapper, operation it came from, records, meta.request
+    # without filters, which leaves out a filter not given (ADR-0022, rule 3)
+    ("list_regions", "regions", "get_regions", "GATSData_GetRegions", 15, {}),
+    ("list_countries", "countries", "get_countries", "GATSData_GetCountries", 322, {}),
+    (
+        "list_hs6_commodities",
+        "HS6Commodities",
+        "get_hs6_commodities",
+        "GATSData_GetHS6Commodities",
+        2909,
+        {},
+    ),
+    (
+        "list_units_of_measure",
+        "unitsOfMeasure",
+        "get_units_of_measure",
+        "GATSData_GetUnitsOfMeasure",
+        108,
+        {},
+    ),
+    (
+        "list_customs_districts",
+        "customsDistricts",
+        "get_customs_districts",
+        "GATSData_GetCustomsDistricts",
+        53,
+        {},
+    ),
 ]
 IDS = [task for task, *_ in LISTS]
 WHOLE = ["list_regions", "list_countries", "list_units_of_measure", "list_customs_districts"]
@@ -74,12 +95,15 @@ def test_every_list_task_is_exported() -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(("task", "name", "endpoint", "count", "request_"), LISTS, ids=IDS)
+@pytest.mark.parametrize(
+    ("task", "name", "wrapper", "endpoint", "count", "request_"), LISTS, ids=IDS
+)
 async def test_list_answers_the_recorded_records_without_a_call(
     replay_fixture: ReplayFixture,
     respx_mock: respx.MockRouter,
     task: str,
     name: str,
+    wrapper: str,
     endpoint: str,
     count: int,
     request_: dict[str, Any],
@@ -88,7 +112,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     route = replay_fixture(endpoint, "all")
     result = await getattr(tasks, f"{task}_async")()
     assert not respx_mock.calls, f"{task} called upstream"
-    recorded = await getattr(api, endpoint)()
+    recorded = await getattr(api, wrapper)()
     assert route.call_count == 1, "the one call is the wrapper's"
     assert result.data == recorded, "same records, same values, upstream order"
     assert len(result.data) == count
@@ -109,7 +133,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     ("task", "name", "endpoint", "request_"),
     [
         (task, name, endpoint, request_)
-        for task, name, endpoint, _, request_ in LISTS
+        for task, name, _, endpoint, _, request_ in LISTS
         if task in WHOLE
     ],
     ids=WHOLE,

@@ -14,10 +14,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import Country
 
-__all__ = ["GATSData_GetCountries"]
+__all__ = ["get_countries"]
 
 
-async def GATSData_GetCountries() -> list[Country]:
+async def get_countries() -> list[Country]:
     """Call ``GATSData_GetCountries``.
 
     Returns:

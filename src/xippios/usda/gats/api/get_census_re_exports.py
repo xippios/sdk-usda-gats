@@ -21,12 +21,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CensusExport
 
-__all__ = ["GATSData_GetCensusReExports"]
+__all__ = ["get_census_re_exports"]
 
 
-async def GATSData_GetCensusReExports(
-    partner_code: str, year: int, month: int
-) -> list[CensusExport]:
+async def get_census_re_exports(partner_code: str, year: int, month: int) -> list[CensusExport]:
     """Call ``GATSData_GetCensusReExports``.
 
     Args:

@@ -15,10 +15,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import HS6Commodity
 
-__all__ = ["GATSData_GetHS6Commodities"]
+__all__ = ["get_hs6_commodities"]
 
 
-async def GATSData_GetHS6Commodities() -> list[HS6Commodity]:
+async def get_hs6_commodities() -> list[HS6Commodity]:
     """Call ``GATSData_GetHS6Commodities``.
 
     Returns:

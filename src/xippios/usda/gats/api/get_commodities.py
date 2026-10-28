@@ -23,10 +23,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import COMMODITIES_PATH, SOURCE, client
 from xippios.usda.gats.models import Commodity
 
-__all__ = ["GATSData_GetCommodities"]
+__all__ = ["get_commodities"]
 
 
-async def GATSData_GetCommodities() -> tuple[list[Commodity], datetime]:
+async def get_commodities() -> tuple[list[Commodity], datetime]:
     """Call ``GATSData_GetCommodities``.
 
     Returns:

@@ -16,10 +16,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import UnitOfMeasure
 
-__all__ = ["GATSData_GetUnitsOfMeasure"]
+__all__ = ["get_units_of_measure"]
 
 
-async def GATSData_GetUnitsOfMeasure() -> list[UnitOfMeasure]:
+async def get_units_of_measure() -> list[UnitOfMeasure]:
     """Call ``GATSData_GetUnitsOfMeasure``.
 
     Returns:

@@ -15,10 +15,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import Region
 
-__all__ = ["GATSData_GetRegions"]
+__all__ = ["get_regions"]
 
 
-async def GATSData_GetRegions() -> list[Region]:
+async def get_regions() -> list[Region]:
     """Call ``GATSData_GetRegions``.
 
     Returns:

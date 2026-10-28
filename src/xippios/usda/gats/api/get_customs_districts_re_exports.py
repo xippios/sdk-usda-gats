@@ -24,10 +24,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CustomsDistrictExport
 
-__all__ = ["GATSData_GetCustomsDistrictsReExports"]
+__all__ = ["get_customs_districts_re_exports"]
 
 
-async def GATSData_GetCustomsDistrictsReExports(
+async def get_customs_districts_re_exports(
     partner_code: str, year: int, month: int
 ) -> list[CustomsDistrictExport]:
     """Call ``GATSData_GetCustomsDistrictsReExports``.

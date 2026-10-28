@@ -16,10 +16,10 @@ from xippios.core import parse
 from xippios.usda.gats._client import SOURCE, client
 from xippios.usda.gats.models import CustomsDistrict
 
-__all__ = ["GATSData_GetCustomsDistricts"]
+__all__ = ["get_customs_districts"]
 
 
-async def GATSData_GetCustomsDistricts() -> list[CustomsDistrict]:
+async def get_customs_districts() -> list[CustomsDistrict]:
     """Call ``GATSData_GetCustomsDistricts``.
 
     Returns:

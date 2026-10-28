@@ -274,7 +274,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError) as info:
-        await api.GATSData_GetCountries()
+        await api.get_countries()
     slack = CLOCK_SLACK.total_seconds()
     assert info.value.retry_after is not None
     assert 3151 - slack <= info.value.retry_after <= 3151 + slack, "the snapshot's wait from now"
@@ -288,7 +288,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     assert snapshot.resumes_at == snapshot.observed_at + timedelta(seconds=3151)
     releases = respx_mock.get(f"{BASE_URL}/api/gats/census/data/exports/dataReleaseDates")
     with pytest.raises(RateLimitError, match="nothing was sent") as refused:
-        await api.GATSData_GetCensusExportDataReleaseInfo()
+        await api.get_census_export_data_release_info()
     assert refused.value.message.startswith(
         "api.data.gov quota of the key in DATA_GOV_API_KEY spent"  # pragma: allowlist secret
     )
@@ -429,12 +429,12 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
     the entry's stored time."""
     commodities = replay_fixture("GATSData_GetCommodities", "all")
     replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetCommodities()
-    await api.GATSData_GetCensusExportDataReleaseInfo()
+    first, _ = await api.get_commodities()
+    await api.get_census_export_data_release_info()
     assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
     entry = commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
     assert entry is not None
-    again, retrieved_at = await api.GATSData_GetCommodities()
+    again, retrieved_at = await api.get_commodities()
     assert retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(again) == len(first) == 24936
     assert commodities.call_count == 1
@@ -451,26 +451,26 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     exports = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
     imports = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
     before = datetime.now(UTC)
-    first, first_at = await api.GATSData_GetCensusExportDataReleaseInfo()
+    first, first_at = await api.get_census_export_data_release_info()
     assert_time_between(first_at, before, datetime.now(UTC))
     assert exports.call_count == 1, "the first answer came from the wire"
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.GATSData_GetCensusExportDataReleaseInfo()
+    again, stored = await api.get_census_export_data_release_info()
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
     assert stored.tzinfo is UTC
     assert again == first
     assert exports.call_count == 1
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]
-    await api.GATSData_GetCensusImportDataReleaseInfo()
+    await api.get_census_import_data_release_info()
     assert imports.call_count == 1, "the imports list is not the exports list's entry"
 
 
 @pytest.mark.anyio
 async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("GATSData_GetCensusExports", "CH_2026_8")
-    await api.GATSData_GetCensusExports("CH", 2026, 8)
-    await api.GATSData_GetCensusExports("CH", 2026, 8)
+    await api.get_census_exports("CH", 2026, 8)
+    await api.get_census_exports("CH", 2026, 8)
     assert route.call_count == 2
     assert len(cache) == 0
 
@@ -485,9 +485,9 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
     exports = replay_fixture("GATSData_GetUNTradeExportDataReleaseInfo", "all")
     imports = replay_fixture("GATSData_GetUNTradeImportDataReleaseInfo", "all")
     replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetUNTradeExportDataReleaseInfo()
-    await api.GATSData_GetUNTradeImportDataReleaseInfo()
-    await api.GATSData_GetCensusExportDataReleaseInfo()
+    first, _ = await api.get_un_trade_export_data_release_info()
+    await api.get_un_trade_import_data_release_info()
+    await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
     assert (len(release_dates_cache), len(commodities_cache)) == (3, 0)
     for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
@@ -496,7 +496,7 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
         assert commodities_cache.get(key) is None, path
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.GATSData_GetUNTradeExportDataReleaseInfo()
+    again, stored = await api.get_un_trade_export_data_release_info()
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
     assert again == first
     assert (exports.call_count, imports.call_count) == (1, 1)
@@ -507,8 +507,8 @@ async def test_the_un_release_lists_land_in_the_release_dates_store(
 @pytest.mark.anyio
 async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("GATSData_GetUNTradeReExports", "MC_2019")
-    await api.GATSData_GetUNTradeReExports("MC", "2019")
-    await api.GATSData_GetUNTradeReExports("MC", "2019")
+    await api.get_un_trade_re_exports("MC", "2019")
+    await api.get_un_trade_re_exports("MC", "2019")
     assert route.call_count == 2
     assert len(cache) == 0
 
@@ -523,16 +523,16 @@ async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     quota policy's check (ADR-0015), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
     releases = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    first, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    first, _ = await api.get_census_export_data_release_info()
     spent = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError):
         await client.get_json(REGIONS)
-    cached, _ = await api.GATSData_GetCensusExportDataReleaseInfo()
+    cached, _ = await api.get_census_export_data_release_info()
     assert cached == first
     assert releases.call_count == 1, "answered from the cache"
     countries = respx_mock.get(f"{BASE_URL}/api/gats/countries")
     with pytest.raises(RateLimitError, match="nothing was sent"):
-        await api.GATSData_GetCountries()
+        await api.get_countries()
     assert (spent.call_count, countries.call_count) == (1, 0)

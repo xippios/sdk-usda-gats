@@ -1,7 +1,7 @@
 """The packaged lists, the enum rendered from them and the argument checks of the data tasks."""
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
 
@@ -30,19 +30,36 @@ from xippios.usda.gats.params import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-FETCHED_COUNTRIES = datetime(2026, 10, 25, tzinfo=UTC)
-FETCHED_OTHERS = datetime(2026, 10, 26, tzinfo=UTC)
-"""When the packaged lists were fetched: each file's bare date, which core reads as 00:00
-UTC of that day until the next refresh writes the time (ADR-0022, amendment 2026-10-27)."""
 
 
 PACKAGED = [
-    ("regions", "GATSData_GetRegions", "get_regions", "2026-10-26", 15),
-    ("countries", "GATSData_GetCountries", "get_countries", "2026-10-25", 322),
-    ("HS6Commodities", "GATSData_GetHS6Commodities", "get_hs6_commodities", "2026-10-26", 2909),
-    ("unitsOfMeasure", "GATSData_GetUnitsOfMeasure", "get_units_of_measure", "2026-10-26", 108),
-    ("customsDistricts", "GATSData_GetCustomsDistricts", "get_customs_districts", "2026-10-26", 53),
+    ("regions", "GATSData_GetRegions", "get_regions", "2026-10-28T19:22:39Z", 15),
+    ("countries", "GATSData_GetCountries", "get_countries", "2026-10-28T19:22:40Z", 322),
+    (
+        "HS6Commodities",
+        "GATSData_GetHS6Commodities",
+        "get_hs6_commodities",
+        "2026-10-28T19:22:42Z",
+        2909,
+    ),
+    (
+        "unitsOfMeasure",
+        "GATSData_GetUnitsOfMeasure",
+        "get_units_of_measure",
+        "2026-10-28T19:22:43Z",
+        108,
+    ),
+    (
+        "customsDistricts",
+        "GATSData_GetCustomsDistricts",
+        "get_customs_districts",
+        "2026-10-28T19:22:42Z",
+        53,
+    ),
 ]
+FETCHED = {name: datetime.fromisoformat(fetched) for name, _, _, fetched, _ in PACKAGED}
+"""When the packaged lists were fetched: the UTC time of each list's fetch to the second,
+as the refresh of 2026-10-28 wrote it with ``PackagedList.write`` (conventions §3)."""
 
 
 def test_five_lists_are_packaged_under_upstreams_names() -> None:
@@ -67,14 +84,14 @@ def test_five_lists_are_packaged_under_upstreams_names() -> None:
 def test_each_packaged_list_is_its_recorded_answer_verbatim(
     name: str, endpoint: str, wrapper: str, fetched: str, count: int
 ) -> None:
-    """Written by ``scripts/refresh_reference.py`` from the recorded answer served through
-    ``respx``: the same records, field for field, in upstream's field order and record
-    order; ``fetched`` is the day of the recording (UTC), read as its 00:00 UTC."""
+    """Written by ``scripts/refresh_reference.py`` from upstream's answer of 2026-10-28,
+    which held the recorded answer's records: the same records, field for field, in
+    upstream's field order and record order; ``fetched`` is the UTC time of that fetch,
+    to the second."""
     packaged = PackagedList.load(PACKAGE, name)
     assert (packaged.param, packaged.endpoint) == (name, endpoint)
-    assert packaged.fetched == datetime.fromisoformat(f"{fetched}T00:00:00+00:00")
+    assert packaged.fetched == datetime.fromisoformat(fetched) == FETCHED[name]
     fixture = load_fixture(FIXTURES / wrapper / "all.json")
-    assert fixture.recorded_at.date().isoformat() == fetched
     recorded = json.loads(fixture.response.body)
     assert len(packaged.records) == count
     assert packaged.records == recorded
@@ -84,7 +101,7 @@ def test_each_packaged_list_is_its_recorded_answer_verbatim(
 def test_the_countries_list_is_packaged_and_parses() -> None:
     packaged = PackagedList.load(PACKAGE, "countries")
     assert (packaged.param, packaged.endpoint) == ("countries", "GATSData_GetCountries")
-    assert packaged.fetched == FETCHED_COUNTRIES
+    assert packaged.fetched == FETCHED["countries"]
     countries = parse(
         list[Country], packaged.records, source="usda-gats", endpoint="GATSData_GetCountries"
     )
@@ -120,7 +137,7 @@ def test_units_of_measure_render_one_int_enum() -> None:
     kilograms = packaged.records[47]
     assert kilograms["unitOfMeasureId"] == unit.KILOGRAMS, "an IntEnum equals upstream's int"
     assert UnitOfMeasure.model_validate(kilograms).unit_of_measure_id == unit.KILOGRAMS
-    assert unit.__doc__ == "Values of ``unitOfMeasureId`` (fetched 2026-10-26)."
+    assert unit.__doc__ == "Values of ``unitOfMeasureId`` (fetched 2026-10-28)."
 
 
 def test_the_rendered_module_is_ascii() -> None:
@@ -152,11 +169,11 @@ def test_the_recorded_unknown_partner_is_refused_without_a_close_code() -> None:
         "partner_code",
         "ZZ",
         "countries",
-        FETCHED_COUNTRIES,
+        FETCHED["countries"],
     )
     assert error.closest == ()
     assert error.message.startswith(
-        "'ZZ' is not a partner_code in the packaged countries list (fetched 2026-10-25)."
+        "'ZZ' is not a partner_code in the packaged countries list (fetched 2026-10-28)."
     )
     assert 'e.g. "CH" (China), "MX" (Mexico)' in error.message
     assert "list_countries lists every one and searches them by name, ISO or GENC code" in (
@@ -232,7 +249,7 @@ def test_a_leaf_discontinued_before_the_month_is_refused() -> None:
     assert status_for(error) == 422
     assert error.message == (
         "partner_code 'D1' (Denmark) was discontinued in 198712 (discontinuedOn in "
-        "GATS's countries list, packaged, fetched 2026-10-25) and is no other code's parent: "
+        "GATS's countries list, packaged, fetched 2026-10-28) and is no other code's parent: "
         "it holds no trade after that month, so 2026-08 (202608) is refused. Listed under "
         "the same name: 9U, DA (discontinued 198712)."
     )
@@ -245,7 +262,7 @@ def test_a_leaf_refusal_names_its_parent_code() -> None:
         validate_partner_month("GE", 2026, 8)
     assert info.value.message == (
         "partner_code 'GE' (Germany, Federal Republic (Former)) was discontinued in 199009 "
-        "(discontinuedOn in GATS's countries list, packaged, fetched 2026-10-25) and is no "
+        "(discontinuedOn in GATS's countries list, packaged, fetched 2026-10-28) and is no "
         "other code's parent: it holds no trade after that month, so 2026-08 (202608) is "
         "refused. Its parent code GM (Germany) is accepted for every month. No other listed "
         "code carries the name 'Germany, Federal Republic (Former)'; list_countries "
@@ -403,12 +420,12 @@ def test_an_unknown_customs_district_names_the_nearest_ids(
         "customs_district_id",
         district,
         "customsDistricts",
-        FETCHED_OTHERS,
+        FETCHED["customsDistricts"],
     )
     assert list(error.closest) == closest
     assert error.message.startswith(
         f"{district} is not a customs_district_id in the packaged customsDistricts list "
-        "(fetched 2026-10-26). Did you mean "
+        "(fetched 2026-10-28). Did you mean "
     )
     assert "list_customs_districts lists the ids" in error.message
     assert "partner code" not in error.message, "the partner reason is the countries list's"
@@ -520,7 +537,7 @@ def test_an_unknown_reporter_names_the_parameter_and_its_own_reason() -> None:
     assert (error.param, error.value, error.list_name) == ("reporter_code", "ZZ", "countries")
     assert error.closest == ()
     assert error.message.startswith(
-        "'ZZ' is not a reporter_code in the packaged countries list (fetched 2026-10-25)."
+        "'ZZ' is not a reporter_code in the packaged countries list (fetched 2026-10-28)."
     )
     assert "GATS's country codes are its own" in error.message
     assert REPORTER_REASON in error.message
@@ -735,13 +752,13 @@ def test_a_full_hs6_code_the_list_lacks_names_the_codes_sharing_its_digits(
         "hs6_code",
         code,
         "HS6Commodities",
-        FETCHED_OTHERS,
+        FETCHED["HS6Commodities"],
     )
     assert list(error.closest) == closest
     first, name = closest[0]
     assert error.message.startswith(
         f"{code!r} is not a hs6_code in the packaged HS6Commodities list (fetched "
-        f"2026-10-26). Did you mean {first} ({name}), "
+        f"2026-10-28). Did you mean {first} ({name}), "
     )
     assert "list_hs6_commodities lists the codes" in error.message
     assert "partner" not in error.message

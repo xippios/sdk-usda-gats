@@ -1,7 +1,7 @@
 {
   "param": "unitsOfMeasure",
   "endpoint": "GATSData_GetUnitsOfMeasure",
-  "fetched": "2026-10-26",
+  "fetched": "2026-10-28T19:22:43Z",
   "records": [
     {
       "unitOfMeasureId": 0,

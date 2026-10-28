@@ -1,7 +1,7 @@
 {
   "param": "countries",
   "endpoint": "GATSData_GetCountries",
-  "fetched": "2026-10-25",
+  "fetched": "2026-10-28T19:22:40Z",
   "records": [
     {
       "countryCode": "01",

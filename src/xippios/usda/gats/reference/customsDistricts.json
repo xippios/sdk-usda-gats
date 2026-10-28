@@ -1,7 +1,7 @@
 {
   "param": "customsDistricts",
   "endpoint": "GATSData_GetCustomsDistricts",
-  "fetched": "2026-10-26",
+  "fetched": "2026-10-28T19:22:42Z",
   "records": [
     {
       "customsDistrictId": 0,

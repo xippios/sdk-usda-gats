@@ -1,8 +1,9 @@
 """The list tasks: five answer from the packaged lists without a call, one fetches live.
 
-The packaged files were written from the answers recorded in
-``tests/fixtures/<wrapper>/all.json``, so a task returning exactly what the endpoint
-wrapper parses from that recording proves the package answers what upstream answered.
+The packaged files hold the records recorded in ``tests/fixtures/<wrapper>/all.json``,
+which the refresh of 2026-10-28 fetched unchanged, so a task returning exactly what the
+endpoint wrapper parses from that recording proves the package answers what upstream
+answered.
 Every test here runs with ``respx`` active: a request no route matches fails loudly, and
 each packaged-list test checks that the tasks sent none. ``list_commodities`` replays the
 HS10 recording through the client, whose cache keeps it for a day; core's plugin
@@ -68,6 +69,14 @@ LISTS: list[tuple[str, str, str, str, int, dict[str, Any]]] = [
     ),
 ]
 IDS = [task for task, *_ in LISTS]
+FETCHED = {
+    "regions": datetime(2026, 10, 28, 19, 22, 39, tzinfo=UTC),
+    "countries": datetime(2026, 10, 28, 19, 22, 40, tzinfo=UTC),
+    "HS6Commodities": datetime(2026, 10, 28, 19, 22, 42, tzinfo=UTC),
+    "unitsOfMeasure": datetime(2026, 10, 28, 19, 22, 43, tzinfo=UTC),
+    "customsDistricts": datetime(2026, 10, 28, 19, 22, 42, tzinfo=UTC),
+}
+"""When the refresh of 2026-10-28 fetched each packaged list, to the second (UTC)."""
 WHOLE = ["list_regions", "list_countries", "list_units_of_measure", "list_customs_districts"]
 """The lists that reach an agent whole over MCP: three within the default cap, the
 countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
@@ -88,12 +97,12 @@ COMMODITIES_NOTE = (
 
 
 def _fetched(name: str) -> datetime:
-    """``fetched`` as the packaged file stores it, read from the file itself: a bare day,
-    which core reads as its 00:00 UTC (ADR-0022, amendment 2026-10-27)."""
+    """``fetched`` as the packaged file stores it, read from the file itself: the UTC time
+    of the fetch to the second, as ``PackagedList.write`` writes it (conventions §3)."""
     path = resources.files("xippios.usda.gats").joinpath("reference", f"{name}.json")
     fetched = json.loads(path.read_text(encoding="utf-8"))["fetched"]
     assert isinstance(fetched, str)
-    return datetime.fromisoformat(f"{fetched}T00:00:00+00:00")
+    return datetime.fromisoformat(fetched)
 
 
 def test_every_list_task_is_exported() -> None:
@@ -131,8 +140,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     assert result.meta.endpoint == endpoint
     assert result.meta.retrieved_at == _fetched(name), "when the package fetched the list"
     assert result.meta.retrieved_at == PackagedList.load(PACKAGE, name).fetched
-    day = 25 if name == "countries" else 26
-    assert result.meta.retrieved_at == datetime(2026, 10, day, tzinfo=UTC)
+    assert result.meta.retrieved_at == FETCHED[name]
     assert result.meta.vintage is None, "upstream gives the list no version; a day is none"
     assert result.meta.published_at is None
     assert result.meta.total is None
@@ -222,7 +230,7 @@ def test_an_unknown_region_is_an_empty_list(respx_mock: respx.MockRouter) -> Non
     unknown = tasks.list_countries(region_code="R00")
     assert unknown.data == []
     assert unknown.meta.request == {"region_code": "R00"}
-    assert unknown.meta.retrieved_at == datetime(2026, 10, 25, tzinfo=UTC)
+    assert unknown.meta.retrieved_at == FETCHED["countries"]
     assert tasks.list_countries(region_code="r05").data == [], "exact, as list_regions spells it"
     assert not respx_mock.calls
 

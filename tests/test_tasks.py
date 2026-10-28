@@ -1,17 +1,14 @@
-"""Structural checks every task must satisfy. Per-task tests with recorded fixtures go below.
+"""Replay tests on recorded fixtures, at least one per task (conventions §10).
 
-A replay test that checks what was sent compares ``xippios.core.testing.sent_urls(route)``,
-the URLs the route received with credentials redacted, rather than keep a request from
-``route.calls`` in its frame, where a failure or ``pytest -l`` would print it.
+``/add-endpoint`` and ``/record-fixture`` add them.
 """
 
 import argparse
-import inspect
 import json
 import sys
 from collections import Counter
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -29,40 +26,19 @@ from xippios.core import (
 from xippios.core.client import cache_key
 from xippios.core.mcp import build_parser, main
 from xippios.core.testing import (
+    CLOCK_SLACK,
     FixtureResponse,
     ReplayFixture,
+    assert_time_between,
     load_fixture,
     mcp_call,
     sent_urls,
 )
 
-from xippios.usda.gats import __version__, tasks
+from xippios.usda.gats import tasks
 from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.mcp import run, server
 from xippios.usda.gats.models import DataReleaseInfo, ProductType, UNTradeDataReleaseInfo
-
-TASKS = [getattr(tasks, name) for name in tasks.__all__]
-CLOCK_SLACK = timedelta(seconds=5)
-"""The slack on a comparison of two wall-clock readings: the WSL2 host these tests run on
-steps its clock back about two seconds every half minute, so a later reading can be the
-earlier one. Five seconds stays far below what a wrong ``retrieved_at`` would be off by:
-a recording's time or a release's is hours or days away."""
-
-
-def test_package_has_a_version() -> None:
-    assert __version__
-
-
-@pytest.mark.parametrize("task", TASKS, ids=tasks.__all__)
-def test_task_is_a_sync_facade_with_an_agent_docstring(task: object) -> None:
-    assert callable(task)
-    assert hasattr(task, "async_fn"), "write the async function and derive the sync one with sync()"
-    doc = inspect.getdoc(task) or ""
-    assert doc, "task functions need a docstring: agents read it"
-    assert doc.splitlines()[0].endswith("."), "the first line is one sentence"
-    if inspect.signature(task).parameters:
-        assert "Args:" in doc, "explain every parameter under Args: with valid-value examples"
-
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPORTS = "GATSData_GetCensusExports"
@@ -698,9 +674,8 @@ def test_get_census_release_dates(
     assert result.meta.endpoint == endpoint
     assert result.meta.request == {"product_type": product_type.value}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
-    assert before - CLOCK_SLACK <= result.meta.retrieved_at <= after + CLOCK_SLACK, (
-        "fetched now, from the wire: the time of this call, not the recording's"
-    )
+    # Fetched now, from the wire: the time the answer arrived, not the recording's.
+    assert_time_between(result.meta.retrieved_at, before, after)
     assert sent_urls(route) == [url]
 
 

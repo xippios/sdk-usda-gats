@@ -77,7 +77,8 @@ upstream's words, under GATS's own codes. Reporter, partner and HS6 codes stay G
 source's codes (ADR-0003). Before the call they check the arguments, the two country
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
-list, cached like the Census ones. GATS answers an unknown reporter, a year far ahead and
+list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
+frozen. GATS answers an unknown reporter, a year far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
 ``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
@@ -1352,8 +1353,8 @@ def _un_release_of(
     asked = data or flow
     listed = {r.statistical_year for r in releases if r.reporter_code == reporter_code}
     when = (
-        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for an "
-        "hour; a reporter-year released since then is refused until it is fetched again."
+        f" The release list was fetched at {fetched:%Y-%m-%d %H:%M} UTC and is kept for a "
+        "day; a reporter-year released since then is refused until it is fetched again."
     )
     own = (
         f" GATS publishes no UN Trade release list for {asked}: the package checks the {flow} list."
@@ -1461,7 +1462,7 @@ async def get_un_exports_async(
     with statistical year 2019, their newest release on 2021-01-18, as recorded on
     2026-10-26; ``get_un_release_dates`` lists every reporter-year. Two requests: the
     exports release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the
-    client for an hour) to check that the reporter-year is listed, then the year
+    client for a day) to check that the reporter-year is listed, then the year
     (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
     75,919 records, about 17 MB). The arguments are checked before either: an unknown
     reporter or partner code raises ``InvalidRequestError`` naming up to three close codes
@@ -1513,7 +1514,7 @@ async def get_un_imports_async(
     the exports. The UN Trade data is frozen at statistical year 2019, last released on
     2021-01-18, as recorded on 2026-10-26. Two requests: the
     imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
-    for an hour), then the year (``GATSData_GetUNTradeImports``). The imports list is not
+    for a day), then the year (``GATSData_GetUNTradeImports``). The imports list is not
     the exports list: 68 reporter-years are listed only for imports, 32 only for exports.
     The arguments are checked before either request as for ``get_un_exports``, membership
     only. A reporter-year the imports list lacks raises ``NotFoundError`` naming the
@@ -1558,7 +1559,7 @@ async def get_un_reexports_async(
     1987, kept by the UN data). Iceland, listed for 2019 exports, answers an empty list
     for its 2019 re-exports. The UN Trade data is frozen at statistical year 2019, last
     released on 2021-01-18, as recorded on 2026-10-26. Two requests: the exports release list
-    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for an hour), then
+    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day), then
     the year (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export
     release list, so the package checks the exports list, by assumption, as the Census
     re-export tasks do: a reporter-year it lacks raises ``NotFoundError`` naming the
@@ -1609,9 +1610,10 @@ async def get_un_release_dates_async(
     differ: 32 reporter-years are listed only for exports, 68 only for imports. The three UN data
     tasks check a reporter-year against this list and give its time as ``meta.vintage``,
     the re-exports task the exports list's, since re-exports have no list of their own.
-    One request, kept by the client for an hour; ``meta.retrieved_at`` is when it was
-    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
-    release. The filters apply after the request.
+    One request, kept by the client for a day, since the feed is frozen;
+    ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
+    ``meta.vintage`` stay empty: the list is no single release. The filters apply after
+    the request.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports

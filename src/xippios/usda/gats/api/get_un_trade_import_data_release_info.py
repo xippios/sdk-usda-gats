@@ -10,10 +10,10 @@ statistical year, newest year first, 3,832 records for 207 reporters from ``"198
 ``"2019"`` (about 406 KB of JSON), the newest released on 2021-01-18. Error shapes are
 mapped once in ``xippios.usda.gats._client.classify``.
 
-The client caches this path for an hour (``_client.CACHED_PATHS``), so the wrapper reads
-it with ``client.get_answer``, whose ``retrieved_at`` a task reports as
-``meta.retrieved_at``: on a cache hit the time the entry was stored, else the time the
-answer arrived (conventions §4, ADR-0015).
+The client caches this path for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
+frozen, so the wrapper reads it with ``client.get_answer``, whose ``retrieved_at`` a task
+reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
+time the answer arrived (conventions §4, ADR-0015).
 """
 
 from datetime import datetime

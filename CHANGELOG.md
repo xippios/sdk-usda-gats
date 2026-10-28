@@ -47,6 +47,15 @@ All notable changes to this project are documented here. The format follows
   `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
   are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
   fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
+- The client keeps the two UN Trade release-date lists for a day, where it kept them for
+  an hour with the Census ones: the UN Trade feed is frozen (statistical year 2019 its
+  latest, 2021-01-18 its last release), so a UN task spends one request per flow per day
+  on its list. A refusal from the cached UN list says it is kept for a day. The Census
+  release lists stay at an hour (`_client.UN_RELEASE_DATES_TTL`,
+  `_client.un_release_dates_cache`).
+- The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
+  core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
+  default, and a list grown past it would no longer have been cached for the day.
 
 ### Fixed
 

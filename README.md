@@ -163,8 +163,9 @@ Zealand) discontinued in 1987, yet the UN data uses them for later years and nev
 same-name successors (`A2`, `N3`, ...). So the UN tasks check both country codes for
 membership in the packaged list only; the Census tasks' discontinuation rule does not
 apply. Before the data request a task checks the reporter-year against the flow's UN
-release list: the imports task the imports list, the exports task and, by assumption,
-the re-exports task the exports list, since upstream publishes no re-export list. GATS
+release list, which the client keeps for a day, the feed being frozen: the imports
+task the imports list, the exports task and, by assumption, the re-exports task the
+exports list, since upstream publishes no re-export list. GATS
 answers an unknown reporter, a future year and an unreleased year alike with an empty
 list, so a reporter-year the list lacks raises `NotFoundError` naming the reporter's
 listed years and the latest year; a listed reporter-year without trade is an empty list
@@ -287,11 +288,13 @@ feed's last release, 2021-01-18, as recorded on 2026-10-26.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and
-xippios-usda-esr among them); a release list answered from the client's cache spends
-none, and so does the commodities list answered from it within its day. A month series
-spends one request per month. The client
-keeps its own pace of one request per second; once the quota is spent it
-waits for the quota to come back when that takes at most 30 s, and otherwise raises
+xippios-usda-esr among them); an answer from the client's cache spends none. The client
+caches five answers and nothing else: the two Census release lists for an hour, the two
+UN Trade release lists for a day, since that feed is frozen, and the HS10 commodities
+list for a day; it stores a body of up to 16 MiB, twice core's default, so that the
+7.6 MB commodities list stays cached if it grows. A month series spends one request per
+month. The client keeps its own pace of one request per second; once the quota is spent
+it waits for the quota to come back when that takes at most 30 s, and otherwise raises
 `RateLimitError` with `retry_after` instead of sending.
 
 ## Upstream terms and attribution

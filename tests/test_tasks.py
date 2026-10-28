@@ -1895,8 +1895,8 @@ def test_partner_code_and_hs6_code_select_after_the_one_request(
 def test_the_un_release_list_is_fetched_once_for_two_task_calls(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """The client caches the UN lists like the Census ones: the second call sends only its
-    data request, and the re-exports task reads the exports list from the same entry."""
+    """The client caches the UN lists, for a day: the second call sends only its data
+    request, and the re-exports task reads the exports list from the same entry."""
     releases = replay_fixture(UN_EXPORT_RELEASES, "all")
     exports = replay_fixture(UN_EXPORTS, "IC_2019")
     re_exports = replay_fixture(UN_RE_EXPORTS, "MC_2019")
@@ -1971,7 +1971,7 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
         message
     )
     assert "The release list was fetched at " in message, "and from the cache"
-    assert " UTC and is kept for an hour" in message
+    assert " UTC and is kept for a day" in message, "the UN lists' cache, the feed frozen"
     with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
         tasks.get_un_exports("IC", 2035)
     assert future.call_count == 0, "GATS's 200 [] for 2035 is never asked for"

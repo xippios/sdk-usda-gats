@@ -24,7 +24,7 @@ TTL, so ``cache`` is a ``CacheBackend`` of the package's own over two of them,
 
 GATS's own answers to an unknown partner, a month out of range or a month without data
 are not mapped here: what they are is recorded under
-``tests/fixtures/GATSData_GetCensusExports/`` and decided with the tasks.
+``tests/fixtures/get_census_exports/`` and decided with the tasks.
 """
 
 from collections.abc import Mapping
@@ -79,7 +79,7 @@ the cache it costs one per flow per ``RELEASE_DATES_TTL``. The three series task
 (``tasks.get_census_export_series`` and the two others) read the list once for all
 their months. A list is one record per
 statistical month and changes only when a month is released or revised: as recorded
-(``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), 2026-08 was
+(``tests/fixtures/get_census_export_data_release_info/all.json``), 2026-08 was
 released on 2026-10-06 and 2026-07 on 2026-09-03, and the annual revision re-released
 2023-01 to 2025-12 on 2026-06-24.
 
@@ -87,7 +87,7 @@ The UN Trade lists, ``GATSData_GetUNTradeExportDataReleaseInfo`` and
 ``GATSData_GetUNTradeImportDataReleaseInfo``, are one record per reporter and statistical
 year, about 400 KB of JSON each, and as recorded on 2026-10-26 they end with 2019, last
 released on 2021-01-18
-(``tests/fixtures/GATSData_GetUNTradeExportDataReleaseInfo/all.json``); they are cached
+(``tests/fixtures/get_un_trade_export_data_release_info/all.json``); they are cached
 alike, so that a task that reads one before the data costs one request per flow per
 ``RELEASE_DATES_TTL`` too.
 """
@@ -214,10 +214,10 @@ def classify(response: httpx.Response) -> XippiosError | None:
 
     The ``ClientConfig.classify`` hook: it sees every response before core's status mapping.
     The gateway's answers come first, mapped by ``gateway.classify``: an ``API_KEY_*`` 401
-    or 403 (recorded: ``GATSData_GetRegions/invalid_key.json``), the 429 and the
+    or 403 (recorded: ``get_regions/invalid_key.json``), the 429 and the
     ``NOT_FOUND`` 404. GATS has no answers of its own to map here: everything else falls
     through to core's status mapping, GATS's own answers to the Census data paths
-    included (``tests/fixtures/GATSData_GetCensusExports/``), which the tasks decide.
+    included (``tests/fixtures/get_census_exports/``), which the tasks decide.
     """
     error = gateway.classify(response)
     if error is not None:

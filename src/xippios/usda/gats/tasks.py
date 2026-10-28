@@ -10,7 +10,7 @@ one upstream call returns it; never paged, never sliced upstream. Before that ca
 check the arguments (``params``) and fetch a release list, which the client caches for
 an hour (``_client.RELEASE_DATES_PATHS``): GATS answers a month it has not released with
 ``[]``, the same as a partner without trade (``future_month.json`` and
-``no_data_valid_partner.json`` under ``tests/fixtures/GATSData_GetCensusExports/``), so
+``no_data_valid_partner.json`` under ``tests/fixtures/get_census_exports/``), so
 a month the list lacks is refused as ``NotFoundError`` naming the months it holds. The
 imports forms check the imports list (``GATSData_GetCensusImportDataReleaseInfo``); the
 exports forms and, by assumption, the re-exports forms check the exports list
@@ -78,7 +78,7 @@ codes for membership only, since the UN data keeps codes the countries list mark
 discontinued in 1987 (``AS``, Australia) for 2019, and fetch the flow's UN Trade release
 list, cached like the Census ones. GATS answers an unknown reporter, a year far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
-``unreleased_year.json`` under ``tests/fixtures/GATSData_GetUNTradeExports/``), so a
+``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
 years and the list's latest year. The imports task checks the imports list
 (``GATSData_GetUNTradeImportDataReleaseInfo``); the exports task and, by assumption as

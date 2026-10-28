@@ -7,7 +7,7 @@ HS10 Code and Census and FAS Unit Of Measure IDS. Please see UnitsOfMeasure end 
 Units of measure description." The record shape is the one recorded on 2026-10-26
 (``models.Commodity``): one answer, never paged, 24,936 records and about 7.6 MB of JSON,
 the largest answer in the family so far, committed whole as
-``tests/fixtures/GATSData_GetCommodities/all.json`` (8,383,278 bytes). Error shapes are
+``tests/fixtures/get_commodities/all.json`` (8,383,278 bytes). Error shapes are
 mapped once in ``xippios.usda.gats._client.classify``.
 
 The client caches this path for a day (``_client.COMMODITIES_TTL``), so the wrapper reads

@@ -4,7 +4,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 ``GATSData_GetCountries``: no parameters, the response typed only as ``object``. Upstream:
 "Returns a set of records with Countries and their corresponding Regions Codes the
 Country belongs to." The record shape is the recorded one,
-``tests/fixtures/GATSData_GetCountries/all.json`` (322 records), parsed into
+``tests/fixtures/get_countries/all.json`` (322 records), parsed into
 ``models.Country``; its ``countryCode`` is the ``partnerCode`` of the Census data
 operations. Error shapes are mapped once in ``xippios.usda.gats._client.classify``.
 """

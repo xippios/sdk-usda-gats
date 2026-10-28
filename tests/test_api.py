@@ -39,16 +39,16 @@ from xippios.usda.gats.models import (
 pytestmark = pytest.mark.anyio
 
 SNAPSHOT = Path(__file__).parents[1] / "docs" / "upstream" / "openapi" / "portal-document.json"
-EXPORTS = "GATSData_GetCensusExports"
-RE_EXPORTS = "GATSData_GetCensusReExports"
-DISTRICT_EXPORTS = "GATSData_GetCustomsDistrictsExports"
-DISTRICT_IMPORTS = "GATSData_GetCustomsDistrictsImports"
-DISTRICT_RE_EXPORTS = "GATSData_GetCustomsDistrictsReExports"
-UN_EXPORTS = "GATSData_GetUNTradeExports"
-UN_IMPORTS = "GATSData_GetUNTradeImports"
-UN_RE_EXPORTS = "GATSData_GetUNTradeReExports"
-UN_EXPORT_RELEASES = "GATSData_GetUNTradeExportDataReleaseInfo"
-UN_IMPORT_RELEASES = "GATSData_GetUNTradeImportDataReleaseInfo"
+EXPORTS = "get_census_exports"
+RE_EXPORTS = "get_census_re_exports"
+DISTRICT_EXPORTS = "get_customs_districts_exports"
+DISTRICT_IMPORTS = "get_customs_districts_imports"
+DISTRICT_RE_EXPORTS = "get_customs_districts_re_exports"
+UN_EXPORTS = "get_un_trade_exports"
+UN_IMPORTS = "get_un_trade_imports"
+UN_RE_EXPORTS = "get_un_trade_re_exports"
+UN_EXPORT_RELEASES = "get_un_trade_export_data_release_info"
+UN_IMPORT_RELEASES = "get_un_trade_import_data_release_info"
 
 
 def recorded_keys(fixtures_dir: Path, endpoint: str, case: str) -> set[tuple[str, ...]]:
@@ -73,7 +73,7 @@ def units(record: CensusExport | CustomsDistrictExport) -> tuple[int, int, int, 
 
 
 async def test_get_countries(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCountries", "all")
+    route = replay_fixture("get_countries", "all")
     countries = await api.get_countries()
     assert len(countries) == 322
     by_code = {c.country_code: c for c in countries}
@@ -99,7 +99,7 @@ async def test_get_countries(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> None:
-    replay_fixture("GATSData_GetCountries", "all")
+    replay_fixture("get_countries", "all")
     country = (await api.get_countries())[0]
     assert country.model_dump(mode="json") == {
         "country_code": "01",
@@ -114,8 +114,8 @@ async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> Non
 
 
 async def test_get_regions(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetRegions", "all")
-    replay_fixture("GATSData_GetCountries", "all")
+    route = replay_fixture("get_regions", "all")
+    replay_fixture("get_countries", "all")
     regions = await api.get_regions()
     assert len(regions) == 15
     assert regions[0] == Region(region_code="R05", region_name="North America")
@@ -132,7 +132,7 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
     """The HS10 list whole: 24,936 records, 8,383,278 bytes as a fixture file, the largest
     in the family. Product types ``T`` and ``B`` carry seven digits padded with three
     spaces, kept as sent; code, product type and start month are unique together."""
-    route = replay_fixture("GATSData_GetCommodities", "all")
+    route = replay_fixture("get_commodities", "all")
     records, retrieved_at = await api.get_commodities()
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
@@ -193,7 +193,7 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
     """The HS6 list whole: 2,909 records, 720,749 bytes as a fixture file."""
-    route = replay_fixture("GATSData_GetHS6Commodities", "all")
+    route = replay_fixture("get_hs6_commodities", "all")
     records = await api.get_hs6_commodities()
     assert len(records) == 2909
     assert records[0] == HS6Commodity(
@@ -213,7 +213,7 @@ async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetUnitsOfMeasure", "all")
+    route = replay_fixture("get_units_of_measure", "all")
     records = await api.get_units_of_measure()
     assert [u.unit_of_measure_id for u in records] == list(range(108)), "0 to 107, no gap"
     by_id = {u.unit_of_measure_id: u for u in records}
@@ -231,7 +231,7 @@ async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCustomsDistricts", "all")
+    route = replay_fixture("get_customs_districts", "all")
     records = await api.get_customs_districts()
     assert len(records) == 53
     ids = [d.customs_district_id for d in records]
@@ -252,7 +252,7 @@ async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
 
 
 async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    route = replay_fixture("get_census_export_data_release_info", "all")
     releases, retrieved_at = await api.get_census_export_data_release_info()
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
@@ -277,8 +277,8 @@ async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) ->
 
 
 async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) -> None:
-    route = replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
+    route = replay_fixture("get_census_import_data_release_info", "all")
+    replay_fixture("get_census_export_data_release_info", "all")
     imports, _ = await api.get_census_import_data_release_info()
     exports, _ = await api.get_census_export_data_release_info()
     assert len(imports) == 716
@@ -329,7 +329,7 @@ async def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_census_import(replay_fixture: ReplayFixture) -> None:
     """The largest answer in the family so far: 3,294 records, 1,099,638 bytes."""
-    route = replay_fixture("GATSData_GetCensusImport", "CH_2026_8")
+    route = replay_fixture("get_census_import", "CH_2026_8")
     records = await api.get_census_import("CH", 2026, 8)
     assert len(records) == 3294
     assert records[0] == CensusImport(
@@ -566,12 +566,12 @@ async def test_the_lists_name_every_unit_district_and_hs6_code_the_answers_carry
 ) -> None:
     """Every unit-of-measure id and customs district in the recorded Census answers is
     listed, and the first six digits of every HS10 code are a listed HS6 code."""
-    for endpoint in ("GATSData_GetUnitsOfMeasure", "GATSData_GetCustomsDistricts"):
+    for endpoint in ("get_units_of_measure", "get_customs_districts"):
         replay_fixture(endpoint, "all")
-    replay_fixture("GATSData_GetHS6Commodities", "all")
+    replay_fixture("get_hs6_commodities", "all")
     for endpoint, case in [
         (EXPORTS, "CH_2026_8"),
-        ("GATSData_GetCensusImport", "CH_2026_8"),
+        ("get_census_import", "CH_2026_8"),
         (RE_EXPORTS, "IC_2026_8"),
         (DISTRICT_EXPORTS, "IC_2026_8"),
         (DISTRICT_IMPORTS, "IC_2026_8"),
@@ -703,8 +703,8 @@ async def test_product_type_members_are_the_release_records_codes(
 ) -> None:
     """The members are upstream's ``productType`` codes, equal to the records' own: ``X``
     throughout the exports list, ``M`` throughout the imports list."""
-    replay_fixture("GATSData_GetCensusExportDataReleaseInfo", "all")
-    replay_fixture("GATSData_GetCensusImportDataReleaseInfo", "all")
+    replay_fixture("get_census_export_data_release_info", "all")
+    replay_fixture("get_census_import_data_release_info", "all")
     exports, _ = await api.get_census_export_data_release_info()
     imports, _ = await api.get_census_import_data_release_info()
     assert [m.value for m in ProductType] == ["X", "M"]
@@ -822,7 +822,7 @@ async def test_the_un_release_lists_name_reporters_by_gats_country_code(
     the list marks discontinued are listed for years after their ``discontinuedOn``
     (Norway's ``NO``, discontinued 198712, has 2018), and their same-name successors
     (``N3``) never: the codes are not the countries list's current ones."""
-    replay_fixture("GATSData_GetCountries", "all")
+    replay_fixture("get_countries", "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
     countries = {c.country_code: c for c in await api.get_countries()}
@@ -963,9 +963,9 @@ async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
     countries list, every HS6 code one of the HS6 list and every unit id one of the units
     list. Partners include codes the countries list marks discontinued (``NO``, Norway,
     198712) and never their same-name successors."""
-    replay_fixture("GATSData_GetCountries", "all")
-    replay_fixture("GATSData_GetHS6Commodities", "all")
-    replay_fixture("GATSData_GetUnitsOfMeasure", "all")
+    replay_fixture("get_countries", "all")
+    replay_fixture("get_hs6_commodities", "all")
+    replay_fixture("get_units_of_measure", "all")
     replay_fixture(UN_EXPORTS, "IC_2019")
     replay_fixture(UN_IMPORTS, "TP_2019")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")

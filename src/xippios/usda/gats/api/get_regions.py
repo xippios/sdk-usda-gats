@@ -4,7 +4,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 ``GATSData_GetRegions``: no parameters, the response typed only as ``object``. Upstream:
 "Returns a set of records with Region Codes and Region Names. Use it to associate Region
 Name with Country records obtained by querying Country end point". The record shape is
-the recorded one, ``tests/fixtures/GATSData_GetRegions/all.json`` (15 records, about
+the recorded one, ``tests/fixtures/get_regions/all.json`` (15 records, about
 0.8 KB of JSON), parsed into ``models.Region``; its ``regionCode`` is the ``regionCode``
 of ``GATSData_GetCountries``. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``.

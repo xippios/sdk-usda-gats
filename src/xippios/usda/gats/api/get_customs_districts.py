@@ -5,7 +5,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 Upstream: "Returns a set of records with US Customs Districts, the point of Entry and Exit
 for the Commodity Imports and Exports. For Ex, Total imports from China into USA could
 come in from multiple US Customs Districts for a given year." The record shape is the
-recorded one, ``tests/fixtures/GATSData_GetCustomsDistricts/all.json`` (53 records,
+recorded one, ``tests/fixtures/get_customs_districts/all.json`` (53 records,
 about 8 KB of JSON), parsed into ``models.CustomsDistrict``; its ``customsDistrictId`` is
 the district of the customs-district data operations. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``.

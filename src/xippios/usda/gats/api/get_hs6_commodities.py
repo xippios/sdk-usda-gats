@@ -5,7 +5,7 @@ Reference: ``docs/upstream/openapi/portal-document.json``, operation
 Upstream: "Returns a list of Commodities classified at a broader level of classification,
 at the HS6 Level, as opposed to HS10 Level. Use this to correlate the Import, Export and
 Re-export data records obtained by querying UN Trade Data." The record shape is the
-recorded one, ``tests/fixtures/GATSData_GetHS6Commodities/all.json`` (2,909 records,
+recorded one, ``tests/fixtures/get_hs6_commodities/all.json`` (2,909 records,
 about 661 KB of JSON, never paged), parsed into ``models.HS6Commodity``. Error shapes are
 mapped once in ``xippios.usda.gats._client.classify``.
 """

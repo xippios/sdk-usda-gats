@@ -1,7 +1,7 @@
 """The list tasks: five answer from the packaged lists without a call, one fetches live.
 
 The packaged files were written from the answers recorded in
-``tests/fixtures/<operation>/all.json``, so a task returning exactly what the endpoint
+``tests/fixtures/<wrapper>/all.json``, so a task returning exactly what the endpoint
 wrapper parses from that recording proves the package answers what upstream answered.
 Every test here runs with ``respx`` active: a request no route matches fails loudly, and
 each packaged-list test checks that the tasks sent none. ``list_commodities`` replays the
@@ -109,7 +109,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     request_: dict[str, Any],
 ) -> None:
     """The recording is mounted, so a call would succeed silently; none is made."""
-    route = replay_fixture(endpoint, "all")
+    route = replay_fixture(wrapper, "all")
     result = await getattr(tasks, f"{task}_async")()
     assert not respx_mock.calls, f"{task} called upstream"
     recorded = await getattr(api, wrapper)()
@@ -328,7 +328,7 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
 ) -> None:
     """One request for the HS10 list, which the client keeps for a day: the second call,
     with a filter, sends nothing, and its ``retrieved_at`` is when the list was stored."""
-    route = replay_fixture("GATSData_GetCommodities", "all")
+    route = replay_fixture("get_commodities", "all")
     every = tasks.list_commodities()
     assert route.call_count == 1, "the first call went to the wire"
     assert len(every.data) == 24936
@@ -354,7 +354,7 @@ def test_list_commodities_fetches_live_once_and_answers_from_the_cache(
 def test_list_commodities_filters(replay_fixture: ReplayFixture) -> None:
     """``search`` on the name and the description, ``hs10_code`` a prefix of the code,
     ``product_type`` exact; together they narrow, after the one request."""
-    route = replay_fixture("GATSData_GetCommodities", "all")
+    route = replay_fixture("get_commodities", "all")
     assert len(tasks.list_commodities(search="wheat").data) == 168
     assert (
         tasks.list_commodities(search="WHEAT").data == tasks.list_commodities(search="wheat").data
@@ -407,7 +407,7 @@ async def test_commodities_over_mcp_are_cut_with_a_note_naming_the_filters(
 ) -> None:
     """24,936 records keep the default cap with a note naming the three filters; a
     narrow query comes back whole, from the cache."""
-    route = replay_fixture("GATSData_GetCommodities", "all")
+    route = replay_fixture("get_commodities", "all")
     payload = await mcp_call(server, "usda_gats_list_commodities", {})
     shown = len(payload["data"])
     assert 0 < shown <= CAP
@@ -433,7 +433,7 @@ def test_list_routes_over_http(replay_fixture: ReplayFixture) -> None:
 
     from xippios.usda.gats.http import router
 
-    replay_fixture("GATSData_GetCommodities", "all")
+    replay_fixture("get_commodities", "all")
     app = FastAPI()
     app.include_router(router)
     http = TestClient(app)

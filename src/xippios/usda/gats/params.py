@@ -218,7 +218,7 @@ def validate_reporter_code(reporter_code: str) -> str:
     """Check a UN Trade reporter code against the packaged ``countries`` list, membership only.
 
     GATS answers an unknown reporter with HTTP 200 and ``[]``
-    (``tests/fixtures/GATSData_GetUNTradeExports/unknown_reporter.json``, ``ZZ``, 2019),
+    (``tests/fixtures/get_un_trade_exports/unknown_reporter.json``, ``ZZ``, 2019),
     as it answers a year without data, so the check runs before any upstream call. Every
     reporter of the recorded UN Trade release lists is a listed code. No
     ``discontinuedOn`` check: the UN Trade data keeps codes the countries list marks
@@ -353,8 +353,8 @@ def validate_year(year: int) -> int:
     The snapshot types the Census ``year`` as ``int32`` and the UN Trade ``year`` as a
     string, and states no range for either, so none is invented beyond four digits. The
     Census release lists start at ``"196701"``
-    (``tests/fixtures/GATSData_GetCensusExportDataReleaseInfo/all.json``), the UN Trade
-    lists at ``"1989"`` (``.../GATSData_GetUNTradeExportDataReleaseInfo/all.json``); a
+    (``tests/fixtures/get_census_export_data_release_info/all.json``), the UN Trade
+    lists at ``"1989"`` (``.../get_un_trade_export_data_release_info/all.json``); a
     task checks the month, or the reporter-year, against its list after this.
 
     Args:
@@ -380,7 +380,7 @@ def validate_month(month: int) -> int:
     """Check that a month is an integer from 1 to 12.
 
     GATS answers month 0 and month 13 with HTTP 404 and an empty body
-    (``tests/fixtures/GATSData_GetCensusExports/month_0.json`` and ``month_13.json``,
+    (``tests/fixtures/get_census_exports/month_0.json`` and ``month_13.json``,
     recorded for China in 2026); month 0 is no whole-year form. The check refuses them,
     and every other month outside 1 to 12, before any call.
 

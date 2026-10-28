@@ -10,7 +10,7 @@ operation; the path says ``customsDistrictReExports``): three path parameters,
 USA, that are ultimately exported out to other countries from USA". The record is
 ``models.CustomsDistrictExport``: the recorded answer carries the customs-district
 exports' eleven fields in their order and nothing else, so that model is reused rather
-than copied (``tests/fixtures/GATSData_GetCustomsDistrictsReExports/IC_2026_8.json``, 13
+than copied (``tests/fixtures/get_customs_districts_re_exports/IC_2026_8.json``, 13
 records, about 3 KB of JSON, for Iceland in August 2026). One answer is one partner-month
 across all districts and products, never paged. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``; the probes recorded for

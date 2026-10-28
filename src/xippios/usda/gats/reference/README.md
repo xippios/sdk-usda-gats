@@ -37,11 +37,11 @@ when the packaged records differ, naming what is gone and what is new.
 | `customsDistricts.json` | `GET https://api.fas.usda.gov/api/gats/customsDistricts` (`GATSData_GetCustomsDistricts`) | 2026-10-26 | 53 |
 
 The 2026-10-25 file was written by `scripts/refresh_reference.py` from the answer
-recorded the same evening in `tests/fixtures/GATSData_GetCountries/all.json`
+recorded the same evening in `tests/fixtures/get_countries/all.json`
 (21:00:34 UTC), served to the script's wrapper through `respx`, so the refresh spent no
 second keyed call. The four 2026-10-26 files were written by the 0.1.0 script's own
 functions from the answers recorded that morning in
-`tests/fixtures/<operation>/all.json`, served to the wrappers through `respx` in the same
+`tests/fixtures/<wrapper>/all.json`, served to the wrappers through `respx` in the same
 way: `GATSData_GetRegions` at 04:55:45 UTC, `GATSData_GetHS6Commodities` at 04:55:54,
 `GATSData_GetUnitsOfMeasure` at 04:55:55 and `GATSData_GetCustomsDistricts` at 04:55:56;
 `countries.json` was left as it was, so it keeps its own date. Every file's records

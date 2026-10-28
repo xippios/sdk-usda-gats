@@ -343,8 +343,12 @@ def test_list_hs6_commodities_hs6_code_with_search_and_without_a_match(
 def test_list_hs6_commodities_refuses_an_hs6_code_that_is_not_digits(
     respx_mock: respx.MockRouter, hs6_code: object
 ) -> None:
-    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text"):
+    with pytest.raises(InvalidRequestError, match="hs6_code must be 1 to 6 digits as text") as info:
         tasks.list_hs6_commodities(hs6_code=hs6_code)  # type: ignore[arg-type]
+    assert info.value.message.endswith(
+        "search finds the codes by name or description, e.g. 'wheat'."
+    ), "the tool's own search, not the tool itself"
+    assert "list_hs6_commodities lists the codes" not in info.value.message
     assert not respx_mock.calls
 
 

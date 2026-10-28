@@ -556,7 +556,9 @@ def _sharing_digits(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
     return [(code, codes[code]) for code in ranked[:3]]
 
 
-def validate_hs6_prefix(hs6_code: str) -> str:
+def validate_hs6_prefix(
+    hs6_code: str, *, hint: str = "list_hs6_commodities lists the codes."
+) -> str:
     """Check that an HS6 filter is 1 to 6 ASCII digits as text: a full code or a prefix.
 
     The shape alone, as ``validate_hs10_code`` checks an HS10 filter: the filter of
@@ -568,6 +570,9 @@ def validate_hs6_prefix(hs6_code: str) -> str:
     Args:
         hs6_code: E.g. ``"100190"`` (Wheat, except Durum, one code), ``"0201"`` (an HS
             heading), ``"02"`` (chapter 02).
+        hint: The message's last sentence, where to find the codes: by default
+            ``list_hs6_commodities``; that task's own filter names its ``search``
+            instead, since pointing an agent to the tool it called would go in a circle.
 
     Returns:
         The filter, unchanged.
@@ -578,8 +583,7 @@ def validate_hs6_prefix(hs6_code: str) -> str:
     if not isinstance(hs6_code, str) or _HS6.fullmatch(hs6_code) is None:
         raise InvalidRequestError(
             "hs6_code must be 1 to 6 digits as text: a full HS6 code such as "
-            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. '
-            "list_hs6_commodities lists the codes.",
+            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. {hint}',
             source=SOURCE,
         )
     return hs6_code

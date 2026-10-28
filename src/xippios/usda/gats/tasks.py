@@ -1870,7 +1870,9 @@ async def list_hs6_commodities_async(
     """
     _search(search)
     if hs6_code is not None:
-        validate_hs6_prefix(hs6_code)
+        validate_hs6_prefix(
+            hs6_code, hint="search finds the codes by name or description, e.g. 'wheat'."
+        )
     packaged = PackagedList.load(PACKAGE, "HS6Commodities")
     selected = [
         c

@@ -80,7 +80,11 @@ source's codes (ADR-0003). Before the call they check the arguments, the two cou
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
 list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
-frozen. GATS answers an unknown reporter, a year far ahead and
+frozen. A refused ISO or GENC code that several listed codes share (``"AUS"``: ``A2``,
+``AS``) is refused after that list is read, naming first the codes it holds as reporters
+(``AS``), since the recorded lists follow no rule on the codes themselves
+(``_un_ranked``); every other refusal comes before any request. GATS answers an unknown
+reporter, a year far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
 ``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
@@ -127,6 +131,7 @@ from xippios.core import (
     Result,
     ResultCap,
     ResultMeta,
+    UnknownCode,
     matches,
     sync,
 )
@@ -152,6 +157,7 @@ from xippios.usda.gats.models import (
 )
 from xippios.usda.gats.params import (
     PACKAGE,
+    shared_three_letter_code,
     validate_country_code,
     validate_customs_district_id,
     validate_hs6_code,
@@ -1291,21 +1297,79 @@ async def get_census_release_dates_async(
 
 
 def _un_check(
-    reporter_code: str, year: int, partner_code: str | None, hs6_code: str | None
+    reporter_code: str,
+    year: int,
+    partner_code: str | None,
+    hs6_code: str | None,
+    reporters: frozenset[str] | None = None,
 ) -> None:
-    """Every argument of a UN Trade data task, before any call; see ``params``.
+    """Every argument of a UN Trade data task, before the data call; see ``params``.
 
     Both country codes are checked for membership in the packaged countries list only:
     the Census tasks' ``discontinuedOn`` rule (``validate_partner_month``) does not apply,
     since the UN data keeps GATS's older codes for 2019, among them ``DA`` (Denmark,
-    discontinued 198712), a leaf that rule refuses after its month.
+    discontinued 198712), a leaf that rule refuses after its month. ``reporters`` ranks
+    the close codes of a refusal (``_un_ranked``).
     """
-    validate_reporter_code(reporter_code)
+    validate_reporter_code(reporter_code, reporters=reporters)
     validate_year(year)
     if partner_code is not None:
-        validate_country_code(partner_code, "partner_code", reason=UN_PARTNER_REASON)
+        validate_country_code(
+            partner_code, "partner_code", reason=UN_PARTNER_REASON, reporters=reporters
+        )
     if hs6_code is not None:
         validate_hs6_code(hs6_code)
+
+
+async def _un_releases(
+    product_type: ProductType,
+) -> tuple[list[UNTradeDataReleaseInfo], datetime]:
+    """The UN Trade release list of ``product_type`` and when it was retrieved.
+
+    One request, or none while the cache holds the list (``_client.UN_RELEASE_DATES_TTL``,
+    a day); the time is the cache's stored time on a hit, else the time the list arrived.
+    """
+    if product_type is ProductType.X:
+        return await api.get_un_trade_export_data_release_info()
+    return await api.get_un_trade_import_data_release_info()
+
+
+async def _un_ranked(
+    product_type: ProductType, check: Callable[[frozenset[str] | None], None]
+) -> None:
+    """Run a UN Trade task's argument checks; rank a shared ISO or GENC code's refusal.
+
+    ``check`` runs first with no reporters, before any request. A refusal of a country
+    code passes through unless the value is an ISO or GENC code several listed codes
+    share (``params.shared_three_letter_code``: ``"AUS"`` leads to ``A2`` and ``AS``).
+    For that one the flow's release list is read, which the task reads before its data
+    anyway, and ``check`` runs again with the list's reporters: the refusal names the
+    codes the list holds as reporters first, still before the data call. No rule on the
+    codes themselves ranks them: as recorded on 2026-10-26 both lists hold ``AS`` and
+    never ``A2`` (Australia), ``NO`` and never ``N3`` (Norway), but ``F1`` and never
+    ``FR`` (France), ``SR`` and never ``SZ`` (Switzerland), and both ``GM`` and ``GE``
+    (Germany) for different years.
+
+    Args:
+        product_type: The flow whose list ranks the codes: ``ProductType.X`` for the
+            exports and re-exports tasks, ``ProductType.M`` for the imports task.
+        check: The task's checks with the reporters to rank by, e.g.
+            ``lambda reporters: _un_check("AUS", 2019, None, None, reporters)``.
+
+    Raises:
+        UnknownCode: A country code, a six-digit ``hs6_code``, the packaged lists lack.
+        InvalidRequestError: Another argument is not valid.
+    """
+    try:
+        check(None)
+    except UnknownCode as unknown:
+        shared = shared_three_letter_code(unknown.value)
+        if unknown.param not in {"reporter_code", "partner_code"} or not shared:
+            raise
+    else:
+        return
+    releases, _ = await _un_releases(product_type)
+    check(frozenset(release.reporter_code for release in releases))
 
 
 def _years(years: Iterable[str]) -> str:
@@ -1409,10 +1473,7 @@ async def _un_release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
-    if product_type is ProductType.X:
-        releases, fetched = await api.get_un_trade_export_data_release_info()
-    else:
-        releases, fetched = await api.get_un_trade_import_data_release_info()
+    releases, fetched = await _un_releases(product_type)
     flow, operation = UN_RELEASE_LISTS[product_type]
     return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
 
@@ -1482,9 +1543,11 @@ async def get_un_exports_async(
     (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
     75,919 records, about 17 MB). The arguments are checked before either: an unknown
     reporter or partner code raises ``InvalidRequestError`` naming up to three close codes
-    (``"ISL"`` leads to ``"IC"``; ``"AUS"`` names ``"A2"`` before ``"AS"``, which is the
-    code the UN data uses), or pointing to ``list_countries``; the Census tasks'
-    discontinuation check does not apply. A reporter-year the list lacks raises
+    (``"ISL"`` leads to ``"IC"``), or pointing to ``list_countries``; the Census tasks'
+    discontinuation check does not apply. An ISO or GENC code several listed codes share
+    is refused once the release list is read, naming first the codes the list holds as
+    reporters: ``"AUS"`` names ``"AS"``, the code the UN data uses, before ``"A2"``;
+    ``"FRA"`` names ``"F1"`` before ``"FR"``. A reporter-year the list lacks raises
     ``NotFoundError`` naming the reporter's listed years and the list's latest year; a
     listed reporter-year without exports gives an empty list. ``meta.vintage`` is the
     reporter-year's release time from that list, as upstream states it
@@ -1507,7 +1570,10 @@ async def get_un_exports_async(
             ``"0304"`` for a heading. ``None`` (the default) keeps every product. Both
             filters apply after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.X,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.X, reporter_code, year)
     records = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
@@ -1532,9 +1598,12 @@ async def get_un_imports_async(
     imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
     for a day), then the year (``GATSData_GetUNTradeImports``). The imports list is not
     the exports list: 68 reporter-years are listed only for imports, 32 only for exports.
-    The arguments are checked before either request as for ``get_un_exports``, membership
-    only. A reporter-year the imports list lacks raises ``NotFoundError`` naming the
-    reporter's listed years; a listed reporter-year without imports gives an empty list.
+    The arguments are checked as for ``get_un_exports``, membership only and before
+    either request, but for an ISO code several listed codes share, refused once the
+    imports list is read, its reporters named first (``"NOR"`` names ``"NO"`` before
+    ``"N3"``). A reporter-year the imports list lacks
+    raises ``NotFoundError`` naming the reporter's listed years; a listed reporter-year
+    without imports gives an empty list.
     ``meta.vintage`` is the reporter-year's release time from that list
     (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at`` is
     that time, naive (``meta.published_at_naive``).
@@ -1554,7 +1623,10 @@ async def get_un_imports_async(
             for a heading. ``None`` (the default) keeps every product. Both filters apply
             after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.M,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.M, reporter_code, year)
     records = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
     meta = _un_meta(
@@ -1581,8 +1653,10 @@ async def get_un_reexports_async(
     re-export tasks do: a reporter-year it lacks raises ``NotFoundError`` naming the
     reporter's listed export years, and ``meta.vintage`` is that list's release time for
     the reporter-year (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release,
-    not one the re-exports state. The arguments are checked before either request as for
-    ``get_un_exports``, membership only. A listed reporter-year without re-exports gives
+    not one the re-exports state. The arguments are checked as for ``get_un_exports``,
+    membership only and before either request, but for an ISO code several listed codes
+    share, refused once the exports list is read, its reporters named first. A listed
+    reporter-year without re-exports gives
     an empty list; ``meta.published_at`` is the release time, naive
     (``meta.published_at_naive``).
 
@@ -1601,13 +1675,26 @@ async def get_un_reexports_async(
             for a heading. ``None`` (the default) keeps every product. Both filters apply
             after the one data request.
     """
-    _un_check(reporter_code, year, partner_code, hs6_code)
+    await _un_ranked(
+        ProductType.X,
+        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+    )
     release = await _un_release(ProductType.X, reporter_code, year, "re-exports")
     records = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeReExports", release, reporter_code, year, partner_code, hs6_code
     )
     return Result(data=_un_selected(records, partner_code, hs6_code), meta=meta)
+
+
+def _un_release_dates_check(
+    reporter_code: str | None, year: int | None, reporters: frozenset[str] | None = None
+) -> None:
+    """The filters of ``get_un_release_dates``, those given; ``reporters`` as for ``_un_check``."""
+    if reporter_code is not None:
+        validate_reporter_code(reporter_code, reporters=reporters)
+    if year is not None:
+        validate_year(year)
 
 
 async def get_un_release_dates_async(
@@ -1638,20 +1725,17 @@ async def get_un_release_dates_async(
         reporter_code: Keep only this reporter's years, GATS's two-character code as
             ``list_countries`` lists it, e.g. ``"IC"`` (Iceland, 31 years, 1989 to
             2019), ``"MC"`` (Macau, 12 years), ``"IN"`` (India, to 2016). Checked
-            against the packaged list, membership only. ``None`` (the default) keeps
-            every reporter.
+            against the packaged list, membership only; an ISO code several listed
+            codes share is refused naming first the code the list holds (``"AUS"``
+            names ``"AS"``). ``None`` (the default) keeps every reporter.
         year: Keep only this statistical year, four digits, e.g. ``2019`` (32
             reporters), ``2016``. ``None`` (the default) keeps every year.
     """
     code = _product_type(product_type)
-    if reporter_code is not None:
-        validate_reporter_code(reporter_code)
-    if year is not None:
-        validate_year(year)
-    if code is ProductType.X:
-        releases, retrieved_at = await api.get_un_trade_export_data_release_info()
-    else:
-        releases, retrieved_at = await api.get_un_trade_import_data_release_info()
+    await _un_ranked(
+        code, lambda reporters: _un_release_dates_check(reporter_code, year, reporters)
+    )
+    releases, retrieved_at = await _un_releases(code)
     statistical_year = None if year is None else f"{year:04d}"
     selected = [
         r

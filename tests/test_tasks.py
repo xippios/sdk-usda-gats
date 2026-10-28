@@ -2143,6 +2143,108 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
 
 
 @pytest.mark.parametrize(
+    ("task", "arguments", "release_list", "url", "param", "first"),
+    [
+        (
+            tasks.get_un_exports,
+            ("AUS", 2019),
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            "reporter_code",
+            [("AS", "Australia"), ("A2", "Australia")],
+        ),
+        (
+            tasks.get_un_imports,
+            ("NOR", 2019),
+            UN_IMPORT_RELEASES,
+            UN_IMPORT_RELEASES_URL,
+            "reporter_code",
+            [("NO", "Norway"), ("N3", "Norway")],
+        ),
+        (
+            tasks.get_un_reexports,
+            ("MC", 2019, "AUS"),
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            "partner_code",
+            [("AS", "Australia"), ("A2", "Australia")],
+        ),
+        (
+            tasks.get_un_exports,
+            ("FRA", 2019),
+            UN_EXPORT_RELEASES,
+            UN_EXPORT_RELEASES_URL,
+            "reporter_code",
+            [("F1", "France"), ("FR", "France")],
+        ),
+    ],
+    ids=["exports_AUS", "imports_NOR", "re_exports_partner_AUS", "exports_FRA"],
+)
+def test_a_shared_iso_code_is_refused_with_the_listed_reporters_first(
+    replay_fixture: ReplayFixture,
+    respx_mock: respx.MockRouter,
+    task: Callable[..., Any],
+    arguments: tuple[Any, ...],
+    release_list: str,
+    url: str,
+    param: str,
+    first: list[tuple[str, str]],
+) -> None:
+    """An ISO code two listed codes share leads to both; a UN task reads the flow's
+    release list, which it reads before its data anyway, and names the code the list
+    holds as a reporter first, still before the data call: ``AUS`` names ``AS``, the code
+    the UN data uses, before ``A2``, the current code that leads without the list, and
+    ``FRA`` keeps ``F1`` first, since there the list holds the child, not the parent."""
+    releases = replay_fixture(release_list, "all")
+    with pytest.raises(UnknownCode) as info:
+        task(*arguments)
+    assert info.value.param == param
+    assert list(info.value.closest[:2]) == first
+    names = ", ".join(f"{code} ({name})" for code, name in first)
+    assert f"Did you mean {names}" in info.value.message
+    assert sent_urls(releases) == [url], "the release list, then no data call"
+    assert respx_mock.calls.call_count == 1
+
+
+def test_un_release_dates_rank_a_shared_iso_code_and_the_census_tasks_do_not(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """``get_un_release_dates`` ranks a refused reporter by the list it answers from; the
+    Census tasks keep the countries list's order, the current ``A2`` first, and send
+    nothing; a refusal without a shared code, ``ISL``, reads no list either."""
+    releases = replay_fixture(UN_EXPORT_RELEASES, "all")
+    with pytest.raises(UnknownCode) as un:
+        tasks.get_un_release_dates(ProductType.X, reporter_code="AUS")
+    assert un.value.closest[:2] == (("AS", "Australia"), ("A2", "Australia"))
+    assert sent_urls(releases) == [UN_EXPORT_RELEASES_URL]
+    with pytest.raises(UnknownCode) as census:
+        tasks.get_census_exports("AUS", 2026, 8)
+    assert census.value.closest[:2] == (("A2", "Australia"), ("AS", "Australia"))
+    with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
+        tasks.get_un_imports("ISL", 2019)
+    with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 19"):
+        tasks.get_un_exports("IC", 19, partner_code="AUS")
+    assert respx_mock.calls.call_count == 1, "only the UN exports list, once"
+
+
+@pytest.mark.anyio
+async def test_a_shared_iso_code_over_mcp_names_the_reporting_code_first(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """End to end: the tool's error names ``AS`` before ``A2`` for ``AUS``."""
+    releases = replay_fixture(UN_EXPORT_RELEASES, "all")
+    data = replay_fixture(UN_EXPORTS, "IC_2019")
+    with pytest.raises(
+        AssertionError,
+        match=r"error: UnknownCode: 'AUS' is not a reporter_code .* Did you mean AS "
+        r"\(Australia\), A2 \(Australia\)",
+    ):
+        await mcp_call(server, "usda_gats_get_un_exports", {"reporter_code": "AUS", "year": 2019})
+    assert sent_urls(releases) == [UN_EXPORT_RELEASES_URL]
+    assert data.call_count == 0
+
+
+@pytest.mark.parametrize(
     ("product_type", "endpoint", "fixture", "url", "count", "reporters", "first"),
     [
         (

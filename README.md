@@ -165,7 +165,12 @@ list marks `AS` (Australia), `DA` (Denmark), `IT` (Italy), `NO` (Norway) and `NZ
 Zealand) discontinued in 1987, yet the UN data uses them for later years and never their
 same-name successors (`A2`, `N3`, ...). So the UN tasks check both country codes for
 membership in the packaged list only; the Census tasks' discontinuation rule does not
-apply. Before the data request a task checks the reporter-year against the flow's UN
+apply. An ISO or GENC code that several listed codes share is refused naming first the
+codes the flow's UN release list holds as reporters: `"AUS"` names `AS` before `A2`,
+`"FRA"` names `F1` before `FR`. The lists follow no rule on the codes themselves (the
+parent reports for Australia, its child for France, both for Germany), so such a refusal
+reads the list first, still before the data request; the Census tasks keep the current
+code first. Before the data request a task checks the reporter-year against the flow's UN
 release list, which the client keeps for a day, the feed being frozen: the imports
 task the imports list, the exports task and, by assumption, the re-exports task the
 exports list, since upstream publishes no re-export list. GATS

@@ -12,7 +12,9 @@ field names. The HS10 list is not packaged: ``tasks.list_commodities`` fetches i
 
 The checks built on them: a country code against ``countries`` (``validate_country_code``,
 named by its parameter: ``validate_partner_code`` for the Census partner,
-``validate_reporter_code`` for the UN Trade reporter), a Census partner that is no other
+``validate_reporter_code`` for the UN Trade reporter; a refusal of an ISO or GENC code
+several listed codes share, ``shared_three_letter_code``, can be ranked by a UN Trade
+release list's reporters), a Census partner that is no other
 code's parent against its ``discontinuedOn`` month as well (``validate_partner_month``),
 a customs district id against ``customsDistricts`` (``validate_customs_district_id``) and
 a full HS6 code against ``HS6Commodities`` (``validate_hs6_code``). The UN Trade tasks
@@ -28,6 +30,7 @@ a validation failure names a code the package lacks.
 
 import functools
 import re
+from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
@@ -38,6 +41,7 @@ from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON
 
 __all__ = [
     "PACKAGED_LISTS",
+    "shared_three_letter_code",
     "validate_country_code",
     "validate_customs_district_id",
     "validate_hs6_code",
@@ -132,8 +136,35 @@ def _parent_codes() -> frozenset[str]:
     return frozenset(parents)
 
 
+def shared_three_letter_code(value: object) -> bool:
+    """Whether ``value`` is no listed country code but an ISO or GENC code several share.
+
+    23 three-letter codes of the packaged ``countries`` list lead to two or three country
+    codes (``_three_letter_codes``): ``"AUS"`` to ``A2`` and ``AS``, both Australia,
+    ``"FRA"`` to ``F1`` and ``FR``, both France, ``"DEU"`` to ``GM`` and ``GE``. A refusal
+    of such a value names them all, current codes first; which of them a UN Trade answer
+    uses only a release list shows (``validate_country_code``'s ``reporters``).
+
+    Args:
+        value: What was given as a country code, e.g. ``"AUS"`` (``True``), ``"aus"``
+            (``True``, read in capitals), ``"ISL"`` (``False``: only ``IC``), ``"AS"``
+            (``False``: a listed code), ``2`` (``False``: no text).
+
+    Returns:
+        ``True`` when ``value`` is text the list lacks and, in capitals, the
+        ``isO3Code`` or ``gencCode`` of two or more listed codes.
+    """
+    if not isinstance(value, str):
+        return False
+    _, codes = _codes("countries", "countryCode", "countryName")
+    return value not in codes and len(_three_letter_codes().get(value.upper(), [])) > 1
+
+
 def _closest(
-    value: str, codes: dict[str, str], three_letter: dict[str, list[str]] | None = None
+    value: str,
+    codes: dict[str, str],
+    three_letter: dict[str, list[str]] | None = None,
+    reporters: Collection[str] | None = None,
 ) -> list[tuple[str, str]]:
     """Up to three known codes close to ``value``: a three-letter code, then core's ``closest``.
 
@@ -145,13 +176,24 @@ def _closest(
     Two-character codes are close only when they differ in case, so a code that shares one
     character with a known one (``"ZZ"``) gets none. The three-letter pass is this
     package's own strategy in front of core's (ADR-0022, amendment 2026-10-27, point 3).
+    ``reporters`` reorders the three-letter matches only: the codes it holds first, the
+    others after, each group in the order it had (``"AUS"`` names ``AS`` before ``A2`` for
+    a UN Trade release list's reporters, ``A2`` first without them).
     """
     matches = list((three_letter or {}).get(value.upper(), []))
+    if reporters is not None:
+        matches.sort(key=lambda code: code not in reporters)
     matches += [code for code, _ in closest(value, codes) if code not in matches]
     return [(code, codes[code]) for code in matches[:3]]
 
 
-def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON) -> str:
+def validate_country_code(
+    code: str,
+    param: str,
+    *,
+    reason: str = PARTNER_REASON,
+    reporters: Collection[str] | None = None,
+) -> str:
     """Check a country code against the packaged ``countries`` list; messages name ``param``.
 
     The membership check of every code a task takes from that list: the Census
@@ -169,6 +211,10 @@ def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON
             ``"partner_code"``, ``"reporter_code"``.
         reason: Why an unknown code is refused, the end of ``UnknownCode``'s message,
             e.g. ``errors.PARTNER_REASON``, ``errors.REPORTER_REASON``.
+        reporters: The codes a UN Trade release list holds as reporters, e.g.
+            ``{"AS", "F1", "IC"}``: among the codes an ISO or GENC code leads to, those
+            it holds are named first. ``None`` (the default) keeps the countries list's
+            order, a current code before a discontinued one.
 
     Returns:
         The code, unchanged.
@@ -177,8 +223,9 @@ def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON
         InvalidRequestError: When the code is not text.
         UnknownCode: When the list lacks the code, naming up to three close codes with
             their upstream names (an ISO or GENC code such as ``"CHN"`` leads to its
-            country code first, a current code before a discontinued one), or two
-            examples and ``list_countries`` when none is close.
+            country code first, a reporter of ``reporters`` before another code, then a
+            current code before a discontinued one), or two examples and
+            ``list_countries`` when none is close.
     """
     fetched, codes = _codes("countries", "countryCode", "countryName")
     if not isinstance(code, str):
@@ -189,7 +236,7 @@ def validate_country_code(code: str, param: str, *, reason: str = PARTNER_REASON
         )
     if code in codes:
         return code
-    nearest = _closest(code, codes, _three_letter_codes())
+    nearest = _closest(code, codes, _three_letter_codes(), reporters)
     raise UnknownCode(
         param,
         code,
@@ -242,7 +289,7 @@ def validate_partner_code(partner_code: str) -> str:
     return validate_country_code(partner_code, "partner_code", reason=PARTNER_REASON)
 
 
-def validate_reporter_code(reporter_code: str) -> str:
+def validate_reporter_code(reporter_code: str, *, reporters: Collection[str] | None = None) -> str:
     """Check a UN Trade reporter code against the packaged ``countries`` list, membership only.
 
     GATS answers an unknown reporter with HTTP 200 and ``[]``
@@ -261,6 +308,10 @@ def validate_reporter_code(reporter_code: str) -> str:
         reporter_code: Two characters, as ``GATSData_GetCountries`` lists them, e.g.
             ``"IC"`` (Iceland), ``"TP"`` (Sao Tome and Principe), ``"MC"`` (Macau),
             ``"AS"`` (Australia).
+        reporters: The reporters of the UN Trade release list the task reads, e.g.
+            ``{"AS", "F1", "IC"}``, to rank the codes an ISO or GENC code leads to
+            (``"AUS"`` names ``AS`` before ``A2``); ``None`` (the default) for the
+            countries list's order.
 
     Returns:
         The code, unchanged.
@@ -271,7 +322,9 @@ def validate_reporter_code(reporter_code: str) -> str:
             their upstream names (``"ISL"`` leads to ``IC``), or two examples and
             ``list_countries`` when none is close.
     """
-    return validate_country_code(reporter_code, "reporter_code", reason=REPORTER_REASON)
+    return validate_country_code(
+        reporter_code, "reporter_code", reason=REPORTER_REASON, reporters=reporters
+    )
 
 
 def validate_partner_month(partner_code: str, year: int, month: int) -> str:

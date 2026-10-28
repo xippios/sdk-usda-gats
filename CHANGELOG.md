@@ -71,6 +71,16 @@ All notable changes to this project are documented here. The format follows
   keeps the records beside the cache entry they came from and returns them for every
   answer from that entry; a new entry is parsed again. `meta.retrieved_at` is still the
   entry's stored time.
+- The UN Trade tasks refuse an ISO or GENC code that several listed codes share naming
+  first the codes the flow's release list holds as reporters: `get_un_exports("AUS",
+  2019)` names `AS`, the code the UN data uses, before `A2`, where it named `A2` first.
+  The recorded lists follow no rule on the codes (the parent reports for Australia and
+  Norway, the child for France and Switzerland, both for Germany), so such a refusal
+  reads the list first, which the task reads anyway, and still comes before the data
+  request; every other refusal still comes before any request, and the Census tasks keep
+  the current code first. `params.validate_country_code` and
+  `params.validate_reporter_code` take the `reporters` to rank by;
+  `params.shared_three_letter_code` says when a value is such a code.
 - The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
   core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
   default, and a list grown past it would no longer have been cached for the day.

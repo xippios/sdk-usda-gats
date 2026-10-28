@@ -77,10 +77,12 @@ All notable changes to this project are documented here. The format follows
   The recorded lists follow no rule on the codes (the parent reports for Australia and
   Norway, the child for France and Switzerland, both for Germany), so such a refusal
   reads the list first, which the task reads anyway, and still comes before the data
-  request; every other refusal still comes before any request, and the Census tasks keep
-  the current code first. `params.validate_country_code` and
-  `params.validate_reporter_code` take the `reporters` to rank by;
-  `params.shared_three_letter_code` says when a value is such a code.
+  request; when the list cannot be read (no key, a spent quota, the network) the refusal
+  comes unranked, never as the list's error. Every other refusal still comes before any
+  request, and the Census tasks keep the current code first.
+  `params.validate_country_code` and `params.validate_reporter_code` take the
+  `reporters` to rank by; `params.shared_three_letter_code` says when a value is such a
+  code.
 - The three Census series tasks' descriptions, the MCP tools' text, say that the entry
   point `xippios-usda-gats-mcp` starts the MCP server with a ceiling of 24 months, which
   its `--series-months` sets from 1 to 60, against 60 in Python and over HTTP; they said

@@ -2227,6 +2227,44 @@ def test_un_release_dates_rank_a_shared_iso_code_and_the_census_tasks_do_not(
     assert respx_mock.calls.call_count == 1, "only the UN exports list, once"
 
 
+OVER_RATE_LIMIT = {
+    "error": {
+        "code": "OVER_RATE_LIMIT",
+        "message": (
+            "You have exceeded your rate limit. Try again later or contact us for "
+            "assistance: https://api.fas.usda.gov:443"
+        ),
+    }
+}
+"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway."""
+SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
+"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
+
+
+def test_a_shared_iso_code_is_refused_unranked_when_the_list_cannot_be_read(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """NOT RECORDED here: psd's recorded 429, body and quota headers, mocked on the UN
+    exports list. The list only ranks the refusal, so a failed read gives way to the
+    refusal the first check made: ``UnknownCode`` naming the countries list's order, the
+    current ``A2`` first, never the list's ``RateLimitError``; nothing goes to the data
+    path."""
+    releases = respx_mock.get(UN_EXPORT_RELEASES_URL).mock(
+        return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
+    )
+    data = respx_mock.get(f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/AUS/year/2019")
+    with pytest.raises(UnknownCode) as info:
+        tasks.get_un_exports("AUS", 2019)
+    assert type(info.value) is UnknownCode
+    assert info.value.param == "reporter_code"
+    assert info.value.closest[:2] == (("A2", "Australia"), ("AS", "Australia"))
+    assert "Did you mean A2 (Australia), AS (Australia)" in info.value.message
+    assert info.value.__cause__ is None
+    assert releases.call_count == 1, "the list was asked once, not retried"
+    assert data.call_count == 0
+    assert respx_mock.calls.call_count == 1
+
+
 @pytest.mark.anyio
 async def test_a_shared_iso_code_over_mcp_names_the_reporting_code_first(
     replay_fixture: ReplayFixture,

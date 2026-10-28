@@ -83,8 +83,9 @@ list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the f
 frozen. An ISO or GENC code that several listed codes share (``"AUS"``: ``A2``, ``AS``),
 given as a country code, is refused after that list is read, naming first the codes it
 holds as reporters (``AS``), since the recorded lists follow no rule on the codes
-themselves (``_un_ranked``); every other refusal comes before any request. GATS answers
-an unknown reporter, a year far ahead and
+themselves (``_un_ranked``); when the list cannot be read the refusal comes unranked, and
+every other refusal comes before any request. GATS answers an unknown reporter, a year
+far ahead and
 a year not released alike with ``[]`` (``unknown_reporter.json``, ``future_year.json``,
 ``unreleased_year.json`` under ``tests/fixtures/get_un_trade_exports/``), so a
 reporter-year the list lacks is refused as ``NotFoundError`` naming the reporter's listed
@@ -132,6 +133,7 @@ from xippios.core import (
     ResultCap,
     ResultMeta,
     UnknownCode,
+    XippiosError,
     matches,
     sync,
 )
@@ -1360,7 +1362,10 @@ async def _un_ranked(
     codes themselves ranks them: as recorded on 2026-10-26 both lists hold ``AS`` and
     never ``A2`` (Australia), ``NO`` and never ``N3`` (Norway), but ``F1`` and never
     ``FR`` (France), ``SR`` and never ``SZ`` (Switzerland), and both ``GM`` and ``GE``
-    (Germany) for different years.
+    (Germany) for different years. The list only ranks the refusal: when it cannot be
+    read (no key, a refused key, a spent quota, the network), the refusal is raised as
+    the first check made it, unranked, since a refused argument is refused whatever the
+    list does.
 
     Args:
         product_type: The flow whose list ranks the codes: ``ProductType.X`` for the
@@ -1369,18 +1374,27 @@ async def _un_ranked(
             ``lambda reporters: _un_check("AUS", 2019, None, None, reporters)``.
 
     Raises:
-        UnknownCode: A country code, a six-digit ``hs6_code``, the packaged lists lack.
+        UnknownCode: A country code, a six-digit ``hs6_code``, the packaged lists lack;
+            for a shared ISO or GENC code ranked by the release list's reporters, or in
+            the countries list's order when the list cannot be read. Never the list's
+            own error: a ``ConfigError``, ``AuthError``, ``RateLimitError`` or
+            ``TransportError`` from reading it gives way to the refusal.
         InvalidRequestError: Another argument is not valid.
     """
+    refused: UnknownCode | None = None
     try:
         check(None)
     except UnknownCode as unknown:
         shared = shared_three_letter_code(unknown.value)
         if unknown.param not in {"reporter_code", "partner_code"} or not shared:
             raise
-    else:
+        refused = unknown
+    if refused is None:
         return
-    releases, _ = await _un_releases(product_type)
+    try:
+        releases, _ = await _un_releases(product_type)
+    except XippiosError:
+        raise refused from None
     check(frozenset(release.reporter_code for release in releases))
 
 

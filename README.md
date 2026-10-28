@@ -169,10 +169,11 @@ apply. An ISO or GENC code that several listed codes share is refused naming fir
 codes the flow's UN release list holds as reporters: `"AUS"` names `AS` before `A2`,
 `"FRA"` names `F1` before `FR`. The lists follow no rule on the codes themselves (the
 parent reports for Australia, its child for France, both for Germany), so such a refusal
-reads the list first, still before the data request; the Census tasks keep the current
-code first. Before the data request a task checks the reporter-year against the flow's UN
-release list, which the client keeps for a day, the feed being frozen: the imports
-task the imports list, the exports task and, by assumption, the re-exports task the
+reads the list first, still before the data request, and comes unranked when the list
+cannot be read; the Census tasks keep the current code first. Before the data request a
+task checks the reporter-year against the flow's UN release list, which the client keeps
+for a day, the feed being frozen: the imports task the imports list, the exports task
+and, by assumption, the re-exports task the
 exports list, since upstream publishes no re-export list. GATS answers an unknown
 reporter, a future year and an unreleased year alike with an empty list, so a
 reporter-year the list lacks raises `NotFoundError` naming the reporter's

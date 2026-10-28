@@ -211,7 +211,13 @@ SERIES_NOTE = (
     "prefix such as the chapter '03', or ask for fewer months to see the rest"
 )
 """What a cut Census series tells the agent: which rows it got, its one filter and a
-shorter range, the two ways to narrow it."""
+shorter range, the two ways to narrow it.
+
+The longest range is the entry point's to set: ``xippios-usda-gats-mcp`` starts the MCP
+server with a ceiling of 24 months (``MCP_SERIES_MAX_MONTHS``), which its
+``--series-months`` sets from 1 to 60, against 60 in Python and over HTTP
+(``SERIES_MAX_MONTHS``, ``series_ceiling``). A range past the ceiling is refused before
+any request, naming it; this note only asks for fewer months."""
 
 SERIES_MAX_MONTHS = 60
 """Most months one Census series call spans in Python and over HTTP, five years, a
@@ -1066,8 +1072,10 @@ async def get_census_export_series_async(
     end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date`` (``"202607"``), and a month
     without exports adds none. 197 records for Iceland (``"IC"``) over July and August
-    2026, 105 and 92. Up to 60 months in Python and over HTTP; the MCP server starts with
-    24 (``--series-months`` raises it, up to 60). Requests: the exports release list
+    2026, 105 and 92. Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusExports`` request per month, one after
     another at the client's pace of one request per second, never at once. Each spends
@@ -1099,8 +1107,8 @@ async def get_census_export_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0203292000"`` for one
@@ -1137,8 +1145,10 @@ async def get_census_import_series_async(
     upstream order, with their consumption and CIF fields; every record carries its month
     in ``date``, and a month without imports adds none. 157 records for Iceland
     (``"IC"``) over July and August 2026, 83 and 74, of which 85 are fish (``hs10_code``
-    ``"03"``). Up to 60 months in Python and over HTTP; the MCP server starts with 24
-    (``--series-months`` raises it, up to 60). Requests: the imports release list
+    ``"03"``). Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the imports release list
     (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusImport`` request per month, one after
     another at the client's pace of one request per second, never at once, each one of
@@ -1162,8 +1172,8 @@ async def get_census_import_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0302140003"`` for one
@@ -1199,8 +1209,10 @@ async def get_census_reexport_series_async(
     the end month, both included, as one list in month order, each month's records in
     upstream order; every record carries its month in ``date``, and a month without
     re-exports adds none. 31 records for Iceland (``"IC"``) over July and August 2026, 19
-    and 12. Up to 60 months in Python and over HTTP; the MCP server starts with 24
-    (``--series-months`` raises it, up to 60). Requests: the exports release list
+    and 12. Up to 60 months in Python and over HTTP; the entry point
+    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
+    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
+    Requests: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
     it, for an hour; then one ``GATSData_GetCensusReExports`` request per month, one
     after another at the client's pace of one request per second, never at once, each one
@@ -1225,8 +1237,8 @@ async def get_census_reexport_series_async(
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
         end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server at its
-            default ceiling.
+            months after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"62"`` (chapter 62, 7 of Iceland's 31 records), or a full code such as

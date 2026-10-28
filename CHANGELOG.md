@@ -81,6 +81,10 @@ All notable changes to this project are documented here. The format follows
   the current code first. `params.validate_country_code` and
   `params.validate_reporter_code` take the `reporters` to rank by;
   `params.shared_three_letter_code` says when a value is such a code.
+- The three Census series tasks' descriptions, the MCP tools' text, say that the entry
+  point `xippios-usda-gats-mcp` starts the MCP server with a ceiling of 24 months, which
+  its `--series-months` sets from 1 to 60, against 60 in Python and over HTTP; they said
+  the MCP server starts with 24.
 - The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
   core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
   default, and a list grown past it would no longer have been cached for the day.

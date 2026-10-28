@@ -107,9 +107,9 @@ reporter or year, with ``retrieved_at`` from the cache as for the Census list.
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
 make no upstream call, through core's ``PackagedList`` (ADR-0022, rule 1):
 ``meta.endpoint`` is the operation the list was fetched from (``"GATSData_GetCountries"``),
-``meta.retrieved_at`` is when the package fetched it, the file's ``fetched`` (a bare day
-such as ``"2026-10-26"`` reads as its 00:00 UTC until the next refresh writes the time),
-and ``meta.vintage`` stays empty: upstream gives these lists no version identifier, and a
+``meta.retrieved_at`` is when the package fetched it, the file's ``fetched``, the UTC
+time of the fetch to the second (``"2026-10-28T19:22:40Z"`` for the countries), and
+``meta.vintage`` stays empty: upstream gives these lists no version identifier, and a
 fetch date is none. ``list_commodities`` is the exception: the HS10 list, 24,936 records and
 7.6 MB, is not packaged, so it makes one live request (``GATSData_GetCommodities``),
 which the client keeps for a day (``_client.COMMODITIES_TTL``); its ``meta.retrieved_at``
@@ -1792,7 +1792,7 @@ async def list_regions_async() -> Result[list[Region]]:
     upstream order, from ``"R05"`` North America, ``"R10"`` Caribbean and ``"R25"``
     European Union-27 to ``"R40"`` East Asia, ``"R70"`` Oceania and ``"R99"``
     Miscellaneous Designated Areas. Every country's ``region_code`` is one of them.
-    ``meta.retrieved_at`` is when the package fetched the list (2026-10-26);
+    ``meta.retrieved_at`` is when the package fetched the list (2026-10-28);
     ``meta.vintage`` stays empty.
     """
     packaged = PackagedList.load(PACKAGE, "regions")
@@ -1815,7 +1815,7 @@ async def list_countries_async(
     accepts (``"D1"`` Denmark, ``"198712"``); the 19 parents among them pass for every
     month (``"SZ"`` Switzerland, the parent of ``"SR"`` Switzerland and ``"LS"``
     Liechtenstein). ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-25); ``meta.vintage`` stays empty.
+    (2026-10-28); ``meta.vintage`` stays empty.
 
     Args:
         region_code: Keep the countries of this GATS region, spelled exactly as
@@ -1855,7 +1855,7 @@ async def list_hs6_commodities_async(
     Re-export data records obtained by querying UN Trade Data"; the first six digits of
     every HS10 code in the Census records are a listed code. For HS10 codes use
     ``list_commodities``. ``meta.retrieved_at`` is when the package fetched the list
-    (2026-10-26); ``meta.vintage`` stays empty. The filters only select codes, in code
+    (2026-10-28); ``meta.vintage`` stays empty. The filters only select codes, in code
     order.
 
     Args:
@@ -1894,7 +1894,7 @@ async def list_units_of_measure_async() -> Result[list[UnitOfMeasure]]:
     ``census_uom_id2``, ``fas_converted_uom_id`` and ``fas_non_converted_uom_id`` of the
     Census and commodity records are these ids; ``enums.UnitOfMeasureId`` names the same
     ids (``UnitOfMeasureId.KILOGRAMS``). A code is not unique: ``"CRT"`` (Crates) is 33
-    and 105. ``meta.retrieved_at`` is when the package fetched the list (2026-10-26);
+    and 105. ``meta.retrieved_at`` is when the package fetched the list (2026-10-28);
     ``meta.vintage`` stays empty.
     """
     packaged = PackagedList.load(PACKAGE, "unitsOfMeasure")
@@ -1913,7 +1913,7 @@ async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
     Districts, the point of Entry and Exit for the Commodity Imports and Exports". Id
     ``0`` is Z UNKNOW CDIST CODES; ``60``, ``70``, ``80`` and ``99`` are vessels,
     shipments under $251, mail and military shipments. ``meta.retrieved_at`` is when the
-    package fetched the list (2026-10-26); ``meta.vintage`` stays empty.
+    package fetched the list (2026-10-28); ``meta.vintage`` stays empty.
     """
     packaged = PackagedList.load(PACKAGE, "customsDistricts")
     districts = packaged.parse(CustomsDistrict, source=SOURCE)

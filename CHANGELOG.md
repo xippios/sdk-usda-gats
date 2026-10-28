@@ -32,8 +32,10 @@ All notable changes to this project are documented here. The format follows
 - A code the packaged lists lack is refused with core's `UnknownCode`, its message "... in
   the packaged <list> list (fetched <day>)"; `errors.UnknownCode`, `params.PackagedList`
   and `params.packaged_values` are gone (`xippios.core.UnknownCode`,
-  `PackagedList.load(params.PACKAGE, name)`). A release-list refusal names when the list
-  was fetched, from the cache or not.
+  `PackagedList.load(params.PACKAGE, name)`). On core's class `closest` is a tuple of
+  `(code, name)` pairs, where it was a list, and `fetched` an aware `datetime`, where it
+  was ISO text. A release-list refusal names when the list was fetched, from the cache or
+  not.
 - The sibling check is the template's: `.github/workflows/siblings.yml` runs
   `.github/scripts/check-siblings.sh`, which finds the siblings on PyPI itself;
   `scripts/check-siblings.sh` is gone. `CLAUDE.md` imports the family rules from

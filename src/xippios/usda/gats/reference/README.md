@@ -13,8 +13,7 @@ PackagedList.load("xippios.usda.gats", "countries").records  # [{"countryCode": 
 ```
 
 One row per file: Origin is the endpoint it was fetched from, Fetched the UTC time of that
-fetch; these files keep the bare day the 0.1.0 script wrote, which core reads as its
-00:00 UTC until the next refresh writes the time.
+fetch, to the second, as `PackagedList.write` wrote it into the file's `fetched`.
 
 GATS's one id list, `unitsOfMeasure`, makes `UnitOfMeasureId` in `enums.py`
 (`UnitOfMeasureId.KILOGRAMS == 47`; the name "Crates" of ids 33 and 105 gives `CRATES_33`
@@ -30,20 +29,14 @@ when the packaged records differ, naming what is gone and what is new.
 
 | File | Origin | Fetched (UTC) | Records |
 | --- | --- | --- | --- |
-| `regions.json` | `GET https://api.fas.usda.gov/api/gats/regions` (`GATSData_GetRegions`) | 2026-10-26 | 15 |
-| `countries.json` | `GET https://api.fas.usda.gov/api/gats/countries` (`GATSData_GetCountries`) | 2026-10-25 | 322 |
-| `HS6Commodities.json` | `GET https://api.fas.usda.gov/api/gats/HS6Commodities` (`GATSData_GetHS6Commodities`) | 2026-10-26 | 2,909 |
-| `unitsOfMeasure.json` | `GET https://api.fas.usda.gov/api/gats/unitsOfMeasure` (`GATSData_GetUnitsOfMeasure`) | 2026-10-26 | 108 |
-| `customsDistricts.json` | `GET https://api.fas.usda.gov/api/gats/customsDistricts` (`GATSData_GetCustomsDistricts`) | 2026-10-26 | 53 |
+| `regions.json` | `GET https://api.fas.usda.gov/api/gats/regions` (`GATSData_GetRegions`) | 2026-10-28T19:22:39Z | 15 |
+| `countries.json` | `GET https://api.fas.usda.gov/api/gats/countries` (`GATSData_GetCountries`) | 2026-10-28T19:22:40Z | 322 |
+| `HS6Commodities.json` | `GET https://api.fas.usda.gov/api/gats/HS6Commodities` (`GATSData_GetHS6Commodities`) | 2026-10-28T19:22:42Z | 2,909 |
+| `unitsOfMeasure.json` | `GET https://api.fas.usda.gov/api/gats/unitsOfMeasure` (`GATSData_GetUnitsOfMeasure`) | 2026-10-28T19:22:43Z | 108 |
+| `customsDistricts.json` | `GET https://api.fas.usda.gov/api/gats/customsDistricts` (`GATSData_GetCustomsDistricts`) | 2026-10-28T19:22:42Z | 53 |
 
-The 2026-10-25 file was written by `scripts/refresh_reference.py` from the answer
-recorded the same evening in `tests/fixtures/get_countries/all.json`
-(21:00:34 UTC), served to the script's wrapper through `respx`, so the refresh spent no
-second keyed call. The four 2026-10-26 files were written by the 0.1.0 script's own
-functions from the answers recorded that morning in
-`tests/fixtures/<wrapper>/all.json`, served to the wrappers through `respx` in the same
-way: `GATSData_GetRegions` at 04:55:45 UTC, `GATSData_GetHS6Commodities` at 04:55:54,
-`GATSData_GetUnitsOfMeasure` at 04:55:55 and `GATSData_GetCustomsDistricts` at 04:55:56;
-`countries.json` was left as it was, so it keeps its own date. Every file's records
-equal the recorded ones, field for field and in order (`tests/test_params.py` and
-`tests/test_lists.py` check it).
+The five files were written by `scripts/refresh_reference.py` on 2026-10-28 from
+upstream's answers, one keyed call per list, each answered 200. No record changed: every
+file's records equal the ones recorded in `tests/fixtures/<wrapper>/all.json`
+(`get_countries` on 2026-10-25, the other four on 2026-10-26), field for field and in
+order (`tests/test_params.py` and `tests/test_lists.py` check it).

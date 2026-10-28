@@ -173,9 +173,9 @@ reads the list first, still before the data request; the Census tasks keep the c
 code first. Before the data request a task checks the reporter-year against the flow's UN
 release list, which the client keeps for a day, the feed being frozen: the imports
 task the imports list, the exports task and, by assumption, the re-exports task the
-exports list, since upstream publishes no re-export list. GATS
-answers an unknown reporter, a future year and an unreleased year alike with an empty
-list, so a reporter-year the list lacks raises `NotFoundError` naming the reporter's
+exports list, since upstream publishes no re-export list. GATS answers an unknown
+reporter, a future year and an unreleased year alike with an empty list, so a
+reporter-year the list lacks raises `NotFoundError` naming the reporter's
 listed years and the latest year; a listed reporter-year without trade is an empty list
 (Iceland's 2019 re-exports). `meta.vintage` is the reporter-year's release time as
 upstream states it, and `meta.published_at` that time parsed, naive, as for the Census
@@ -211,10 +211,10 @@ The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commoditie
 hs10_code=None, product_type=None)` fetches it live, in one request the client keeps for
 a day and parses into records once for that day, and filters it: `search` on the name
 and the description, `hs10_code` a prefix of the code, `product_type` exact.
-Upstream's product types are `"X"` (exports, 5,919
-records), `"M"` (imports, 14,469), `"T"` (2,704) and `"B"` (1,844); upstream documents
-none of them, and the `T` and `B` records carry seven-digit codes padded with three
-spaces, kept as sent. On a cache hit `meta.retrieved_at` is when the list was fetched.
+Upstream's product types are `"X"` (exports, 5,919 records), `"M"` (imports, 14,469),
+`"T"` (2,704) and `"B"` (1,844); upstream documents none of them, and the `T` and `B`
+records carry seven-digit codes padded with three spaces, kept as sent. On a cache hit
+`meta.retrieved_at` is when the list was fetched.
 
 ## MCP
 
@@ -238,9 +238,10 @@ the notes of the Census data tools name `hs10_code`, and those of the customs-di
 tools `customs_district_id` too, while the series tools' notes say the rows run oldest
 month first and name `hs10_code` and fewer months; `usda_gats_list_hs6_commodities`
 names `search` and `hs6_code`, `usda_gats_list_commodities` its three filters. The UN
-Trade data tools name `partner_code` and `hs6_code` (one reporter-year is one row per partner and HS6 code,
-3,980 rows for Iceland's 2019 exports), and `usda_gats_get_un_release_dates` names
-`reporter_code` and `year` (3,796 reporter-years in the exports list).
+Trade data tools name `partner_code` and `hs6_code` (one reporter-year is one row per
+partner and HS6 code, 3,980 rows for Iceland's 2019 exports), and
+`usda_gats_get_un_release_dates` names `reporter_code` and `year` (3,796 reporter-years
+in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
 codes arrive whole. `usda_gats_get_census_release_dates` returns the newest 200 months,
 more than sixteen years, with a note that says so and names `statistical_year`, which

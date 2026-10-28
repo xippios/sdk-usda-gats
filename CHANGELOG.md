@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-28
+
+The floor of this release is xippios-core 0.3.0 and sdk-template v0.3.0, with
+conventions 1.22: it depends on `xippios-core~=0.3.0`, a breaking bound while core is
+0.x. The Census data tasks and series and the UN Trade data tasks now set
+`meta.published_at` to upstream's release time, kept without a zone; the packaged list
+tasks take their `meta` from the packaged list; and the endpoint wrappers carry the
+upstream operation names in snake case, while the twenty tasks, their MCP tools and
+their HTTP routes keep their names. Two tasks gain a filter, `get_census_release_dates`
+and `list_hs6_commodities`; the Census data tasks and series accept for every month the
+parent codes GATS marks discontinued; and the client keeps the frozen UN Trade release
+lists for a day.
+
 ### Added
 
 - `get_census_release_dates(product_type, statistical_year=None)`: `statistical_year`
@@ -22,8 +35,14 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15),
-  the §2 name rule excepted: the wrappers and fixture directories keep their names until
-  the PR of their own that follows.
+  the §2 name rule included: the nineteen endpoint wrappers and their fixture
+  directories now carry the upstream operation name in snake case, without the
+  `GATSData_` prefix every operation shares (conventions 1.22 §2, §10).
+  `api.GATSData_GetCensusImport` is `api.get_census_import` in
+  `api/get_census_import.py`, and `tests/fixtures/GATSData_GetUNTradeExports/` is
+  `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
+  are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
+  fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
 - **Breaking:** depends on `xippios-core~=0.3.0` and its `mcp`, `http` and `testing`
   extras likewise; a core minor keeps no compatibility with the one before it while core
   is 0.x (conventions §12).
@@ -53,13 +72,6 @@ All notable changes to this project are documented here. The format follows
   `.github/scripts/check-siblings.sh`, which finds the siblings on PyPI itself;
   `scripts/check-siblings.sh` is gone. `CLAUDE.md` imports the family rules from
   `.claude/family.md`.
-- The nineteen endpoint wrappers and their fixture directories take the upstream
-  operation name in snake case, without the `GATSData_` prefix every operation shares
-  (conventions 1.22 §2, §10): `api.GATSData_GetCensusImport` is `api.get_census_import`
-  in `api/get_census_import.py`, and `tests/fixtures/GATSData_GetUNTradeExports/` is
-  `tests/fixtures/get_un_trade_exports/`. The tasks, the MCP tools and the HTTP routes
-  are unchanged, and so is `meta.endpoint`, which keeps upstream's operation id; the CI
-  fixture-cap step counts an exact move as a rename, ahead of the same fix in sdk-template.
 - The client keeps the two UN Trade release-date lists for a day, where it kept them for
   an hour with the Census ones: the UN Trade feed is frozen (statistical year 2019 its
   latest, 2021-01-18 its last release), so a UN task spends one request per flow per day

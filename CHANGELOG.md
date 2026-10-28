@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15),
+  the §2 name rule excepted: the wrappers and fixture directories keep their names until
+  the PR of their own that follows.
+- **Breaking:** depends on `xippios-core~=0.3.0` and its `mcp`, `http` and `testing`
+  extras likewise; a core minor keeps no compatibility with the one before it while core
+  is 0.x (conventions §12).
+- The Census data tasks and series and the UN Trade data tasks set `meta.published_at` to
+  the release record's `releaseTimeStamp`, kept without a zone as FAS prints it, with
+  `meta.published_at_naive` set; `meta.vintage` keeps upstream's text. It was `None`.
+- The five packaged `list_*` tasks take their `meta` from the packaged list:
+  `meta.retrieved_at` is when the package fetched the list (its day, read as 00:00 UTC
+  until the next refresh writes the time) and `meta.vintage` is `None`; before,
+  `vintage` held the fetch day and `retrieved_at` the time of the call. Every task's
+  `meta.request` leaves out a filter left `None`.
+- The UN Trade tasks are marked as a frozen series: their README status rows read
+  "frozen, last release 2021-01-18" and their docstrings say so.
+- The api.data.gov key, the gateway's documented answers and its hourly quota come from
+  `xippios.core.data_gov`'s `Gateway`: one quota policy per process for
+  `DATA_GOV_API_KEY`, shared with every package behind the gateway in that process, whose
+  refusal before sending speaks for `api.data.gov`. `_client.policy` and
+  `_client.stored_at` are gone (`Gateway.policy`, `client.get_answer`).
+- A code the packaged lists lack is refused with core's `UnknownCode`, its message "... in
+  the packaged <list> list (fetched <day>)"; `errors.UnknownCode`, `params.PackagedList`
+  and `params.packaged_values` are gone (`xippios.core.UnknownCode`,
+  `PackagedList.load(params.PACKAGE, name)`). A release-list refusal names when the list
+  was fetched, from the cache or not.
+- The sibling check is the template's: `.github/workflows/siblings.yml` runs
+  `.github/scripts/check-siblings.sh`, which finds the siblings on PyPI itself;
+  `scripts/check-siblings.sh` is gone. `CLAUDE.md` imports the family rules from
+  `.claude/family.md`.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

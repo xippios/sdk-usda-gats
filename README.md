@@ -41,14 +41,26 @@ releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-
 `reference/` before any call, since GATS answers an unknown code with an empty list. An
 unknown code is refused, naming close codes (an ISO or GENC code leads to its partner
 code first: `"CHN"` names `CH` before `CN`) or pointing to `list_countries` when none is
-close. A code GATS discontinued (`discontinuedOn`, 26 of them) is refused by the Census
-tasks for a month after its last, naming the listed codes of the same name: `"SZ"`
-(Switzerland) ended in 198712, so 2026-08 is refused and `SR` named, while 1987-06
-passes. `month` is 1 to 12 and `year` four digits; `hs10_code` keeps the products whose
-code starts with it, a full ten-digit code for one product or a prefix such as a
-chapter, applied after the one data request. `get_census_imports` takes the same
-arguments and adds five consumption and CIF fields per record; `get_census_reexports`
-answers the exports' record for US re-exports.
+close. Of the 26 codes GATS marks discontinued (`discontinuedOn`), the Census tasks
+refuse the 7 that are no other code's parent for a month after their last, naming the
+listed codes of the same name and the code's own parent where it has one: `"D1"`
+(Denmark) ended in 198712, so 2026-08 is refused and `9U` and `DA` named, while 1987-06
+passes. The other 19 are parents, codes other records name as their `countryParentCode`
+(`"SZ"` Switzerland, the parent of `SR` and `LS`), and pass for every month, as do the
+numbered codes `"01"` to `"18"`, Census residual and grouping codes such as `"01"`
+(Caribbean,nes) and `"18"` (ASEAN). `month` is 1 to 12 and `year` four digits;
+`hs10_code` keeps the products whose code starts with it, a full ten-digit code for one
+product or a prefix such as a chapter, applied after the one data request.
+`get_census_imports` takes the same arguments and adds five consumption and CIF fields
+per record; `get_census_reexports` answers the exports' record for US re-exports.
+
+A parent code answers under its own code with the aggregate of its children, as
+recorded for 2026-08: `"Y1"` (Leeward-Windward Islands, discontinued 198801) holds every
+HS10 code of `"AC"` (Antigua and Barbuda), one of its nine islands, at no lower a value,
+and `"AS"` (Australia, discontinued 198712) the same 669 records as its child `"A2"`,
+while `"NF"` (Norfolk Island), another child, answered none. `"18"` and `"01"` answered
+an empty list, which means no data, as for any listed partner without trade; the package
+assumes no member list for them.
 
 The customs-district forms answer the same partner-month by US customs district, one
 record per district and HS10 code, and take `customs_district_id` too, checked against
@@ -99,8 +111,9 @@ fish.meta.request  # the six arguments: partner_code, start_year, ..., hs10_code
 take `partner_code`, `start_year`, `start_month`, `end_year`, `end_month` and
 `hs10_code`, which filters every month. Everything is checked before the first request,
 the partner code for the start and for the end month, so a code discontinued inside the
-range is refused (`"SZ"` for 1987-06 to 1988-01 names 198712); a start after the end, or
-a range longer than the ceiling in force, is refused too, naming the ceiling. The flow's
+range that is no other code's parent is refused (`"D1"` for 1987-06 to 1988-01 names
+198712), while a parent code passes for every month; a start after the end, or a range
+longer than the ceiling in force, is refused too, naming the ceiling. The flow's
 release list is read once, and every month of the range must be in it: a range ending in
 a month not released yet raises `NotFoundError` naming that month and the latest released,
 rather than returning the months that are. `meta.vintage` is the newest release time

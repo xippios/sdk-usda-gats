@@ -34,6 +34,8 @@ result.meta.retrieved_at
 
 releases = get_census_release_dates(ProductType.X)  # X exports, M imports
 releases.data[0]  # statistical_year_month="202608", release_time_stamp=2026-10-06 08:00 (naive)
+this_year = get_census_release_dates(ProductType.X, statistical_year=2026)
+len(this_year.data)  # 8: 202608 back to 202601; an unreleased or pre-1967 year gives []
 ```
 
 `partner_code` is GATS's own two-character code, not ISO (`"CH"` China, `"MX"` Mexico,
@@ -88,7 +90,8 @@ a revised month the previous release's time, or refuse a month just released, an
 refusal says when the list was fetched: an accepted lag. `meta.published_at` is the same
 release time parsed and kept without a zone, since FAS states none for its release times,
 with `meta.published_at_naive` set; `get_census_release_dates` returns them as upstream
-states them.
+states them, every month's or, with `statistical_year`, one year's, a filter applied after
+the one request and recorded in `meta.request`.
 
 ### Month series
 
@@ -232,9 +235,9 @@ names `search`, `usda_gats_list_commodities` its three filters. The UN Trade dat
 3,980 rows for Iceland's 2019 exports), and `usda_gats_get_un_release_dates` names
 `reporter_code` and `year` (3,796 reporter-years in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
-codes arrive whole. `usda_gats_get_census_release_dates`, which has no filter, returns
-the newest 200 months, more than sixteen years, with a note that says so. `--http`
-serves streamable HTTP instead of stdio.
+codes arrive whole. `usda_gats_get_census_release_dates` returns the newest 200 months,
+more than sixteen years, with a note that says so and names `statistical_year`, which
+keeps one year's months. `--http` serves streamable HTTP instead of stdio.
 
 `--series-months MONTHS` sets the most months one series tool call spans, a whole number
 from 1 to 60. The server starts with 24: two years, 24 requests, about 24 seconds at the
@@ -265,8 +268,8 @@ server, per process.
 | `GATSData_GetCustomsDistrictsExports` (`customsDistrictExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_exports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_exports` | alpha |
 | `GATSData_GetCustomsDistrictsImports` (`customsDistrictImports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_imports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_imports` | alpha |
 | `GATSData_GetCustomsDistrictsReExports` (`customsDistrictReExports/partnerCode/{partnerCode}/year/{year}/month/{month}`) | `get_customs_district_reexports(partner_code, year, month, hs10_code=None, customs_district_id=None)` | `usda_gats_get_customs_district_reexports` | alpha |
-| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X")`; read by the exports and re-exports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
-| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M")`; read by the imports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCensusExportDataReleaseInfo` (`census/data/exports/dataReleaseDates`) | `get_census_release_dates("X", statistical_year=None)`; read by the exports and re-exports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
+| `GATSData_GetCensusImportDataReleaseInfo` (`census/data/imports/dataReleaseDates`) | `get_census_release_dates("M", statistical_year=None)`; read by the imports tasks and series too | `usda_gats_get_census_release_dates` | alpha |
 | `GATSData_GetUNTradeExports` (`UNTradeExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_exports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_exports` | frozen, last release 2021-01-18 |
 | `GATSData_GetUNTradeImports` (`UNTradeImports/reporterCode/{reporterCode}/year/{year}`) | `get_un_imports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_imports` | frozen, last release 2021-01-18 |
 | `GATSData_GetUNTradeReExports` (`UNTradeReExports/reporterCode/{reporterCode}/year/{year}`) | `get_un_reexports(reporter_code, year, partner_code=None, hs6_code=None)` | `usda_gats_get_un_reexports` | frozen, last release 2021-01-18 |

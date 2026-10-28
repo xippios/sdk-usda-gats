@@ -398,18 +398,21 @@ def validate_customs_district_id(customs_district_id: int) -> int:
     )
 
 
-def validate_year(year: int) -> int:
-    """Check that a year is a four-digit integer.
+def validate_year(year: int, param: str = "year") -> int:
+    """Check that a year is a four-digit integer; the message names ``param``.
 
     The snapshot types the Census ``year`` as ``int32`` and the UN Trade ``year`` as a
     string, and states no range for either, so none is invented beyond four digits. The
     Census release lists start at ``"196701"``
     (``tests/fixtures/get_census_export_data_release_info/all.json``), the UN Trade
     lists at ``"1989"`` (``.../get_un_trade_export_data_release_info/all.json``); a
-    task checks the month, or the reporter-year, against its list after this.
+    task checks the month, or the reporter-year, against its list after this, and a
+    release-list filter keeps what the list holds for the year.
 
     Args:
         year: The calendar or statistical year, e.g. ``2026``, ``1967``, ``2019``.
+        param: The parameter the year was given as, for the message, e.g. ``"year"``
+            (the default), ``"statistical_year"``.
 
     Returns:
         The year, unchanged.
@@ -420,7 +423,7 @@ def validate_year(year: int) -> int:
     """
     if isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= 9999:
         raise InvalidRequestError(
-            f"year must be a four-digit year such as 2026, got {year!r}. GATS's Census "
+            f"{param} must be a four-digit year such as 2026, got {year!r}. GATS's Census "
             "data starts in January 1967, its UN Trade data in 1989.",
             source=SOURCE,
         )

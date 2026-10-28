@@ -36,10 +36,12 @@ released in that hour is refused, and the refusal says when the list was fetched
 ``meta.published_at`` is the same release time parsed, without a zone as FAS prints it,
 with ``meta.published_at_naive`` set (ADR-0022, rule 2): an invented zone could shift it
 by hours in an as-of store, so a consumer that knows the publisher's zone assigns it.
-``get_census_release_dates`` returns every month's time as upstream states it and leaves
-``vintage`` and ``published_at`` empty, since it answers no single release; its
-``meta.retrieved_at`` is the time the client's cache stored the list when the cache
-answered (conventions §4), else the time the list arrived.
+``get_census_release_dates`` returns every month's time as upstream states it, or one
+statistical year's months (``statistical_year``, a filter applied after the one request
+and recorded in ``meta.request``), and leaves ``vintage`` and ``published_at`` empty,
+since it answers no single release; its ``meta.retrieved_at`` is the time the client's
+cache stored the list when the cache answered (conventions §4), else the time the list
+arrived.
 
 The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
 and ``get_census_reexport_series``, answer one partner over a range of months from the
@@ -218,10 +220,11 @@ years: 24 requests, about 24 seconds at the client's pace, for one tool call. It
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
-    "200 months reach back more than sixteen years"
+    "200 months reach back more than sixteen years; filter by statistical_year, e.g. "
+    "1987, to see the rest"
 )
-"""What a cut release-date list tells the agent: which months it got. The tool has no
-filter, so the note names none (ADR-0016)."""
+"""What a cut release-date list tells the agent: which months it got and its one filter,
+``statistical_year``, which keeps one year's months, twelve at most (ADR-0016)."""
 
 UN_DATA_NOTE = (
     "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
@@ -288,8 +291,9 @@ months' (197 records for exports to Iceland over July and August 2026, all of th
 the bounds; 777 for exports to China in August 2026 alone, which are cut).
 ``get_census_release_dates`` keeps the default bounds with a note of its own,
 ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive, 202608
-back to 201001 as recorded, 16 years and 8 months; the tool has no filter, so the note
-names none. The UN Trade data tools keep the default bounds too, with a note naming
+back to 201001 as recorded, 16 years and 8 months; the note names its one filter,
+``statistical_year``, which keeps one year's months, twelve at most, so any year fits.
+The UN Trade data tools keep the default bounds too, with a note naming
 their two filters, ``partner_code`` and ``hs6_code``: one reporter-year is one record per
 partner and HS6 code, about 240 bytes each, so 200 rows arrive within 64 KB; 3,980
 records for Iceland's 2019 exports, 23,396 (about 5.2 MB) for its imports, 75,919
@@ -1237,7 +1241,7 @@ async def get_census_reexport_series_async(
 
 
 async def get_census_release_dates_async(
-    product_type: ProductType,
+    product_type: ProductType, statistical_year: int | None = None
 ) -> Result[list[DataReleaseInfo]]:
     """When GATS last released each month of US Census exports or imports: poll for releases.
 
@@ -1249,29 +1253,39 @@ async def get_census_release_dates_async(
     ``2026-06-24T08:00:00``. Compare it with a stored one to fetch only the months that
     changed; the six Census data tasks give their month's time as ``meta.vintage``, the
     three series tasks the newest among their months, the re-export forms the exports
-    list's, since re-exports have no list of their own. One request, kept by the client
-    for an hour; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
-    ``meta.vintage`` stay empty: the list is no single release.
+    list's, since re-exports have no list of their own. ``statistical_year`` keeps one
+    year's months, newest first. One request, kept by the client for an hour, the filter
+    applied after it; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at``
+    and ``meta.vintage`` stay empty: the list is no single release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
             (``GATSData_GetCensusExportDataReleaseInfo``), ``"M"`` imports
             (``GATSData_GetCensusImportDataReleaseInfo``).
+        statistical_year: Keep only the months of this statistical year, four digits,
+            e.g. ``2026`` (202608 back to 202601, eight months as recorded), ``2025``
+            (twelve, all re-released at ``2026-06-24T08:00:00``), ``1987`` (twelve, all
+            at ``2008-01-01T08:00:00``). A year the list lacks, before 1967 or not
+            released yet, gives an empty list. ``None`` (the default) keeps every month.
     """
     code = _product_type(product_type)
+    if statistical_year is not None:
+        validate_year(statistical_year, "statistical_year")
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
         releases, retrieved_at = await api.get_census_export_data_release_info()
     else:
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
         releases, retrieved_at = await api.get_census_import_data_release_info()
+    year = None if statistical_year is None else f"{statistical_year:04d}"
+    selected = [r for r in releases if year is None or r.statistical_year_month.startswith(year)]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
-        request={"product_type": code.value},
+        request={"product_type": code.value, "statistical_year": statistical_year},
     )
-    return Result(data=releases, meta=meta)
+    return Result(data=selected, meta=meta)
 
 
 def _un_check(

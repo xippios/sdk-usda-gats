@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `get_census_release_dates(product_type, statistical_year=None)`: `statistical_year`
+  keeps one year's months, newest first (2026 gives the eight months 202601 to 202608
+  as recorded); a year the list lacks gives an empty list. The filter applies after the
+  one request and is recorded in `meta.request`; the MCP tool's note on a cut list names
+  it.
+
 ### Changed
 
 - Adopted xippios-core 0.3.0, sdk-template v0.3.0 and conventions 1.22 (conventions §15),

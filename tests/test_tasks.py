@@ -70,7 +70,8 @@ DISTRICT_NOTE = (
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
-    "200 months reach back more than sixteen years"
+    "200 months reach back more than sixteen years; filter by statistical_year, e.g. "
+    "1987, to see the rest"
 )
 RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
@@ -820,6 +821,79 @@ def test_a_plain_code_is_a_product_type(replay_fixture: ReplayFixture) -> None:
     assert result.meta.request == {"product_type": "M"}
 
 
+@pytest.mark.parametrize(
+    ("statistical_year", "months"),
+    [
+        (2026, [f"2026{month:02d}" for month in range(8, 0, -1)]),
+        (2025, [f"2025{month:02d}" for month in range(12, 0, -1)]),
+        (1987, [f"1987{month:02d}" for month in range(12, 0, -1)]),
+        (1967, [f"1967{month:02d}" for month in range(12, 0, -1)]),
+        (1966, []),
+        (2027, []),
+    ],
+    ids=["2026_eight_months", "2025", "1987", "1967_the_first", "1966_before", "2027_after"],
+)
+def test_statistical_year_keeps_one_years_months_after_the_one_request(
+    replay_fixture: ReplayFixture, statistical_year: int, months: list[str]
+) -> None:
+    """The recorded exports list, 716 months: ``statistical_year`` keeps the records whose
+    ``statisticalYearMonth`` starts with the year, newest first as upstream sends them,
+    record for record the whole list's; a year the list lacks gives an empty list, not an
+    error. The filter is not sent upstream and is recorded in ``meta.request``."""
+    route = replay_fixture(EXPORT_RELEASES, "all")
+    whole = tasks.get_census_release_dates(ProductType.X).data
+    result = tasks.get_census_release_dates(ProductType.X, statistical_year=statistical_year)
+    assert [r.statistical_year_month for r in result.data] == months
+    assert result.data == [r for r in whole if r.statistical_year_month in months]
+    assert result.meta.request == {"product_type": "X", "statistical_year": statistical_year}
+    assert (result.meta.published_at, result.meta.vintage) == (None, None)
+    entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
+    assert entry is not None
+    assert result.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert sent_urls(route) == [EXPORT_RELEASES_URL], "one request, the filter not sent"
+
+
+def test_the_release_times_of_a_statistical_year(replay_fixture: ReplayFixture) -> None:
+    """2025's twelve months carry the annual revision's time, 1987's the time of the
+    release that last revised them, as upstream states it."""
+    replay_fixture(IMPORT_RELEASES, "all")
+    revised = tasks.get_census_release_dates(ProductType.M, statistical_year=2025).data
+    assert {r.release_time_stamp.isoformat() for r in revised} == {"2026-06-24T08:00:00"}
+    old = tasks.get_census_release_dates(ProductType.M, statistical_year=1987).data
+    assert {r.release_time_stamp.isoformat() for r in old} == {"2008-01-01T08:00:00"}
+
+
+@pytest.mark.parametrize("statistical_year", [26, 10000, "2026", True, 2026.0])
+def test_a_statistical_year_that_is_not_four_digits_is_refused_before_the_request(
+    respx_mock: respx.MockRouter, statistical_year: object
+) -> None:
+    with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit"):
+        tasks.get_census_release_dates(ProductType.X, statistical_year=statistical_year)  # type: ignore[arg-type]
+    assert respx_mock.calls.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_the_release_dates_tool_with_statistical_year_end_to_end(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Over MCP one year's months come back whole, without a note, the filter in
+    ``meta.request``; a year the list lacks is an empty result, not an error."""
+    route = replay_fixture(IMPORT_RELEASES, "all")
+    tool = "usda_gats_get_census_release_dates"
+    payload = await mcp_call(server, tool, {"product_type": "M", "statistical_year": 2026})
+    assert [row["statistical_year_month"] for row in payload["data"]] == [
+        f"2026{month:02d}" for month in range(8, 0, -1)
+    ]
+    assert payload["data"][0]["release_time_stamp"] == RELEASED_2026_08
+    assert "note" not in payload
+    assert payload["meta"]["endpoint"] == "GATSData_GetCensusImportDataReleaseInfo"
+    assert payload["meta"]["request"] == {"product_type": "M", "statistical_year": 2026}
+    before = await mcp_call(server, tool, {"product_type": "M", "statistical_year": 1966})
+    assert before["data"] == []
+    assert before["meta"]["request"] == {"product_type": "M", "statistical_year": 1966}
+    assert sent_urls(route) == [IMPORT_RELEASES_URL], "the second call from the cache"
+
+
 @pytest.mark.anyio
 async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     replay_fixture: ReplayFixture,
@@ -895,7 +969,7 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
     assert payload["note"] == (
         f"showing 200 of 716 rows (cap: 200 rows or 65536 bytes); {RELEASE_DATES_NOTE}"
     )
-    assert "filter" not in payload["note"]
+    assert "statistical_year" in payload["note"], "the note names the tool's one filter"
     assert sent_urls(route) == [EXPORT_RELEASES_URL]
 
 
@@ -925,6 +999,13 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     releases = http.get("/usda-gats/get_census_release_dates", params={"product_type": "X"})
     assert releases.status_code == 200
     assert releases.json()["meta"]["request"] == {"product_type": "X"}
+    year = http.get(
+        "/usda-gats/get_census_release_dates",
+        params={"product_type": "X", "statistical_year": 2025},
+    )
+    assert year.status_code == 200, year.text
+    assert len(year.json()["data"]) == 12
+    assert year.json()["meta"]["request"] == {"product_type": "X", "statistical_year": 2025}
     replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
     district: dict[str, str | int] = {
         "partner_code": "IC",

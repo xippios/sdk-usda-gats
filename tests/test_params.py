@@ -679,3 +679,6 @@ def test_the_year_message_names_both_data_series() -> None:
         "year must be a four-digit year such as 2026, got 19. GATS's Census data starts in "
         "January 1967, its UN Trade data in 1989."
     )
+    with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit"):
+        validate_year(19, "statistical_year")
+    assert validate_year(1987, "statistical_year") == 1987

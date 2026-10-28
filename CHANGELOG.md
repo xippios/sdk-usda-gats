@@ -31,10 +31,10 @@ All notable changes to this project are documented here. The format follows
   the release record's `releaseTimeStamp`, kept without a zone as FAS prints it, with
   `meta.published_at_naive` set; `meta.vintage` keeps upstream's text. It was `None`.
 - The five packaged `list_*` tasks take their `meta` from the packaged list:
-  `meta.retrieved_at` is when the package fetched the list (its day, read as 00:00 UTC
-  until the next refresh writes the time) and `meta.vintage` is `None`; before,
-  `vintage` held the fetch day and `retrieved_at` the time of the call. Every task's
-  `meta.request` leaves out a filter left `None`.
+  `meta.retrieved_at` is when the package fetched the list (the UTC time of the fetch,
+  to the second) and `meta.vintage` is `None`; before, `vintage` held the fetch day and
+  `retrieved_at` the time of the call. Every task's `meta.request` leaves out a filter
+  left `None`.
 - The UN Trade tasks are marked as a frozen series: their README status rows read
   "frozen, last release 2021-01-18" and their docstrings say so.
 - The api.data.gov key, the gateway's documented answers and its hourly quota come from
@@ -90,6 +90,13 @@ All notable changes to this project are documented here. The format follows
 - The client's cache stores a body of up to 16 MiB (`_client.CACHE_MAX_BYTES`), twice
   core's default: the HS10 commodities list, 7.6 MB, sat less than 10 % under the
   default, and a list grown past it would no longer have been cached for the day.
+- The five packaged lists (regions, countries, HS6 commodities, units of measure and
+  customs districts) were refreshed from GATS on 2026-10-28, and no record changed: 15
+  regions, 322 countries, 2,909 HS6 codes, 108 units and 53 customs districts, as
+  before. Each file's `fetched` is now the UTC time of the fetch to the second, where it
+  was a bare day, and the list tasks' `meta.retrieved_at` is that time; a refusal of an
+  unknown code names the new day. `enums.py` was re-rendered: `UnitOfMeasureId` keeps
+  its name and its 108 members, and its docstring names the new day.
 
 ### Fixed
 

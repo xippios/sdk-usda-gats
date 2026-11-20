@@ -1653,9 +1653,12 @@ def restore_series_ceiling() -> Iterator[None]:
     tasks.set_series_ceiling(tasks.SERIES_MAX_MONTHS)
 
 
-def test_the_series_ceilings_and_the_option() -> None:
+def test_the_series_ceilings_and_the_option(monkeypatch: pytest.MonkeyPatch) -> None:
     """60 months for the Python API and the HTTP router, the ceiling in force while no MCP
-    server applied its options; ``--series-months`` on core's parser, 24 by default."""
+    server applied its options; ``--series-months`` on core's parser, 24 by default. The
+    help is compared as plain text, so the test pins its colors and its width."""
+    monkeypatch.setenv("PYTHON_COLORS", "0")
+    monkeypatch.setenv("COLUMNS", "100")
     assert (tasks.SERIES_MAX_MONTHS, tasks.MCP_SERIES_MAX_MONTHS) == (60, 24)
     assert tasks.series_ceiling() == 60
     parser = build_parser(server.name, add_options=tasks.mcp_add_options)

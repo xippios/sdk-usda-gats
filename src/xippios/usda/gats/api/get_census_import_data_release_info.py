@@ -9,43 +9,38 @@ recorded one (``models.DataReleaseInfo``, the exports list's shape): one per sta
 month, newest first, 716 records from ``"196701"`` to ``"202608"`` (about 81 KB of JSON).
 Error shapes are mapped once in ``xippios.usda.gats._client.classify``.
 
-The client caches this path for an hour (``_client.CACHED_PATHS``), so the wrapper reads
-it with ``client.get_answer``, whose ``retrieved_at`` a task reports as
-``meta.retrieved_at``: on a cache hit the time the entry was stored, else the time the
-answer arrived (conventions §4, ADR-0015).
+The client caches this path for an hour (``_client.CACHED_PATHS``), so the wrapper reads it
+with ``client.get_answer``, which parses it and stores only an answer that parsed, and whose
+``retrieved_at`` a task reports as ``meta.retrieved_at``: on a cache hit the time the entry
+was stored, else the time the answer arrived (conventions §4, sdk-core ADR-0037).
 """
 
-from datetime import datetime
+from xippios.core import Answer
 
-from xippios.core import parse
-
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import DataReleaseInfo
 
 __all__ = ["get_census_import_data_release_info"]
 
 
-async def get_census_import_data_release_info() -> tuple[list[DataReleaseInfo], datetime]:
+async def get_census_import_data_release_info() -> Answer[list[DataReleaseInfo]]:
     """Call ``GATSData_GetCensusImportDataReleaseInfo``.
 
     Returns:
-        One ``DataReleaseInfo`` per statistical month, in upstream order (newest first),
-        e.g.
+        Core's ``Answer``: as ``payload`` one ``DataReleaseInfo`` per statistical month, in
+        upstream order (newest first), e.g.
             ``DataReleaseInfo(statistical_year_month="202608", product_type="M",
             reporter_code="US", release_time_stamp=datetime(2026, 10, 6, 8, 0))``,
-        and when it was retrieved, timezone-aware UTC: on a cache hit the time the
-        entry was stored, else the time the answer arrived.
+        and as ``retrieved_at`` when it was retrieved, timezone-aware UTC: on a cache hit
+        the time the entry was stored, else the time the answer arrived.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
+        ValidationError: The answer is no JSON, or no list of these records; the cache
+            keeps no such answer, so the next call asks again.
     """
     path = "/api/gats/census/data/imports/dataReleaseDates"
-    answer = await client.get_answer(path)
-    records = parse(
-        list[DataReleaseInfo],
-        answer.payload,
-        source=SOURCE,
-        endpoint="GATSData_GetCensusImportDataReleaseInfo",
+    return await client.get_answer(
+        path, parse=list[DataReleaseInfo], endpoint="GATSData_GetCensusImportDataReleaseInfo"
     )
-    return records, answer.retrieved_at

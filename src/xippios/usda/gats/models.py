@@ -13,7 +13,7 @@ snake_cased as they read: ``hS10Code`` is ``hs10_code``, ``hS6Code`` ``hs6_code`
 Year-month codes (``"202608"``) and the UN Trade years (``"2019"``) stay text: upstream
 sends them as digit strings, a year-month without a day, and nothing is combined into a
 date here. Quantities and values arrive as JSON
-numbers and become ``Decimal`` (ADR-0008); unit-of-measure and customs-district ids stay
+numbers and become ``Decimal`` (sdk-core ADR-0031); unit-of-measure and customs-district ids stay
 plain ``int``.
 """
 
@@ -46,7 +46,7 @@ __all__ = [
 # (``$defs.ProductType.description``), so it speaks to agents and the provenance lives
 # here. The members are the codes of ``productType``, the field of the release records
 # that tells the two lists apart, so a member equals ``DataReleaseInfo.product_type`` of
-# the records it names (ADR-0008: upstream enumerations become ``StrEnum`` with upstream's
+# the records it names (sdk-core ADR-0031: upstream enumerations become ``StrEnum`` with upstream's
 # values). Established by the recorded lists, not by the snapshot, which documents no
 # record shape: every record of
 # ``tests/fixtures/get_census_export_data_release_info/all.json`` carries ``"X"``,

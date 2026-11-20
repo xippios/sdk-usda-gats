@@ -6,9 +6,9 @@ quota headers of the keyed answers. GATS has no recorded 429: the gateway's 429 
 ``NOT_FOUND`` 404 are built in the shape api.data.gov documents and sdk-usda-psd recorded
 (its ``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), and every such test
 says so. The gateway's mapping and its quota policy are core's (``xippios.core.data_gov``,
-ADR-0009, ADR-0015) and are tested there; this module checks that the package installs
-them, that the policy reads a 429 on a GATS path, and that ``classify`` shapes core's
-retries of a 429.
+sdk-core ADR-0032, sdk-core ADR-0037) and are tested there; this module checks that the
+package installs them, that the policy reads a 429 on a GATS path, and that ``classify``
+shapes core's retries of a 429.
 """
 
 import dataclasses
@@ -26,6 +26,7 @@ from xippios.core import (
     NotFoundError,
     RateLimitError,
     RetryPolicy,
+    ValidationError,
 )
 from xippios.core.client import CachedResponse, cache_key
 from xippios.core.data_gov import API_KEY_ENV, Gateway
@@ -112,8 +113,8 @@ NOT_FOUND = {
 def test_the_client_is_wired_for_the_gateway() -> None:
     """One request per second, gats's classify, and the gateway's quota policy, one per
     process, on api.data.gov's ``x-ratelimit-*`` headers, which count the rolling hour,
-    not a pace; one hour is the wait without ``Retry-After`` (ADR-0009, ADR-0010,
-    ADR-0015)."""
+    not a pace; one hour is the wait without ``Retry-After`` (sdk-core ADR-0032, sdk-core ADR-0033,
+    sdk-core ADR-0037)."""
     assert (RATE_LIMIT.per_minute, RATE_LIMIT.capacity) == (60, 1)
     assert config.rate_limit is RATE_LIMIT
     assert config.classify is classify
@@ -313,7 +314,7 @@ async def test_core_retries_a_429_only_within_its_backoff(
     respx_mock: respx.MockRouter, retry_after: str | None, shaped: bool, attempts: int
 ) -> None:
     """NOT RECORDED here: psd's recorded 429, with or without its ``Retry-After``. gats's
-    ``classify`` shapes core's retries (ADR-0015): its ``RateLimitError`` carries the wait,
+    ``classify`` shapes core's retries (sdk-core ADR-0037): its ``RateLimitError`` carries the wait,
     ``Retry-After`` or else the one-hour window, counted from the snapshot core's
     ``observe`` took, so within ``CLOCK_SLACK`` of it read through the client, and beyond
     ``backoff_max`` (30 s), so a 429 is sent once, with or without the header. The control
@@ -353,9 +354,9 @@ async def test_core_retries_a_429_only_within_its_backoff(
 def test_the_client_caches_five_paths_and_nothing_else() -> None:
     """Core's cache on the two Census release-date paths for an hour, the two UN Trade
     release-date paths for a day, the feed being frozen, and the commodities path for a
-    day (ADR-0015's ``cache_filter``, a ``MemoryCache`` per TTL behind ``PathCaches``):
+    day (sdk-core ADR-0037's ``cache_filter``, a ``MemoryCache`` per TTL behind ``PathCaches``):
     the data, the countries and every other path go to the wire. A body of up to 16 MiB
-    is stored, twice core's default (ADR-0019, decision 3)."""
+    is stored, twice core's default (sdk-core ADR-0040, decision 3)."""
     assert config.cache is cache
     assert config.cache_filter is cache_filter
     assert config.cache_max_bytes == CACHE_MAX_BYTES == 16 * 1024 * 1024
@@ -451,12 +452,13 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
     the entry's stored time."""
     commodities = replay_fixture("get_commodities", "all")
     replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_commodities()
+    first = (await api.get_commodities()).payload
     await api.get_census_export_data_release_info()
     assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
     entry = commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
     assert entry is not None
-    again, retrieved_at = await api.get_commodities()
+    answer = await api.get_commodities()
+    again, retrieved_at = answer.payload, answer.retrieved_at
     assert retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(again) == len(first) == 24936
     assert commodities.call_count == 1
@@ -464,7 +466,7 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
 
 
 def test_the_recorded_hs10_list_fits_the_cache_bound_with_room() -> None:
-    """ADR-0019, decision 3: core's default bound, 8 MiB, would leave the recorded HS10
+    """sdk-core ADR-0040, decision 3: core's default bound, 8 MiB, would leave the recorded HS10
     list less than 10 % of room, so the package raises it to 16 MiB. The recorded body,
     as ``httpx`` gives the client its bytes, must stay under three quarters of the bound:
     a re-recording that grew towards it fails here, before the day's cache silently stops
@@ -485,12 +487,14 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     exports = replay_fixture("get_census_export_data_release_info", "all")
     imports = replay_fixture("get_census_import_data_release_info", "all")
     before = datetime.now(UTC)
-    first, first_at = await api.get_census_export_data_release_info()
+    answer = await api.get_census_export_data_release_info()
+    first, first_at = answer.payload, answer.retrieved_at
     assert_time_between(first_at, before, datetime.now(UTC))
     assert exports.call_count == 1, "the first answer came from the wire"
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.get_census_export_data_release_info()
+    answer = await api.get_census_export_data_release_info()
+    again, stored = answer.payload, answer.retrieved_at
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
     assert stored.tzinfo is UTC
     assert again == first
@@ -498,6 +502,35 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]
     await api.get_census_import_data_release_info()
     assert imports.call_count == 1, "the imports list is not the exports list's entry"
+
+
+RELEASE_WRAPPERS = [
+    ("get_census_export_data_release_info", "/api/gats/census/data/exports/dataReleaseDates"),
+    ("get_census_import_data_release_info", "/api/gats/census/data/imports/dataReleaseDates"),
+    ("get_un_trade_export_data_release_info", "/api/gats/UNTrade/data/exports/dataReleaseDates"),
+    ("get_un_trade_import_data_release_info", "/api/gats/UNTrade/data/imports/dataReleaseDates"),
+]
+"""The four release-list wrappers and their paths, cached for an hour or a day."""
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("wrapper", "path"), RELEASE_WRAPPERS)
+async def test_a_release_list_that_fails_the_models_is_asked_again(
+    respx_mock: respx.MockRouter, wrapper: str, path: str
+) -> None:
+    """NOT RECORDED: a 200 of JSON that is no list of releases, which GATS was never seen
+    to send, to show what the cache does with it (conventions §10). The wrapper parses
+    through ``get_answer``, which stores an answer only once it parsed, so the next call
+    asks upstream again, where the cache answered the same error without a request until
+    its entry expired (https://github.com/xippios/sdk-core/issues/122)."""
+    route = respx_mock.get(f"{BASE_URL}{path}").mock(
+        return_value=httpx.Response(200, json={"message": "maintenance"})
+    )
+    for _ in range(2):
+        with pytest.raises(ValidationError, match="Input should be a valid list"):
+            await getattr(api, wrapper)()
+    assert route.call_count == 2
+    assert cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))) is None
 
 
 @pytest.mark.anyio
@@ -519,7 +552,7 @@ async def test_the_un_release_lists_land_in_the_days_store(
     exports = replay_fixture("get_un_trade_export_data_release_info", "all")
     imports = replay_fixture("get_un_trade_import_data_release_info", "all")
     replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_un_trade_export_data_release_info()
+    first = (await api.get_un_trade_export_data_release_info()).payload
     await api.get_un_trade_import_data_release_info()
     await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
@@ -532,7 +565,8 @@ async def test_the_un_release_lists_land_in_the_days_store(
         assert commodities_cache.get(key) is None, path
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.get_un_trade_export_data_release_info()
+    answer = await api.get_un_trade_export_data_release_info()
+    again, stored = answer.payload, answer.retrieved_at
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
     assert again == first
     assert (exports.call_count, imports.call_count) == (1, 1)
@@ -556,16 +590,16 @@ async def test_a_cached_release_list_answers_while_the_quota_is_spent(
 ) -> None:
     """NOT RECORDED here: psd's recorded 429 mocked on a GATS path spends the quota; the
     release list cached before it still answers, since a cache hit returns before the
-    quota policy's check (ADR-0015), while the uncached countries list is refused unsent.
+    quota policy's check (sdk-core ADR-0037), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
     releases = replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_census_export_data_release_info()
+    first = (await api.get_census_export_data_release_info()).payload
     spent = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError):
         await client.get_json(REGIONS)
-    cached, _ = await api.get_census_export_data_release_info()
+    cached = (await api.get_census_export_data_release_info()).payload
     assert cached == first
     assert releases.call_count == 1, "answered from the cache"
     countries = respx_mock.get(f"{BASE_URL}/api/gats/countries")

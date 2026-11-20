@@ -35,10 +35,17 @@ from collections.abc import Collection
 from datetime import datetime
 from typing import Any
 
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, closest
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode, closest, nearest
 
 from xippios.usda.gats._client import SOURCE
-from xippios.usda.gats.errors import HS6_REASON, PARTNER_REASON, REPORTER_REASON
+from xippios.usda.gats.errors import (
+    COUNTRIES_TASK,
+    DISTRICTS_TASK,
+    HS6_REASON,
+    HS6_TASK,
+    PARTNER_REASON,
+    REPORTER_REASON,
+)
 
 __all__ = [
     "PACKAGED_LISTS",
@@ -176,7 +183,7 @@ def _closest(
     (China) before ``CN`` (Comoros), which difflib finds close by its letters.
     Two-character codes are close only when they differ in case, so a code that shares one
     character with a known one (``"ZZ"``) gets none. The three-letter pass is this
-    package's own strategy in front of core's (ADR-0022, amendment 2026-10-27, point 3).
+    package's own strategy in front of core's (sdk-core ADR-0041, decision 8).
     ``reporters`` reorders the three-letter matches only: the codes it holds first, the
     others after, each group in the order it had (``"AUS"`` names ``AS`` before ``A2`` for
     a UN Trade release list's reporters, ``A2`` first without them).
@@ -232,23 +239,23 @@ def validate_country_code(
     if not isinstance(code, str):
         raise InvalidRequestError(
             f"{param} must be a two-character GATS country code as text, such as "
-            f"{PARTNER_EXAMPLES}, got {code!r}. list_countries lists them.",
+            f"{PARTNER_EXAMPLES}, got {code!r}. {COUNTRIES_TASK} lists them.",
             source=SOURCE,
         )
     if code in codes:
         return code
-    nearest = _closest(code, codes, _three_letter_codes(), reporters)
+    close = _closest(code, codes, _three_letter_codes(), reporters)
     raise UnknownCode(
         param,
         code,
         list_name="countries",
         fetched=fetched,
-        closest=nearest,
+        closest=close,
         hint=None
-        if nearest
+        if close
         else (
             "GATS's country codes are its own, two characters, as GATSData_GetCountries "
-            f"lists them, e.g. {PARTNER_EXAMPLES}; list_countries lists every one and "
+            f"lists them, e.g. {PARTNER_EXAMPLES}; {COUNTRIES_TASK} lists every one and "
             "searches them by name, ISO or GENC code."
         ),
         reason=reason,
@@ -386,7 +393,7 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
     instead = (
         f"Listed under the same name: {', '.join(same)}."
         if same
-        else f"No other listed code carries the name {name!r}; list_countries searches them."
+        else f"No other listed code carries the name {name!r}; {COUNTRIES_TASK} searches them."
     )
     # A refreshed list may give a leaf no parent, or one it does not list: name a parent
     # only when it is another listed code, so the refusal itself never fails.
@@ -404,12 +411,6 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
         f"{year:04d}-{month:02d} ({asked}) is refused. {instead}",
         source=SOURCE,
     )
-
-
-def _nearest(value: int, codes: dict[str, str]) -> list[tuple[str, str]]:
-    """Up to three listed integer ids nearest to ``value``, nearest first, the lower on a tie."""
-    ids = sorted((abs(int(code) - value), int(code)) for code in codes)
-    return [(str(ident), codes[str(ident)]) for _, ident in ids[:3]]
 
 
 def validate_customs_district_id(customs_district_id: int) -> int:
@@ -430,12 +431,13 @@ def validate_customs_district_id(customs_district_id: int) -> int:
     Raises:
         InvalidRequestError: When the id is not an integer (``True`` is not ``1``).
         UnknownCode: When the list lacks the id, naming the three nearest listed ids with
-            their upstream names.
+            their upstream names, nearest first and the lower of two equally near (core's
+            ``nearest``).
     """
     if isinstance(customs_district_id, bool) or not isinstance(customs_district_id, int):
         raise InvalidRequestError(
             "customs_district_id must be an integer id such as 10 (NEW YORK, N.Y.), got "
-            f"{customs_district_id!r}. list_customs_districts lists them.",
+            f"{customs_district_id!r}. {DISTRICTS_TASK} lists them.",
             source=SOURCE,
         )
     fetched, codes = _codes("customsDistricts", "customsDistrictId", "customsDistrictName")
@@ -446,10 +448,10 @@ def validate_customs_district_id(customs_district_id: int) -> int:
         customs_district_id,
         list_name="customsDistricts",
         fetched=fetched,
-        closest=_nearest(customs_district_id, codes),
+        closest=nearest(customs_district_id, codes),
         reason="The customs-district operations take no district; the task keeps this "
         "district's records after the call, so an id the packaged list lacks would give an "
-        "empty result, and the package refuses it. list_customs_districts lists the ids.",
+        f"empty result, and the package refuses it. {DISTRICTS_TASK} lists the ids.",
         source=SOURCE,
     )
 
@@ -557,9 +559,7 @@ def _sharing_digits(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
     return [(code, codes[code]) for code in ranked[:3]]
 
 
-def validate_hs6_prefix(
-    hs6_code: str, *, hint: str = "list_hs6_commodities lists the codes."
-) -> str:
+def validate_hs6_prefix(hs6_code: str, *, hint: str = f"{HS6_TASK} lists the codes.") -> str:
     """Check that an HS6 filter is 1 to 6 ASCII digits as text: a full code or a prefix.
 
     The shape alone, as ``validate_hs10_code`` checks an HS10 filter: the filter of

@@ -4,13 +4,13 @@ One ``AsyncClient`` for the whole package, shared by the tasks, the sync facades
 MCP server, on api.data.gov's gateway at ``BASE_URL`` with ``Accept: application/json``.
 It keeps a pace of its own, ``RATE_LIMIT``, since the snapshot documents none. The key,
 the gateway's documented answers and its hourly quota are ``xippios.core.data_gov``'s
-(ADR-0009): ``gateway.auth`` sends the key from ``DATA_GOV_API_KEY`` in the
+(sdk-core ADR-0032): ``gateway.auth`` sends the key from ``DATA_GOV_API_KEY`` in the
 ``X-Api-Key`` header; ``Gateway.policy``, one ``QuotaPolicy`` per process for the key,
 keeps api.data.gov's hourly quota from every answer and never fires a request into a
 spent one, waiting within the policy's ``pause_cap`` or refusing without sending
-(ADR-0010, ADR-0015); and ``classify`` asks ``gateway.classify`` first, which maps the
-gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to ``RateLimitError`` and its
-``NOT_FOUND`` to ``NotFoundError``. ``x-ratelimit-limit: 1000`` and
+(sdk-core ADR-0033, sdk-core ADR-0037); and ``classify`` asks ``gateway.classify`` first,
+which maps the gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to
+``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``. ``x-ratelimit-limit: 1000`` and
 ``x-ratelimit-remaining`` are on every keyed GATS answer recorded on 2026-10-25, the
 error answers to a valid key included; the gateway sends no reset header.
 
@@ -24,7 +24,7 @@ for its list instead of one per hour; and the HS10 commodities list for a day, 7
 ``tasks.list_commodities`` fetches whole for every search. Core's ``MemoryCache`` has one
 TTL, so ``cache`` is a ``CacheBackend`` of the package's own over three of them,
 ``PathCaches``. The cache stores a body of up to ``CACHE_MAX_BYTES``, 16 MiB, twice
-core's default, so that the HS10 list stays cached when it grows (ADR-0019, decision 3).
+core's default, so that the HS10 list stays cached when it grows (sdk-core ADR-0040, decision 3).
 
 GATS's own answers to an unknown partner, a month out of range or a month without data
 are not mapped here: what they are is recorded under
@@ -38,6 +38,7 @@ import httpx
 from xippios.core import (
     AsyncClient,
     ClientConfig,
+    EnvVar,
     MemoryCache,
     RateLimit,
     XippiosError,
@@ -52,7 +53,11 @@ BASE_URL = "https://api.fas.usda.gov"
 """The gateway's host root; every GATS path keeps its ``/api/gats/`` prefix, as the
 snapshot's ``paths`` name it (the portal document's ``host`` is ``api.fas.usda.gov``, no
 ``basePath``)."""
-# A self-imposed pace: upstream documents no per-second or per-minute limit (ADR-0010
+ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),)
+"""The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
+2026-11-18, point c): the gateway's key alone. An ``EnvVar`` names a variable and reads none;
+a variable the source reads beside these joins the list."""
+# A self-imposed pace: upstream documents no per-second or per-minute limit (sdk-core ADR-0033,
 # decision 1).
 RATE_LIMIT = RateLimit(per_minute=60, burst=1)
 """One request per second, no burst: a pace of our own, since the snapshot documents none.
@@ -62,7 +67,7 @@ the same key, last about 17 minutes; past that ``Gateway.policy`` takes over.
 """
 
 # api.data.gov's key, its documented answers and its hourly quota, kept by one policy per
-# process that every source behind the gateway shares (ADR-0009).
+# process that every source behind the gateway shares (sdk-core ADR-0032).
 gateway = Gateway(SOURCE)
 
 RELEASE_DATES_PATHS: frozenset[str] = frozenset(
@@ -149,7 +154,7 @@ CACHE_MAX_BYTES = 16 * 1024 * 1024
 """The largest body the client's cache stores, 16 MiB: ``ClientConfig.cache_max_bytes``.
 
 Core's default is 8 MiB, and a source that caches a larger answer raises the bound and
-says why (ADR-0019, decision 3). The HS10 commodities list was 7,592,916 bytes as
+says why (sdk-core ADR-0040, decision 3). The HS10 commodities list was 7,592,916 bytes as
 recorded on 2026-10-26 (``tests/fixtures/get_commodities/all.json``), 795,692 bytes
 (9.5 %) under the default: a refresh upstream that grew it past 8 MiB would silently stop
 the day's cache, and every ``tasks.list_commodities`` search would fetch the 7.6 MB again.
@@ -159,7 +164,7 @@ below either bound.
 
 
 # The package's own until core offers a TTL per path; one consumer, so it waits (queue row
-# 39 (f); ADR-0023, decision 4).
+# 39 (f); sdk-core ADR-0023, decision 4).
 class PathCaches:
     """Core's ``CacheBackend`` over one ``MemoryCache`` per path: a TTL per path.
 
@@ -237,14 +242,14 @@ cache = PathCaches(
 Only HTTP 200 answers of up to ``CACHE_MAX_BYTES`` are stored, and only for
 ``CACHED_PATHS`` (``cache_filter``): the Census release-date lists for an hour, the UN
 Trade release-date lists and the commodities list for a day. A hit sends nothing, so the
-rate limiter and the quota policy never see it (ADR-0015).
+rate limiter and the quota policy never see it (sdk-core ADR-0037).
 """
 
 
 def cache_filter(request: httpx.Request) -> bool:
     """Whether the client caches ``request``: only a GET of one of ``CACHED_PATHS``.
 
-    ``ClientConfig.cache_filter`` (ADR-0015) lets one client cache a few paths and
+    ``ClientConfig.cache_filter`` (sdk-core ADR-0037) lets one client cache a few paths and
     nothing else; core asks it with the request as built, before credentials apply, and
     caches GETs only.
     """
@@ -292,6 +297,7 @@ __all__ = [
     "CACHE_MAX_BYTES",
     "COMMODITIES_PATH",
     "COMMODITIES_TTL",
+    "ENV_VARS",
     "RATE_LIMIT",
     "RELEASE_DATES_PATHS",
     "RELEASE_DATES_TTL",

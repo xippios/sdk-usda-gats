@@ -163,8 +163,8 @@ below either bound.
 """
 
 
-# The package's own until core offers a TTL per path; one consumer, so it waits (queue row
-# 39 (f); sdk-core ADR-0023, decision 4).
+# The package's own until core offers a TTL per path, declined while one source asks for it
+# (https://github.com/xippios/sdk-core/issues/48, part (f); sdk-core ADR-0023, decision 4).
 class PathCaches:
     """Core's ``CacheBackend`` over one ``MemoryCache`` per path: a TTL per path.
 

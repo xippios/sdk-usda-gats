@@ -80,7 +80,7 @@ RELEASED_2026_08 = "2026-10-06T08:00:00"
 
 def _published_naive(meta: ResultMeta) -> None:
     """``published_at`` is the release time ``vintage`` names, parsed and kept without a
-    zone as FAS prints it, with ``published_at_naive`` set (ADR-0022, rule 2)."""
+    zone as FAS prints it, with ``published_at_naive`` set (sdk-core ADR-0041, decision 2)."""
     assert meta.vintage is not None
     assert meta.published_at == datetime.fromisoformat(meta.vintage)
     assert meta.published_at.tzinfo is None
@@ -160,8 +160,8 @@ def test_vintage_is_the_months_release_time_as_upstream_states_it(
 ) -> None:
     """The month's release record carries ``2026-10-06T08:00:00`` without a time zone:
     ``vintage`` is that text, the naive time written back with ``isoformat()``, and
-    ``published_at`` the time itself, naive, with ``published_at_naive`` set (ADR-0022,
-    rule 2); the month itself is in ``meta.request``."""
+    ``published_at`` the time itself, naive, with ``published_at_naive`` set (sdk-core
+    ADR-0041, decision 2); the month itself is in ``meta.request``."""
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(EXPORTS, "CH_2026_8")
     result = tasks.get_census_exports("CH", 2026, 8)
@@ -802,7 +802,7 @@ async def test_the_district_and_re_export_tools_end_to_end(
         "quantity1": 700.0,
         "quantity2": 0.0,
         "value": 5439.0,
-    }, "Decimal values are JSON numbers (ADR-0008)"
+    }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     whole = await mcp_call(server, "usda_gats_get_census_reexports", arguments)
     assert len(whole["data"]) == 12
     assert whole["meta"]["endpoint"] == "GATSData_GetCensusReExports"
@@ -947,7 +947,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     replay_fixture: ReplayFixture,
 ) -> None:
     """Exports to China in August 2026, 777 rows, over MCP: cut at the default cap with a
-    note that names ``hs10_code``, the one filter the tool has (ADR-0016); the chapter
+    note that names ``hs10_code``, the one filter the tool has (sdk-core ADR-0038); the chapter
     filter returns all 26 rows of chapter 02, without a note."""
     replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "CH_2026_8")
@@ -969,7 +969,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
         "quantity1": 394.0,
         "quantity2": 0.0,
         "value": 20672.0,
-    }, "Decimal values are JSON numbers (ADR-0008)"
+    }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
     assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
@@ -1003,7 +1003,7 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
 ) -> None:
     """The exports release list, 716 months, over MCP: cut at the default 200 rows, with a
     note of its own that says the rows shown are the newest months and names the tool's
-    one filter, ``statistical_year`` (ADR-0016)."""
+    one filter, ``statistical_year`` (sdk-core ADR-0038)."""
     route = replay_fixture(EXPORT_RELEASES, "all")
     payload = await mcp_call(server, "usda_gats_get_census_release_dates", {"product_type": "X"})
     assert len(payload["data"]) == 200
@@ -1022,7 +1022,7 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
 
 
 def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> None:
-    """ADR-0008 through the router: ``Decimal`` in Python, a JSON number on the wire; an
+    """sdk-core ADR-0031 through the router: ``Decimal`` in Python, a JSON number on the wire; an
     unknown partner is a 422 problem."""
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -1505,7 +1505,7 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     cut: int,
 ) -> None:
     """China in August 2026 alone over MCP: cut at the default cap with a note that says
-    the rows run oldest first and names ``hs10_code`` and fewer months (ADR-0016), at 200
+    the rows run oldest first and names ``hs10_code`` and fewer months (sdk-core ADR-0038), at 200
     exports rows and at 185 imports rows, where the 64 KB cap cuts the wider rows first,
     as the month tools are cut; the chapter filter comes back whole."""
     replay_fixture(release_list, "all")
@@ -1570,7 +1570,7 @@ async def test_the_reexport_series_tool_end_to_end(
         "quantity1": first["quantity1"],
         "quantity2": first["quantity2"],
         "value": first["value"],
-    }, "Decimal values are JSON numbers (ADR-0008)"
+    }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     assert isinstance(payload["data"][0]["value"], float)
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusReExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
@@ -2162,7 +2162,7 @@ def test_partner_code_and_hs6_code_select_after_the_one_request(
     assert (result.meta.request.get("partner_code"), result.meta.request.get("hs6_code")) == (
         partner_code,
         hs6_code,
-    ), "a filter not given is left out (ADR-0022, rule 3)"
+    ), "a filter not given is left out (sdk-core ADR-0041, decision 3)"
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
     assert sent_urls(data) == [IC_UN_EXPORTS_URL], "the filters are not sent upstream"
 
@@ -2608,7 +2608,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     narrowed: int,
 ) -> None:
     """Over MCP each reporter-year is cut at the default cap with a note naming
-    ``partner_code`` and ``hs6_code`` (ADR-0016); a filtered call comes back whole."""
+    ``partner_code`` and ``hs6_code`` (sdk-core ADR-0038); a filtered call comes back whole."""
     replay_fixture(release_list, "all")
     data = replay_fixture(fixture, case)
     url = {
@@ -2636,7 +2636,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
         "quantity1": first["quantity1"],
         "quantity2": first["quantity2"],
         "value": first["value"],
-    }, "Decimal values are JSON numbers (ADR-0008)"
+    }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     assert isinstance(payload["data"][0]["value"], float)
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")

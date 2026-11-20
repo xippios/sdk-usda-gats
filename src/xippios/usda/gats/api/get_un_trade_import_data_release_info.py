@@ -13,7 +13,7 @@ mapped once in ``xippios.usda.gats._client.classify``.
 The client caches this path for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
 frozen, so the wrapper reads it with ``client.get_answer``, whose ``retrieved_at`` a task
 reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
-time the answer arrived (conventions §4, ADR-0015).
+time the answer arrived (conventions §4, sdk-core ADR-0037).
 """
 
 from datetime import datetime

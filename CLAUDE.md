@@ -13,9 +13,9 @@ follows, sdk-core's conventions among them, are listed under
 | Upstream | USDA FAS Global Agricultural Trade System, https://apps.fas.usda.gov/gats/default.aspx |
 | API base URL | `https://api.fas.usda.gov` |
 | Documentation | https://apps.fas.usda.gov/opendatawebV2/, snapshotted in `docs/upstream/` |
-| Credentials | `DATA_GOV_API_KEY` from the environment, sent as the `X-Api-Key` header by `xippios.core.data_gov`'s `Gateway`; the key is api.data.gov's, shared by every package that reads it (sdk-core ADR-0009) |
-| Rate limit | 60 requests per minute, burst 1; a self-imposed pace: upstream documents no per-second or per-minute limit (sdk-core ADR-0010); enforced client-side in `_client.py`. The hourly quota is the gateway's, 1,000 requests per rolling hour for the key (`x-ratelimit-limit` on every keyed answer recorded), shared by every package on the key: one `QuotaPolicy` per process, `Gateway.policy`, which once the quota is spent waits within the policy's `pause_cap` (30 s by default) or refuses before sending (sdk-core ADR-0009, sdk-core ADR-0010, sdk-core ADR-0015) |
-| Response cache | core's `MemoryCache`, configured in `_client.py` for five answers and nothing else: the two Census release-date lists for an hour, the two UN Trade release-date lists for a day, since that feed is frozen (statistical year 2019 its latest, 2021-01-18 its last release, as recorded on 2026-10-26), and the HS10 commodities list for a day. `cache_max_bytes` is 16 MiB, twice core's default of 8 MiB, because the HS10 list, 7,592,916 bytes as recorded, sits 9.5 % under the default and would silently stop being cached if a refresh grew it past (sdk-core ADR-0019, decision 3); `tests/test_client.py` fails once the recorded list passes 75 % of the bound |
+| Credentials | `DATA_GOV_API_KEY` from the environment, sent as the `X-Api-Key` header by `xippios.core.data_gov`'s `Gateway`; the key is api.data.gov's, shared by every package that reads it (sdk-core ADR-0032) |
+| Rate limit | 60 requests per minute, burst 1; a self-imposed pace: upstream documents no per-second or per-minute limit (sdk-core ADR-0033); enforced client-side in `_client.py`. The hourly quota is the gateway's, 1,000 requests per rolling hour for the key (`x-ratelimit-limit` on every keyed answer recorded), shared by every package on the key: one `QuotaPolicy` per process, `Gateway.policy`, which once the quota is spent waits within the policy's `pause_cap` (30 s by default) or refuses before sending (sdk-core ADR-0032, sdk-core ADR-0033, sdk-core ADR-0037) |
+| Response cache | core's `MemoryCache`, configured in `_client.py` for five answers and nothing else: the two Census release-date lists for an hour, the two UN Trade release-date lists for a day, since that feed is frozen (statistical year 2019 its latest, 2021-01-18 its last release, as recorded on 2026-10-26), and the HS10 commodities list for a day. `cache_max_bytes` is 16 MiB, twice core's default of 8 MiB, because the HS10 list, 7,592,916 bytes as recorded, sits 9.5 % under the default and would silently stop being cached if a refresh grew it past (sdk-core ADR-0040, decision 3); `tests/test_client.py` fails once the recorded list passes 75 % of the bound |
 | Write tools | no, this package is read-only |
 
 The snapshot listed in `docs/upstream/FETCHED.md` is the reference for names, parameters and
@@ -101,7 +101,7 @@ uv run xippios-usda-gats-mcp   # stdio; add --http for streamable HTTP
 ```
 
 `uv run pytest` is offline: core's plugin refuses the network and skips the rate limiter's
-waits in every test not marked `live` (conventions §10, sdk-core ADR-0013). A test that
+waits in every test not marked `live` (conventions §10, sdk-core ADR-0035). A test that
 asserts a limiter wait or a quota pause is marked `rate_limited`, one that must reach the
 network `network`.
 It sends the key's placeholder, with `DATA_GOV_API_KEY` set to it because
@@ -145,7 +145,7 @@ and counts, never on a raw payload.
 - Never write a key, a token or another credential into a file or a commit.
 - Never put logic in `mcp.py` or `http.py`, and never add a route or a tool by hand: the
   adapters register `tasks.__all__` (sdk-core ADR-0001).
-- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0003).
+- Never rename or re-map an upstream concept to another source's (sdk-core ADR-0028).
 - Never return a documented personal identifier in a task's projection, echo one in
   `meta.request`, or commit one in a fixture (sdk-core ADR-0017).
 - Never edit `docs/upstream/` by hand: `/refresh-upstream` fetches it, and the pull request

@@ -183,7 +183,7 @@ def _closest(
     (China) before ``CN`` (Comoros), which difflib finds close by its letters.
     Two-character codes are close only when they differ in case, so a code that shares one
     character with a known one (``"ZZ"``) gets none. The three-letter pass is this
-    package's own strategy in front of core's (ADR-0022, amendment 2026-10-27, point 3).
+    package's own strategy in front of core's (sdk-core ADR-0041, decision 8).
     ``reporters`` reorders the three-letter matches only: the codes it holds first, the
     others after, each group in the order it had (``"AUS"`` names ``AS`` before ``A2`` for
     a UN Trade release list's reporters, ``A2`` first without them).

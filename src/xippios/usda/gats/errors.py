@@ -1,4 +1,4 @@
-"""Why GATS's codes the packaged lists lack are refused (conventions §5, ADR-0022).
+"""Why GATS's codes the packaged lists lack are refused (conventions §5, sdk-core ADR-0041).
 
 GATS answers an unknown partner code with HTTP 200 and an empty list
 (``tests/fixtures/get_census_exports/unknown_partner.json``, ``ZZ``), the same

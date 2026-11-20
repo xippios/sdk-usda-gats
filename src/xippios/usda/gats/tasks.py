@@ -34,8 +34,9 @@ For up to ``_client.RELEASE_DATES_TTL``, an hour, after a release the cached lis
 still give a revised month the previous release's time, an accepted lag; a month
 released in that hour is refused, and the refusal says when the list was fetched.
 ``meta.published_at`` is the same release time parsed, without a zone as FAS prints it,
-with ``meta.published_at_naive`` set (ADR-0022, rule 2): an invented zone could shift it
-by hours in an as-of store, so a consumer that knows the publisher's zone assigns it.
+with ``meta.published_at_naive`` set (sdk-core ADR-0041, decision 2): an invented zone could
+shift it by hours in an as-of store, so a consumer that knows the publisher's zone assigns
+it.
 ``get_census_release_dates`` returns every month's time as upstream states it, or one
 statistical year's months (``statistical_year``, a filter applied after the one request
 and recorded in ``meta.request``), and leaves ``vintage`` and ``published_at`` empty,
@@ -50,7 +51,7 @@ same wrappers as the month tasks, one data call per month (sdk-usda-psd's
 period). A call spans at most ``series_ceiling()`` months: ``SERIES_MAX_MONTHS`` (60) in
 Python and over HTTP; the MCP server starts with ``MCP_SERIES_MAX_MONTHS`` (24), and its
 ``--series-months`` sets another ceiling from 1 to 60 through core's option hooks
-(``mcp_add_options``, ``mcp_apply_options``; ADR-0014). The entry point
+(``mcp_add_options``, ``mcp_apply_options``; sdk-core ADR-0036, decision 8). The entry point
 ``xippios-usda-gats-mcp`` sets the MCP ceiling, since core's ``main`` applies the option, so
 a host that imports ``xippios.usda.gats.mcp.server`` and serves it another way keeps 60.
 The ceiling is process-wide: a Python or HTTP call made in the MCP server's process meets
@@ -76,7 +77,7 @@ The three UN Trade data tasks, ``get_un_exports``, ``get_un_imports`` and
 and HS6 product, as one upstream call returns it: data "as reported by UN COMTrade", in
 upstream's words, under GATS's own codes. Reporter, partner and HS6 codes stay GATS's, as
 ``list_countries`` and ``list_hs6_commodities`` list them; nothing is mapped onto another
-source's codes (ADR-0003). Before the call they check the arguments, the two country
+source's codes (sdk-core ADR-0028). Before the call they check the arguments, the two country
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
 list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
@@ -105,7 +106,7 @@ README's status table names. ``get_un_release_dates`` returns either list, whole
 reporter or year, with ``retrieved_at`` from the cache as for the Census list.
 
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
-make no upstream call, through core's ``PackagedList`` (ADR-0022, rule 1):
+make no upstream call, through core's ``PackagedList`` (sdk-core ADR-0041, decision 1):
 ``meta.endpoint`` is the operation the list was fetched from (``"GATSData_GetCountries"``),
 ``meta.retrieved_at`` is when the package fetched it, the file's ``fetched``, the UTC
 time of the fetch to the second (``"2026-10-28T19:22:40Z"`` for the countries), and
@@ -196,7 +197,8 @@ __all__ = [
     "list_units_of_measure",
 ]
 
-# A task named here is Python-only: no tool, no route; the adapters skip it (ADR-0019 decision 4).
+# A task named here is Python-only: no tool, no route; the adapters skip it (sdk-core ADR-0040,
+# decision 4).
 BULK_TASKS: frozenset[str] = frozenset()
 
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
@@ -239,7 +241,7 @@ RELEASE_DATES_NOTE = (
     "1987, to see the rest"
 )
 """What a cut release-date list tells the agent: which months it got and its one filter,
-``statistical_year``, which keeps one year's months, twelve at most (ADR-0016)."""
+``statistical_year``, which keeps one year's months, twelve at most (sdk-core ADR-0038)."""
 
 UN_DATA_NOTE = (
     "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
@@ -291,7 +293,7 @@ MCP_CAPS: Mapping[str, ResultCap] = {
     "list_countries": ResultCap(max_rows=400, max_bytes=100_000, note=COUNTRIES_NOTE),
     "list_hs6_commodities": ResultCap(note=HS6_NOTE),
 }
-"""MCP result caps of their own, by task function name (conventions §8, ADR-0016).
+"""MCP result caps of their own, by task function name (conventions §8, sdk-core ADR-0038).
 
 The Census data tools keep the family's bounds, 200 rows or 64 KB, with a note of their
 own: a tool with a filter names it (§8). One partner-month is one record per HS10 code,
@@ -594,7 +596,7 @@ def _data_meta(
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it: the
     model keeps the time naive, and ``isoformat()`` gives back upstream's text,
     ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` is that time, naive as FAS
-    prints it, with ``published_at_naive`` set (ADR-0022, rule 2). ``filters`` are the
+    prints it, with ``published_at_naive`` set (sdk-core ADR-0041, decision 2). ``filters`` are the
     task's other filters, e.g. ``customs_district_id``, recorded in ``meta.request`` after
     ``hs10_code``; a filter left ``None`` is left out.
     """
@@ -1529,8 +1531,8 @@ def _un_meta(
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it, the
     naive time written back with ``isoformat()``: ``"2020-06-03T05:50:46"`` for Iceland's
     2019 exports. ``published_at`` is that time, naive as FAS prints it, with
-    ``published_at_naive`` set (ADR-0022, rule 2). A filter left ``None`` is left out of
-    ``request``.
+    ``published_at_naive`` set (sdk-core ADR-0041, decision 2). A filter left ``None`` is
+    left out of ``request``.
     """
     return ResultMeta(
         source=SOURCE,

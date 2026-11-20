@@ -149,7 +149,8 @@ def test_units_of_measure_render_one_int_enum() -> None:
 
 
 def test_the_rendered_module_is_ascii() -> None:
-    """Committed as formatted: ASCII-only, as core's ``render_enums`` writes it (ADR-0008)."""
+    """Committed as formatted: ASCII-only, as core's ``render_enums`` writes it
+    (sdk-core ADR-0031)."""
     source = Path(enums.__file__).read_text(encoding="utf-8")
     assert source.isascii()
     assert source.startswith(

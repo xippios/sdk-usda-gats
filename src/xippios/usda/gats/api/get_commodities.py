@@ -13,7 +13,7 @@ mapped once in ``xippios.usda.gats._client.classify``.
 The client caches this path for a day (``_client.COMMODITIES_TTL``), so the wrapper reads
 it with ``client.get_answer``, whose ``retrieved_at`` ``tasks.list_commodities``
 reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
-time the answer arrived (conventions §4, ADR-0015).
+time the answer arrived (conventions §4, sdk-core ADR-0037).
 
 Parsing the 24,936 records into models takes longer than the search after it, so the
 wrapper keeps the records it parsed beside the cache entry they came from, one slot: an

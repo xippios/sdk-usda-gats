@@ -7,7 +7,7 @@ answered.
 Every test here runs with ``respx`` active: a request no route matches fails loudly, and
 each packaged-list test checks that the tasks sent none. ``list_commodities`` replays the
 HS10 recording through the client, whose cache keeps it for a day; core's plugin
-empties every ``MemoryCache`` around each offline test (ADR-0013).
+empties every ``MemoryCache`` around each offline test (sdk-core ADR-0035).
 """
 
 import json
@@ -40,7 +40,7 @@ from xippios.usda.gats.params import PACKAGE
 
 LISTS: list[tuple[str, str, str, str, int, dict[str, Any]]] = [
     # task, packaged list, its wrapper, operation it came from, records, meta.request
-    # without filters, which leaves out a filter not given (ADR-0022, rule 3)
+    # without filters, which leaves out a filter not given (sdk-core ADR-0041, decision 3)
     ("list_regions", "regions", "get_regions", "GATSData_GetRegions", 15, {}),
     ("list_countries", "countries", "get_countries", "GATSData_GetCountries", 322, {}),
     (
@@ -79,7 +79,7 @@ FETCHED = {
 """When the refresh of 2026-10-28 fetched each packaged list, to the second (UTC)."""
 WHOLE = ["list_regions", "list_countries", "list_units_of_measure", "list_customs_districts"]
 """The lists that reach an agent whole over MCP: three within the default cap, the
-countries through a cap of their own (``tasks.MCP_CAPS``, ADR-0016)."""
+countries through a cap of their own (``tasks.MCP_CAPS``, sdk-core ADR-0038)."""
 CAP = 200
 """The family's default MCP result cap in rows (conventions §8)."""
 COMMODITIES_URL = f"{BASE_URL}/api/gats/commodities"

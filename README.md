@@ -258,8 +258,11 @@ For five-year series over MCP, append `"--series-months", "60"` to the `args` ab
 
 The entry point `xippios-usda-gats-mcp` sets the 24, or the `--series-months` given:
 core's `main` applies the option through the hooks `tasks.mcp_add_options` and
-`tasks.mcp_apply_options`. A host that imports `xippios.usda.gats.mcp.server` and serves
-it another way applies no option and keeps 60. The ceiling is process-wide
+`tasks.mcp_apply_options`. `xippios.usda.gats.mcp.build()` returns the tool set the entry
+point serves, with both hooks, so a host that serves it applies the option as the entry
+point does: `tools.apply_options(tools.option_defaults(), server)` sets the 24. A host that
+imports `xippios.usda.gats.mcp.server` and serves it another way applies no option and
+keeps 60. The ceiling is process-wide
 (`tasks.series_ceiling()`, `tasks.set_series_ceiling(months)`), so a Python or HTTP call
 made inside an MCP server's process meets the MCP ceiling too: one ceiling, and one MCP
 server, per process.

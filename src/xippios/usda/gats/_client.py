@@ -38,6 +38,7 @@ import httpx
 from xippios.core import (
     AsyncClient,
     ClientConfig,
+    EnvVar,
     MemoryCache,
     RateLimit,
     XippiosError,
@@ -52,6 +53,10 @@ BASE_URL = "https://api.fas.usda.gov"
 """The gateway's host root; every GATS path keeps its ``/api/gats/`` prefix, as the
 snapshot's ``paths`` name it (the portal document's ``host`` is ``api.fas.usda.gov``, no
 ``basePath``)."""
+ENV_VARS: tuple[EnvVar, ...] = (EnvVar(API_KEY_ENV, secret=True, required=True),)
+"""The variables the package reads, for a host (conventions §7; sdk-core ADR-0026, amendment
+2026-11-18, point c): the gateway's key alone. An ``EnvVar`` names a variable and reads none;
+a variable the source reads beside these joins the list."""
 # A self-imposed pace: upstream documents no per-second or per-minute limit (ADR-0010
 # decision 1).
 RATE_LIMIT = RateLimit(per_minute=60, burst=1)
@@ -292,6 +297,7 @@ __all__ = [
     "CACHE_MAX_BYTES",
     "COMMODITIES_PATH",
     "COMMODITIES_TTL",
+    "ENV_VARS",
     "RATE_LIMIT",
     "RELEASE_DATES_PATHS",
     "RELEASE_DATES_TTL",

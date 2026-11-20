@@ -356,7 +356,7 @@ def test_list_hs6_commodities_refuses_an_hs6_code_that_is_not_digits(
     assert info.value.message.endswith(
         "search finds the codes by name or description, e.g. 'wheat'."
     ), "the tool's own search, not the tool itself"
-    assert "list_hs6_commodities lists the codes" not in info.value.message
+    assert "list_hs6_commodities" not in info.value.message
     assert not respx_mock.calls
 
 

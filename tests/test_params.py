@@ -30,6 +30,14 @@ from xippios.usda.gats.params import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
+COUNTRIES_TASK = "list_countries (over MCP, the tool usda_gats_list_countries)"
+DISTRICTS_TASK = "list_customs_districts (over MCP, the tool usda_gats_list_customs_districts)"
+HS6_TASK = "list_hs6_commodities (over MCP, the tool usda_gats_list_hs6_commodities)"
+"""The list task a refusal names, with its MCP tool, since an agent calls the tool
+(conventions §8, https://github.com/xippios/sdk-core/issues/111)."""
+OUT_OF_DATE = "If upstream added it since, the packaged list is out of date."
+"""``UnknownCode``'s closing sentence from core 0.4.0, which names no maintainers' command
+(https://github.com/xippios/sdk-core/issues/111)."""
 
 
 PACKAGED = [
@@ -176,12 +184,13 @@ def test_the_recorded_unknown_partner_is_refused_without_a_close_code() -> None:
         "'ZZ' is not a partner_code in the packaged countries list (fetched 2026-10-28)."
     )
     assert 'e.g. "CH" (China), "MX" (Mexico)' in error.message
-    assert "list_countries lists every one and searches them by name, ISO or GENC code" in (
+    assert f"{COUNTRIES_TASK} lists every one and searches them by name, ISO or GENC code" in (
         error.message
     )
     assert "Did you mean" not in error.message
     assert "GATS answers an unknown partner code with an empty result" in error.message
-    assert "/refresh-reference-data" in error.message
+    assert error.message.endswith(OUT_OF_DATE)
+    assert "/refresh-reference-data" not in error.message
 
 
 @pytest.mark.parametrize(
@@ -235,7 +244,7 @@ def test_a_partner_code_that_is_not_text_is_refused(value: object) -> None:
     with pytest.raises(InvalidRequestError, match="partner_code must be a two-character") as info:
         validate_partner_code(value)  # type: ignore[arg-type]
     assert not isinstance(info.value, UnknownCode)
-    assert "list_countries lists them" in info.value.message
+    assert f"{COUNTRIES_TASK} lists them" in info.value.message
 
 
 def test_a_leaf_discontinued_before_the_month_is_refused() -> None:
@@ -265,7 +274,7 @@ def test_a_leaf_refusal_names_its_parent_code() -> None:
         "(discontinuedOn in GATS's countries list, packaged, fetched 2026-10-28) and is no "
         "other code's parent: it holds no trade after that month, so 2026-08 (202608) is "
         "refused. Its parent code GM (Germany) is accepted for every month. No other listed "
-        "code carries the name 'Germany, Federal Republic (Former)'; list_countries "
+        f"code carries the name 'Germany, Federal Republic (Former)'; {COUNTRIES_TASK} "
         "searches them."
     )
     assert validate_partner_month("GM", 2026, 8) == "GM"
@@ -289,7 +298,7 @@ def test_a_leaf_refusal_names_no_parent_the_list_does_not_hold(
     assert "None" not in message
     assert message.endswith(
         "is refused. No other listed code carries the name "
-        "'Germany, Federal Republic (Former)'; list_countries searches them."
+        f"'Germany, Federal Republic (Former)'; {COUNTRIES_TASK} searches them."
     )
 
 
@@ -324,7 +333,7 @@ def test_the_codes_of_the_same_name_carry_their_own_discontinuation() -> None:
     assert "discontinued in 199009" in germany.value.message
     assert germany.value.message.endswith(
         "No other listed code carries the name 'Germany, Federal Republic (Former)'; "
-        "list_countries searches them."
+        f"{COUNTRIES_TASK} searches them."
     )
 
 
@@ -427,9 +436,9 @@ def test_an_unknown_customs_district_names_the_nearest_ids(
         f"{district} is not a customs_district_id in the packaged customsDistricts list "
         "(fetched 2026-10-28). Did you mean "
     )
-    assert "list_customs_districts lists the ids" in error.message
+    assert f"{DISTRICTS_TASK} lists the ids" in error.message
     assert "partner code" not in error.message, "the partner reason is the countries list's"
-    assert "/refresh-reference-data" in error.message
+    assert error.message.endswith(OUT_OF_DATE)
 
 
 @pytest.mark.parametrize("district", [True, "10", 10.0, None])
@@ -437,6 +446,7 @@ def test_a_customs_district_that_is_not_an_integer_is_refused(district: object) 
     with pytest.raises(InvalidRequestError, match="customs_district_id must be an integer") as info:
         validate_customs_district_id(district)  # type: ignore[arg-type]
     assert not isinstance(info.value, UnknownCode)
+    assert info.value.message.endswith(f"{DISTRICTS_TASK} lists them.")
 
 
 def test_every_recorded_partner_is_listed() -> None:
@@ -556,10 +566,7 @@ def test_the_membership_check_names_the_parameter_it_was_given_as() -> None:
     with pytest.raises(UnknownCode) as info:
         validate_country_code("ZZ", "partner_code", reason=UN_PARTNER_REASON)
     assert info.value.message.startswith("'ZZ' is not a partner_code in the packaged countries")
-    assert info.value.message.endswith(
-        f"{UN_PARTNER_REASON} If upstream added it since, the packaged list needs a refresh "
-        "(/refresh-reference-data)."
-    )
+    assert info.value.message.endswith(f"{UN_PARTNER_REASON} {OUT_OF_DATE}")
     with pytest.raises(UnknownCode) as census:
         validate_partner_code("ZZ")
     assert "GATS answers an unknown partner code with an empty result" in census.value.message
@@ -760,7 +767,7 @@ def test_a_full_hs6_code_the_list_lacks_names_the_codes_sharing_its_digits(
         f"{code!r} is not a hs6_code in the packaged HS6Commodities list (fetched "
         f"2026-10-28). Did you mean {first} ({name}), "
     )
-    assert "list_hs6_commodities lists the codes" in error.message
+    assert f"{HS6_TASK} lists the codes" in error.message
     assert "partner" not in error.message
 
 
@@ -788,7 +795,7 @@ def test_other_hs6_filters_are_refused(code: object) -> None:
         ) as info:
             check(code)  # type: ignore[arg-type]
         assert not isinstance(info.value, UnknownCode)
-        assert "list_hs6_commodities lists the codes" in info.value.message
+        assert f"{HS6_TASK} lists the codes" in info.value.message
 
 
 @pytest.mark.parametrize("code", ["030444", "020119", "999999", "0201", "02", "0"])

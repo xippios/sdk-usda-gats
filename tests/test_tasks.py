@@ -22,6 +22,7 @@ from xippios.core import (
     RateLimitError,
     ResultMeta,
     UnknownCode,
+    ValidationError,
 )
 from xippios.core.client import cache_key
 from xippios.core.mcp import build_parser, main
@@ -254,6 +255,50 @@ def test_release_dates_from_the_cache_carry_the_time_they_were_stored(
     assert result.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
 
 
+def test_the_first_fetch_of_a_cached_list_reports_the_time_it_was_stored(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """A miss and the hits it answers report one ``retrieved_at``, the time the entry was
+    stored, for each of the five cached answers' tasks: core reads the clock once for both
+    (https://github.com/xippios/sdk-core/issues/79), where the miss reported a time read
+    after the decode, later than the entry's."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(IMPORT_RELEASES, "all")
+    replay_fixture("get_un_trade_export_data_release_info", "all")
+    replay_fixture("get_un_trade_import_data_release_info", "all")
+    commodities = replay_fixture("get_commodities", "all")
+    calls: list[Callable[[], Any]] = [
+        lambda: tasks.get_census_release_dates(ProductType.X),
+        lambda: tasks.get_census_release_dates(ProductType.M),
+        lambda: tasks.get_un_release_dates(ProductType.X),
+        lambda: tasks.get_un_release_dates(ProductType.M),
+        lambda: tasks.list_commodities(hs10_code="0201"),
+    ]
+    for call in calls:
+        miss = call().meta.retrieved_at
+        hit = call().meta.retrieved_at
+        assert miss == hit
+    assert commodities.call_count == 1
+
+
+def test_a_release_list_that_is_not_json_is_asked_again(respx_mock: respx.MockRouter) -> None:
+    """NOT RECORDED: a 200 whose body is no JSON, which GATS was never seen to send, to show
+    what the client's cache does with it (conventions §10). Core stores an answer once it
+    decoded, so the next call asks upstream again
+    (https://github.com/xippios/sdk-core/issues/122), where the cache answered the same
+    error without a request until its entry expired, an hour for a release list."""
+    route = respx_mock.get(EXPORT_RELEASES_URL).mock(
+        return_value=httpx.Response(
+            200, text="<html>maintenance</html>", headers={"content-type": "text/html"}
+        )
+    )
+    for _ in range(2):
+        with pytest.raises(ValidationError, match="is not JSON"):
+            tasks.get_census_release_dates(ProductType.X)
+    assert route.call_count == 2
+    assert cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL))) is None
+
+
 def test_a_listed_partner_without_trade_is_an_empty_result(
     replay_fixture: ReplayFixture,
 ) -> None:
@@ -320,7 +365,10 @@ def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) 
         tasks.get_census_exports("ZZ", 2026, 8)
     assert unknown.value.closest == ()
     assert 'e.g. "CH" (China), "MX" (Mexico)' in unknown.value.message
-    assert "list_countries lists every one" in unknown.value.message
+    assert (
+        "list_countries (over MCP, the tool usda_gats_list_countries) lists every one"
+        in unknown.value.message
+    )
     with pytest.raises(UnknownCode, match=r"Did you mean CH \(China\)") as close:
         tasks.get_census_imports("ch", 2026, 8)
     assert close.value.closest[0] == ("CH", "China")
@@ -1775,6 +1823,152 @@ def test_the_entry_point_applies_series_months_or_exits_with_status_2(
     assert tasks.series_ceiling() == 36
     with pytest.raises(InvalidRequestError, match="got 61"):
         tasks.mcp_apply_options(argparse.Namespace(series_months=61), server)
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_the_entry_point_names_itself_in_its_usage_help_and_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Core's ``main`` names the entry point that runs, ``xippios-usda-gats-mcp``, where it
+    named the source's slug, ``usda-gats``, and its help lists ``--series-months`` beside
+    core's options, with ``--allow-remote`` saying it changes nothing on this read server
+    (https://github.com/xippios/sdk-core/issues/167). The plain output is compared, so the
+    test pins its colors and its width."""
+    monkeypatch.setenv("PYTHON_COLORS", "0")
+    monkeypatch.delenv("FORCE_COLOR", raising=False)
+    monkeypatch.setenv("COLUMNS", "100")
+    monkeypatch.setattr(server, "run", lambda **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/xippios-usda-gats-mcp", "--help"])
+    with pytest.raises(SystemExit) as helped:
+        run()
+    assert helped.value.code == 0
+    usage = capsys.readouterr().out
+    assert usage.startswith("usage: xippios-usda-gats-mcp ")
+    words = " ".join(usage.split())
+    assert "--series-months MONTHS most months one series tool call spans" in words
+    assert "--allow-remote changes nothing: this read server is not held to loopback" in words
+    monkeypatch.setattr(
+        sys, "argv", ["/opt/venv/bin/xippios-usda-gats-mcp", "--series-months", "61"]
+    )
+    with pytest.raises(SystemExit) as refused:
+        run()
+    assert refused.value.code == 2
+    err = capsys.readouterr().err
+    assert err.startswith("usage: xippios-usda-gats-mcp ")
+    assert err.splitlines()[-1] == f"xippios-usda-gats-mcp: error: {CEILING_REFUSAL.format(61)}"
+
+
+def test_the_package_contract_for_a_host() -> None:
+    """``mcp.build()`` is the tool set a host serves as the entry point does: every task,
+    the caps, the text and the ``--series-months`` hooks, with the variable the package
+    reads, the gateway's key, in ``ENV_VARS`` (conventions §8; sdk-core ADR-0026,
+    amendment 2026-11-18, points c and d; https://github.com/xippios/sdk-core/issues/245)."""
+    from xippios.core import EnvVar
+    from xippios.core.mcp import ToolSet
+
+    from xippios.usda.gats import _client
+    from xippios.usda.gats import mcp as entry
+
+    assert entry.ENV_VARS is _client.ENV_VARS
+    assert (EnvVar("DATA_GOV_API_KEY", secret=True, required=True),) == _client.ENV_VARS
+    tools = entry.build()
+    assert isinstance(tools, ToolSet)
+    assert tools.source == "usda-gats"
+    assert [task.__name__ for task in tools.tasks] == list(tasks.__all__)
+    assert dict(tools.caps) == dict(tasks.MCP_CAPS)
+    assert tools.instructions == entry.INSTRUCTIONS
+    assert tools.read_only
+    assert not tools.loopback_only
+    assert (tools.add_options, tools.apply_options) == (
+        tasks.mcp_add_options,
+        tasks.mcp_apply_options,
+    )
+    assert tools.option_defaults().series_months == tasks.MCP_SERIES_MAX_MONTHS
+
+
+@pytest.mark.usefixtures("restore_series_ceiling")
+def test_a_host_applies_the_options_as_the_entry_point_does() -> None:
+    """A host builds its server from the tool set and applies its hooks' defaults, so a
+    series spans 24 months at most there, as on ``xippios-usda-gats-mcp`` without
+    ``--series-months``; until it applies them, the Python API's 60 stand."""
+    from xippios.core.mcp import build_server
+
+    from xippios.usda.gats import mcp as entry
+
+    tools = entry.build()
+    hosted = build_server(tools)
+    assert tasks.series_ceiling() == tasks.SERIES_MAX_MONTHS
+    assert tools.apply_options is not None
+    assert tools.apply_options(tools.option_defaults(), hosted) is hosted
+    assert tasks.series_ceiling() == tasks.MCP_SERIES_MAX_MONTHS
+
+
+@pytest.mark.anyio
+async def test_a_tool_error_answer_is_flagged_and_an_undeclared_argument_refused(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Over an in-process MCP client, a tool's error answer sets ``isError`` beside the
+    family's text (https://github.com/xippios/sdk-core/issues/168), and an argument the
+    tool does not declare is refused before it runs, naming the ones it takes, where it
+    was dropped and the tool answered all 322 countries
+    (https://github.com/xippios/sdk-core/issues/84). The lists are packaged, so nothing
+    is sent either way (respx is active with no route mounted)."""
+    from mcp.client import Client
+    from mcp.types import TextContent
+
+    async with Client(server) as client:
+        refused = await client.call_tool(
+            "usda_gats_get_census_exports", {"partner_code": "ZZ", "year": 2026, "month": 8}
+        )
+        undeclared = await client.call_tool("usda_gats_list_countries", {"serach": "CHN"})
+        answered = await client.call_tool("usda_gats_list_countries", {"search": "CHN"})
+    texts = []
+    for result in (refused, undeclared, answered):
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        texts.append(content.text)
+    assert refused.is_error
+    assert texts[0].startswith("error: UnknownCode: 'ZZ' is not a partner_code")
+    assert texts[0].endswith("If upstream added it since, the packaged list is out of date.")
+    assert undeclared.is_error
+    assert texts[1] == (
+        "error: InvalidRequestError: serach: Not an argument of this tool; it takes "
+        "region_code, search"
+    )
+    assert not answered.is_error
+    assert [row["country_code"] for row in json.loads(texts[2])["data"]] == ["CH"]
+    assert not respx_mock.calls
+
+
+def test_a_route_answers_a_refused_argument_as_problem_details(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A year that is no integer, a product type outside ``X`` and ``M`` and a missing
+    month are refused before the task runs as problem details, the detail worded as the
+    MCP adapter words it and echoing no input, where FastAPI's own 422 answered a
+    ``detail`` list that echoed it (https://github.com/xippios/sdk-core/issues/66)."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.usda.gats.http import router
+
+    app = FastAPI()
+    app.include_router(router)
+    http = TestClient(app)
+    cases: list[tuple[str, dict[str, str | int], str, str | None]] = [
+        ("get_census_exports", {"partner_code": "CH", "year": "abc", "month": 8}, "year", "abc"),
+        ("get_census_release_dates", {"product_type": "Z"}, "product_type", "'Z'"),
+        ("get_census_exports", {"partner_code": "CH", "year": 2026}, "month", None),
+    ]
+    for path, params, argument, value in cases:
+        answer = http.get(f"/usda-gats/{path}", params=params)
+        assert answer.status_code == 422, path
+        body = answer.json()
+        assert body["title"] == "InvalidRequestError"
+        assert body["detail"].startswith(f"{argument}: ")
+        if value is not None:
+            assert value not in body["detail"]
+    assert not respx_mock.calls
 
 
 UN_EXPORTS = "get_un_trade_exports"

@@ -14,7 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
-from xippios.core import NotFoundError, UpstreamModel
+from xippios.core import Answer, NotFoundError, UpstreamModel
 from xippios.core.testing import ReplayFixture, load_fixture, sent_urls
 
 from xippios.usda.gats import api
@@ -133,7 +133,8 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
     in the family. Product types ``T`` and ``B`` carry seven digits padded with three
     spaces, kept as sent; code, product type and start month are unique together."""
     route = replay_fixture("get_commodities", "all")
-    records, retrieved_at = await api.get_commodities()
+    answer = await api.get_commodities()
+    records, retrieved_at = answer.payload, answer.retrieved_at
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(records) == 24936
@@ -253,7 +254,8 @@ async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_census_export_data_release_info", "all")
-    releases, retrieved_at = await api.get_census_export_data_release_info()
+    answer = await api.get_census_export_data_release_info()
+    releases, retrieved_at = answer.payload, answer.retrieved_at
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(releases) == 716
@@ -279,8 +281,8 @@ async def test_get_census_export_release_dates(replay_fixture: ReplayFixture) ->
 async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_census_import_data_release_info", "all")
     replay_fixture("get_census_export_data_release_info", "all")
-    imports, _ = await api.get_census_import_data_release_info()
-    exports, _ = await api.get_census_export_data_release_info()
+    imports = (await api.get_census_import_data_release_info()).payload
+    exports = (await api.get_census_export_data_release_info()).payload
     assert len(imports) == 716
     assert imports[0] == DataReleaseInfo(
         statistical_year_month="202608",
@@ -705,8 +707,8 @@ async def test_product_type_members_are_the_release_records_codes(
     throughout the exports list, ``M`` throughout the imports list."""
     replay_fixture("get_census_export_data_release_info", "all")
     replay_fixture("get_census_import_data_release_info", "all")
-    exports, _ = await api.get_census_export_data_release_info()
-    imports, _ = await api.get_census_import_data_release_info()
+    exports = (await api.get_census_export_data_release_info()).payload
+    imports = (await api.get_census_import_data_release_info()).payload
     assert [m.value for m in ProductType] == ["X", "M"]
     assert {r.product_type for r in exports} == {ProductType.X}
     assert {r.product_type for r in imports} == {ProductType.M}
@@ -743,7 +745,8 @@ async def test_get_un_trade_export_release_dates(replay_fixture: ReplayFixture) 
     """One record per reporter and statistical year, 1989 to 2019, the newest released
     on 2021-01-18: 3,796 records, 464,555 bytes as a fixture file."""
     route = replay_fixture(UN_EXPORT_RELEASES, "all")
-    releases, retrieved_at = await api.get_un_trade_export_data_release_info()
+    answer = await api.get_un_trade_export_data_release_info()
+    releases, retrieved_at = answer.payload, answer.retrieved_at
     assert route.call_count == 1, "from the wire, not from the cache"
     assert retrieved_at.tzinfo is UTC
     assert len(releases) == 3796
@@ -772,8 +775,8 @@ async def test_get_un_trade_import_release_dates(replay_fixture: ReplayFixture) 
     list's: 32 pairs are only in the exports list, 68 only in this one."""
     route = replay_fixture(UN_IMPORT_RELEASES, "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
-    imports, _ = await api.get_un_trade_import_data_release_info()
-    exports, _ = await api.get_un_trade_export_data_release_info()
+    imports = (await api.get_un_trade_import_data_release_info()).payload
+    exports = (await api.get_un_trade_export_data_release_info()).payload
     assert route.call_count == 1
     assert len(imports) == 3832
     assert imports[0] == UNTradeDataReleaseInfo(
@@ -800,8 +803,8 @@ async def test_each_recorded_reporter_year_has_its_flows_release_record(
     lists, India's latest is 2016, and no reporter has one after 2019."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    exports, _ = await api.get_un_trade_export_data_release_info()
-    imports, _ = await api.get_un_trade_import_data_release_info()
+    exports = (await api.get_un_trade_export_data_release_info()).payload
+    imports = (await api.get_un_trade_import_data_release_info()).payload
     x = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in exports}
     m = {(r.reporter_code, r.statistical_year): r.release_time_stamp for r in imports}
     assert x[("IC", "2019")] == datetime(2020, 6, 3, 5, 50, 46)
@@ -826,8 +829,8 @@ async def test_the_un_release_lists_name_reporters_by_gats_country_code(
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
     countries = {c.country_code: c for c in await api.get_countries()}
-    exports, _ = await api.get_un_trade_export_data_release_info()
-    imports, _ = await api.get_un_trade_import_data_release_info()
+    exports = (await api.get_un_trade_export_data_release_info()).payload
+    imports = (await api.get_un_trade_import_data_release_info()).payload
     releases = [*exports, *imports]
     reporters = {r.reporter_code for r in releases}
     assert reporters <= set(countries)
@@ -1084,8 +1087,8 @@ async def test_the_un_release_lists_carry_the_product_type_codes_too(
     the exports list, ``M`` throughout the imports list."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    exports, _ = await api.get_un_trade_export_data_release_info()
-    imports, _ = await api.get_un_trade_import_data_release_info()
+    exports = (await api.get_un_trade_export_data_release_info()).payload
+    imports = (await api.get_un_trade_import_data_release_info()).payload
     assert {r.product_type for r in exports} == {ProductType.X}
     assert {r.product_type for r in imports} == {ProductType.M}
 
@@ -1102,3 +1105,28 @@ async def test_an_unknown_un_product_type_code_still_parses() -> None:
     )
     assert record.product_type == "R"
     assert record.release_time_stamp == datetime(2020, 6, 3, 5, 50, 46)
+
+
+CACHED_WRAPPERS = [
+    ("get_census_export_data_release_info", DataReleaseInfo, 716),
+    ("get_census_import_data_release_info", DataReleaseInfo, 716),
+    ("get_un_trade_export_data_release_info", UNTradeDataReleaseInfo, 3796),
+    ("get_un_trade_import_data_release_info", UNTradeDataReleaseInfo, 3832),
+    ("get_commodities", Commodity, 24936),
+]
+"""The wrappers of the five answers the client caches, each with its record and its count."""
+
+
+@pytest.mark.parametrize(("wrapper", "model", "count"), CACHED_WRAPPERS)
+async def test_a_cached_wrapper_returns_core_s_answer(
+    replay_fixture: ReplayFixture, wrapper: str, model: type[UpstreamModel], count: int
+) -> None:
+    """Each wrapper of a cached answer returns core's ``Answer``, its records as
+    ``payload`` and the time of the answer as ``retrieved_at``, never a pair of its own
+    (conventions §6)."""
+    replay_fixture(wrapper, "all")
+    answer = await getattr(api, wrapper)()
+    assert isinstance(answer, Answer)
+    assert len(answer.payload) == count
+    assert all(isinstance(record, model) for record in answer.payload)
+    assert answer.retrieved_at.tzinfo is UTC

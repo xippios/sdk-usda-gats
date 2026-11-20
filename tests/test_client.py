@@ -26,6 +26,7 @@ from xippios.core import (
     NotFoundError,
     RateLimitError,
     RetryPolicy,
+    ValidationError,
 )
 from xippios.core.client import CachedResponse, cache_key
 from xippios.core.data_gov import API_KEY_ENV, Gateway
@@ -451,12 +452,13 @@ async def test_the_commodities_list_lands_in_the_daily_cache(
     the entry's stored time."""
     commodities = replay_fixture("get_commodities", "all")
     replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_commodities()
+    first = (await api.get_commodities()).payload
     await api.get_census_export_data_release_info()
     assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
     entry = commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
     assert entry is not None
-    again, retrieved_at = await api.get_commodities()
+    answer = await api.get_commodities()
+    again, retrieved_at = answer.payload, answer.retrieved_at
     assert retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(again) == len(first) == 24936
     assert commodities.call_count == 1
@@ -485,12 +487,14 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     exports = replay_fixture("get_census_export_data_release_info", "all")
     imports = replay_fixture("get_census_import_data_release_info", "all")
     before = datetime.now(UTC)
-    first, first_at = await api.get_census_export_data_release_info()
+    answer = await api.get_census_export_data_release_info()
+    first, first_at = answer.payload, answer.retrieved_at
     assert_time_between(first_at, before, datetime.now(UTC))
     assert exports.call_count == 1, "the first answer came from the wire"
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.get_census_export_data_release_info()
+    answer = await api.get_census_export_data_release_info()
+    again, stored = answer.payload, answer.retrieved_at
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC), "when it was stored"
     assert stored.tzinfo is UTC
     assert again == first
@@ -498,6 +502,35 @@ async def test_a_release_list_is_fetched_once_and_then_answered_from_the_cache(
     assert sent_urls(exports) == [f"{BASE_URL}{EXPORT_RELEASES}"]
     await api.get_census_import_data_release_info()
     assert imports.call_count == 1, "the imports list is not the exports list's entry"
+
+
+RELEASE_WRAPPERS = [
+    ("get_census_export_data_release_info", "/api/gats/census/data/exports/dataReleaseDates"),
+    ("get_census_import_data_release_info", "/api/gats/census/data/imports/dataReleaseDates"),
+    ("get_un_trade_export_data_release_info", "/api/gats/UNTrade/data/exports/dataReleaseDates"),
+    ("get_un_trade_import_data_release_info", "/api/gats/UNTrade/data/imports/dataReleaseDates"),
+]
+"""The four release-list wrappers and their paths, cached for an hour or a day."""
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("wrapper", "path"), RELEASE_WRAPPERS)
+async def test_a_release_list_that_fails_the_models_is_asked_again(
+    respx_mock: respx.MockRouter, wrapper: str, path: str
+) -> None:
+    """NOT RECORDED: a 200 of JSON that is no list of releases, which GATS was never seen
+    to send, to show what the cache does with it (conventions §10). The wrapper parses
+    through ``get_answer``, which stores an answer only once it parsed, so the next call
+    asks upstream again, where the cache answered the same error without a request until
+    its entry expired (https://github.com/xippios/sdk-core/issues/122)."""
+    route = respx_mock.get(f"{BASE_URL}{path}").mock(
+        return_value=httpx.Response(200, json={"message": "maintenance"})
+    )
+    for _ in range(2):
+        with pytest.raises(ValidationError, match="Input should be a valid list"):
+            await getattr(api, wrapper)()
+    assert route.call_count == 2
+    assert cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))) is None
 
 
 @pytest.mark.anyio
@@ -519,7 +552,7 @@ async def test_the_un_release_lists_land_in_the_days_store(
     exports = replay_fixture("get_un_trade_export_data_release_info", "all")
     imports = replay_fixture("get_un_trade_import_data_release_info", "all")
     replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_un_trade_export_data_release_info()
+    first = (await api.get_un_trade_export_data_release_info()).payload
     await api.get_un_trade_import_data_release_info()
     await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
@@ -532,7 +565,8 @@ async def test_the_un_release_lists_land_in_the_days_store(
         assert commodities_cache.get(key) is None, path
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None
-    again, stored = await api.get_un_trade_export_data_release_info()
+    answer = await api.get_un_trade_export_data_release_info()
+    again, stored = answer.payload, answer.retrieved_at
     assert stored == datetime.fromtimestamp(entry.stored_at, UTC)
     assert again == first
     assert (exports.call_count, imports.call_count) == (1, 1)
@@ -559,13 +593,13 @@ async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     quota policy's check (sdk-core ADR-0037), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
     releases = replay_fixture("get_census_export_data_release_info", "all")
-    first, _ = await api.get_census_export_data_release_info()
+    first = (await api.get_census_export_data_release_info()).payload
     spent = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError):
         await client.get_json(REGIONS)
-    cached, _ = await api.get_census_export_data_release_info()
+    cached = (await api.get_census_export_data_release_info()).payload
     assert cached == first
     assert releases.call_count == 1, "answered from the cache"
     countries = respx_mock.get(f"{BASE_URL}/api/gats/countries")

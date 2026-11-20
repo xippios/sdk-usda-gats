@@ -27,11 +27,10 @@ models, measured with ``tracemalloc``) and the entry's 7.6 MB body alive until t
 call replaces them, also after the cache's entry has expired or been cleared.
 """
 
-from datetime import datetime
 from typing import NamedTuple
 
 import httpx
-from xippios.core import parse
+from xippios.core import Answer, parse
 from xippios.core.client import CachedResponse, cache_key
 
 from xippios.usda.gats._client import BASE_URL, COMMODITIES_PATH, SOURCE, cache, client
@@ -54,23 +53,24 @@ _parsed: _Parsed | None = None
 """The one slot: the last records parsed from a cached answer, or ``None``."""
 
 
-async def get_commodities() -> tuple[list[Commodity], datetime]:
+async def get_commodities() -> Answer[list[Commodity]]:
     """Call ``GATSData_GetCommodities``.
 
     The records are parsed once per cache entry: within the day the client keeps the
     answer, every call after the first returns the same list (see the module docstring).
 
     Returns:
-        Every commodity record, current and historical, in upstream order (by code), one
-        ``Commodity`` per record, e.g.
+        Core's ``Answer``: as ``payload`` every commodity record, current and historical,
+        in upstream order (by code), one ``Commodity`` per record, e.g.
             ``Commodity(hs10_code="0103910000", start_date="198901", end_dtate=None,
             product_type="X", commodity_name="SWINE,<50KG EACH",
             commodity_description="SWINE, LIVE, NESOI, WEIGHING LESS THAN 50 KG EACH  (NO)",
             is_ag_commodity=False, census_uom_id1=78, census_uom_id2=78,
             fas_converted_uom_id=78, fas_non_converted_uom_id=78)``,
-        and when it was retrieved, timezone-aware UTC: on a cache hit the time the
-        entry was stored, else the time the answer arrived. The list is shared by the
-        calls answered from the same entry: a caller that changes it copies it first.
+        and as ``retrieved_at`` when it was retrieved, timezone-aware UTC: on a cache hit
+        the time the entry was stored, else the time the answer arrived. The list is shared
+        by the calls answered from the same entry: a caller that changes it copies it
+        first.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
@@ -83,7 +83,7 @@ async def get_commodities() -> tuple[list[Commodity], datetime]:
     entry = cache.get(_KEY)
     held = _parsed
     if held is not None and entry is not None and held.entry is entry:
-        return held.records, answer.retrieved_at
+        return Answer(held.records, answer.retrieved_at)
     records = parse(
         list[Commodity],
         answer.payload,
@@ -91,4 +91,4 @@ async def get_commodities() -> tuple[list[Commodity], datetime]:
         endpoint="GATSData_GetCommodities",
     )
     _parsed = None if entry is None else _Parsed(entry, records)
-    return records, answer.retrieved_at
+    return Answer(records, answer.retrieved_at)

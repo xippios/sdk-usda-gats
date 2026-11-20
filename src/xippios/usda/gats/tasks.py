@@ -127,6 +127,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 from xippios.core import (
+    Answer,
     InvalidRequestError,
     NotFoundError,
     PackagedList,
@@ -544,8 +545,8 @@ def _release_of(
     )
 
 
-async def _releases(product_type: ProductType) -> tuple[list[DataReleaseInfo], datetime]:
-    """The Census release list of ``product_type`` and when it was retrieved.
+async def _releases(product_type: ProductType) -> Answer[list[DataReleaseInfo]]:
+    """The Census release list of ``product_type`` and when it was retrieved, as ``Answer``.
 
     One request, or none while the cache holds the list (``_client.RELEASE_DATES_TTL``);
     the time is the cache's stored time on a hit, else the time the list arrived.
@@ -563,7 +564,8 @@ async def _release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``.
     """
-    releases, fetched = await _releases(product_type)
+    listed = await _releases(product_type)
+    releases, fetched = listed.payload, listed.retrieved_at
     flow, operation = RELEASE_LISTS[product_type]
     return _release_of(f"{year:04d}{month:02d}", releases, fetched, flow, operation, data)
 
@@ -1033,7 +1035,8 @@ async def _series[R: _Coded](
         protocol.
     """
     months = _series_months(partner_code, start_year, start_month, end_year, end_month, hs10_code)
-    releases, fetched = await _releases(product_type)
+    listed = await _releases(product_type)
+    releases, fetched = listed.payload, listed.retrieved_at
     flow, operation = RELEASE_LISTS[product_type]
     codes = [f"{year:04d}{month:02d}" for year, month in months]
     found = [
@@ -1297,10 +1300,11 @@ async def get_census_release_dates_async(
         validate_year(statistical_year, "statistical_year")
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
-        releases, retrieved_at = await api.get_census_export_data_release_info()
+        listed = await api.get_census_export_data_release_info()
     else:
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
-        releases, retrieved_at = await api.get_census_import_data_release_info()
+        listed = await api.get_census_import_data_release_info()
+    releases, retrieved_at = listed.payload, listed.retrieved_at
     year = None if statistical_year is None else f"{statistical_year:04d}"
     selected = [r for r in releases if year is None or r.statistical_year_month.startswith(year)]
     meta = ResultMeta(
@@ -1337,10 +1341,8 @@ def _un_check(
         validate_hs6_code(hs6_code)
 
 
-async def _un_releases(
-    product_type: ProductType,
-) -> tuple[list[UNTradeDataReleaseInfo], datetime]:
-    """The UN Trade release list of ``product_type`` and when it was retrieved.
+async def _un_releases(product_type: ProductType) -> Answer[list[UNTradeDataReleaseInfo]]:
+    """The UN Trade release list of ``product_type`` and when it was retrieved, as ``Answer``.
 
     One request, or none while the cache holds the list (``_client.UN_RELEASE_DATES_TTL``,
     a day); the time is the cache's stored time on a hit, else the time the list arrived.
@@ -1394,7 +1396,7 @@ async def _un_ranked(
     if refused is None:
         return
     try:
-        releases, _ = await _un_releases(product_type)
+        releases = (await _un_releases(product_type)).payload
     except XippiosError:
         raise refused from None
     check(frozenset(release.reporter_code for release in releases))
@@ -1501,7 +1503,8 @@ async def _un_release(
     The list comes from the client's cache when it holds it; ``data`` names what was
     asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
-    releases, fetched = await _un_releases(product_type)
+    listed = await _un_releases(product_type)
+    releases, fetched = listed.payload, listed.retrieved_at
     flow, operation = UN_RELEASE_LISTS[product_type]
     return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
 
@@ -1762,7 +1765,8 @@ async def get_un_release_dates_async(
     await _un_ranked(
         code, lambda reporters: _un_release_dates_check(reporter_code, year, reporters)
     )
-    releases, retrieved_at = await _un_releases(code)
+    listed = await _un_releases(code)
+    releases, retrieved_at = listed.payload, listed.retrieved_at
     statistical_year = None if year is None else f"{year:04d}"
     selected = [
         r
@@ -1960,7 +1964,8 @@ async def list_commodities_async(
     _search(search)
     if hs10_code is not None:
         validate_hs10_code(hs10_code)
-    commodities, retrieved_at = await api.get_commodities()
+    listed = await api.get_commodities()
+    commodities, retrieved_at = listed.payload, listed.retrieved_at
     selected = [
         c
         for c in commodities

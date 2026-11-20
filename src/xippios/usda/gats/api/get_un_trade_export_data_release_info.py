@@ -11,42 +11,41 @@ newest year first, 3,796 records for 206 reporters from ``"1989"`` to ``"2019"``
 ``xippios.usda.gats._client.classify``.
 
 The client caches this path for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
-frozen, so the wrapper reads it with ``client.get_answer``, whose ``retrieved_at`` a task
-reports as ``meta.retrieved_at``: on a cache hit the time the entry was stored, else the
-time the answer arrived (conventions §4, sdk-core ADR-0037).
+frozen, so the wrapper reads it with ``client.get_answer``, which parses it and stores only
+an answer that parsed, and whose ``retrieved_at`` a task reports as ``meta.retrieved_at``:
+on a cache hit the time the entry was stored, else the time the answer arrived (conventions
+§4, sdk-core ADR-0037).
 """
 
-from datetime import datetime
+from xippios.core import Answer
 
-from xippios.core import parse
-
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import UNTradeDataReleaseInfo
 
 __all__ = ["get_un_trade_export_data_release_info"]
 
 
-async def get_un_trade_export_data_release_info() -> tuple[list[UNTradeDataReleaseInfo], datetime]:
+async def get_un_trade_export_data_release_info() -> Answer[list[UNTradeDataReleaseInfo]]:
     """Call ``GATSData_GetUNTradeExportDataReleaseInfo``.
 
     Returns:
-        One ``UNTradeDataReleaseInfo`` per reporter and statistical year, in upstream
-        order (newest year first, reporters in code order), e.g.
+        Core's ``Answer``: as ``payload`` one ``UNTradeDataReleaseInfo`` per reporter and
+        statistical year, in upstream order (newest year first, reporters in code order),
+        e.g.
             ``UNTradeDataReleaseInfo(statistical_year="2019", product_type="X",
             reporter_code="AC", release_time_stamp=datetime(2020, 10, 11, 1, 15, 48))``,
-        and when it was retrieved, timezone-aware UTC: on a cache hit the time the
-        entry was stored, else the time the answer arrived.
+        and as ``retrieved_at`` when it was retrieved, timezone-aware UTC: on a cache hit
+        the time the entry was stored, else the time the answer arrived.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
+        ValidationError: The answer is no JSON, or no list of these records; the cache
+            keeps no such answer, so the next call asks again.
     """
     path = "/api/gats/UNTrade/data/exports/dataReleaseDates"
-    answer = await client.get_answer(path)
-    records = parse(
-        list[UNTradeDataReleaseInfo],
-        answer.payload,
-        source=SOURCE,
+    return await client.get_answer(
+        path,
+        parse=list[UNTradeDataReleaseInfo],
         endpoint="GATSData_GetUNTradeExportDataReleaseInfo",
     )
-    return records, answer.retrieved_at

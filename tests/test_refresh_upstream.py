@@ -89,3 +89,15 @@ def test_a_snapshot_leaves_observed_md_as_written(tmp_path: Path) -> None:
     script.write_snapshot(tmp_path, [a_row()], render(observed=True))
     assert notes.read_text(encoding="utf-8") == "# What GATS does but never documents\n"
     assert (tmp_path / script.PORTAL_FILE).read_bytes() == b'{"swagger": "2.0"}\n'
+
+
+def test_fetched_md_says_when_and_where_the_portal_document_was_found() -> None:
+    """The paragraph on the capture dates the find of the portal's Swagger document and
+    says where it was found, without naming who found it; ``FETCHED.md`` takes it at the
+    next capture."""
+    words = " ".join(render(observed=False).split())
+    assert (
+        "On 2026-10-23, when sdk-usda-psd's snapshot was set up, the portal page and its"
+        " bundle were fetched into a temporary directory and that URL was found in the"
+        " bundle's Swagger UI configuration; those copies have since been deleted."
+    ) in words

@@ -4,11 +4,98 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: breaking changes bump the minor).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-21
+
+### Added
+
+- `xippios.usda.gats.mcp.build()` returns the read-only tool set that
+  `xippios-usda-gats-mcp` serves, xippios-core's `ToolSet` with the caps of
+  `tasks.MCP_CAPS` and the hooks of `--series-months`, so a host serves the same tools
+  beside other sources' in one server and applies the 24-month ceiling as the entry point
+  does. `ENV_VARS`, beside `SOURCE`, names the one variable the package reads,
+  `DATA_GOV_API_KEY`, secret and required.
+  (https://github.com/xippios/sdk-core/issues/245,
+  https://github.com/xippios/sdk-template/issues/81)
 
 ### Changed
 
+- The comment above `PathCaches` in `_client.py`, the client's cache with a lifetime per
+  path, cites the public issue of sdk-core that declines such a lifetime while one source
+  asks for it, where it named an item of an internal list. The docstrings of
+  `scripts/refresh_upstream.py` and the paragraph it writes into `docs/upstream/FETCHED.md`
+  say when and where the portal's Swagger document was found without naming who found it,
+  and `FETCHED.md` takes that text at its next capture.
+  (https://github.com/xippios/sdk-core/issues/48,
+  https://github.com/xippios/sdk-usda-gats/issues/21)
+- `get_census_release_dates`, `get_un_release_dates` and `list_commodities` report one
+  `meta.retrieved_at` for the first fetch of their list and for every later answer from
+  the client's cache, the time the entry was stored, where the first fetch reported a time
+  read after the decode, a little later than its entry's.
+  (https://github.com/xippios/sdk-core/issues/79)
+- `xippios-usda-gats-mcp` names itself in its usage line and its errors, an out-of-range
+  `--series-months 61` ending in `xippios-usda-gats-mcp: error: the series ceiling`, where
+  they named the server, `xippios-usda-gats`. Its help says that `--allow-remote` changes
+  nothing, since this read server is not held to loopback, where it offered to serve a
+  write server beyond loopback. (https://github.com/xippios/sdk-core/issues/167)
+- A tool's error answer sets `isError` on its result beside the text
+  `error: <ErrorClass>: <message>`, a partner code the packaged list lacks as well as a
+  `month` that is no integer, so a client tells a refusal from data without reading the
+  text, where the flag was unset on every refusal.
+  (https://github.com/xippios/sdk-core/issues/168)
+- A refusal that points to a list task names its MCP tool too, so an agent calls the tool
+  it is told of: an unknown partner code with no close code points to `list_countries`
+  (over MCP, the tool `usda_gats_list_countries`), a customs district id the packaged list
+  lacks to `list_customs_districts` (`usda_gats_list_customs_districts`) and a six-digit
+  HS6 code it lacks to `list_hs6_commodities` (`usda_gats_list_hs6_commodities`), where
+  each named the task alone. (https://github.com/xippios/sdk-core/issues/111)
+- A route answers an argument that its schema refuses, a `year` of `abc`, a
+  `product_type` of `Z` or a missing `month` say, as problem details before the task runs:
+  HTTP 422, the title `InvalidRequestError` and the detail `<argument>: <message>`, which
+  echoes no input, where FastAPI's own 422 listed its error details with the input.
+  (https://github.com/xippios/sdk-core/issues/66)
+- A refusal of a partner or reporter code, a six-digit HS6 code or a customs district id
+  that the packaged lists lack ends with
+  `If upstream added it since, the packaged list is out of date.`, where it ended
+  `the packaged list needs a refresh (/refresh-reference-data)`, a command of the
+  maintainers that an agent cannot run. (https://github.com/xippios/sdk-core/issues/111)
+- Adopts sdk-template v0.3.4, from v0.3.2, with conventions 1.27 and no new core minor: the
+  floor stays `xippios-core~=0.3.0`. The README lists the package's documents under
+  `## Documents`, and `CLAUDE.md` holds the rules that `.claude/family.md` carried, which
+  leaves with `/adopt-release`, citing sdk-core's decision records as `sdk-core ADR-NNNN`.
+  Changelog entries are fragments under `changelog/`, the package's own decisions go into
+  `docs/adr/` with the index that `scripts/adr_index.py` writes, and a pull request runs the
+  organization's checks from `organization.yml`, where `gates.yml` was.
+  (https://github.com/xippios/sdk-template/releases/tag/v0.3.4,
+  https://github.com/xippios/sdk-usda-gats/issues/19)
 - Adopts sdk-template v0.3.2, from v0.3.0.
+
+### Fixed
+
+- A Census or UN Trade release list that upstream answers with a 200 the package cannot
+  read, no JSON or no list of releases, is asked for again on the next call, and so is
+  the HS10 commodities list for a body that is no JSON, where the client's cache kept
+  such an answer and raised the same `ValidationError` without a request for an hour, or
+  for a day. (https://github.com/xippios/sdk-core/issues/122)
+
+### Breaking
+
+- The five wrappers of the answers the client caches,
+  `api.get_census_export_data_release_info`, `api.get_census_import_data_release_info`,
+  `api.get_un_trade_export_data_release_info`, `api.get_un_trade_import_data_release_info`
+  and `api.get_commodities`, return xippios-core's `Answer`, the records as `payload` and
+  the time of the answer as `retrieved_at`, where each returned a pair of the two. A
+  caller that wrote `records, retrieved_at = await api.get_commodities()` writes
+  `answer = await api.get_commodities()` and reads `answer.payload` and
+  `answer.retrieved_at`. (https://github.com/xippios/sdk-usda-gats/pull/48)
+- A tool refuses an argument that it does not declare before it runs, whatever its value:
+  `usda_gats_list_countries` called with `serach` for `search` answers
+  `error: InvalidRequestError: serach: Not an argument of this tool` and names the
+  arguments it takes, where the argument was dropped and the tool answered all 322
+  countries. (https://github.com/xippios/sdk-core/issues/84)
+- Adopts sdk-template v0.4.0, from v0.3.4, with `core_version=0.4.0`. The package depends
+  on `xippios-core~=0.4.0`, its extras likewise, and follows conventions 1.28.
+  (https://github.com/xippios/sdk-template/releases/tag/v0.4.0,
+  https://github.com/xippios/sdk-usda-gats/issues/47)
 
 ## [0.2.0] - 2026-10-28
 

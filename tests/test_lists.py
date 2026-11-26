@@ -32,7 +32,7 @@ from xippios.core.testing import (
 )
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, cache, commodities_cache
+from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
@@ -132,7 +132,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     route = replay_fixture(wrapper, "all")
     result = await getattr(tasks, f"{task}_async")()
     assert not respx_mock.calls, f"{task} called upstream"
-    recorded = await getattr(api, wrapper)()
+    recorded = (await getattr(api, wrapper)()).payload
     assert route.call_count == 1, "the one call is the wrapper's"
     assert result.data == recorded, "same records, same values, upstream order"
     assert len(result.data) == count
@@ -575,7 +575,7 @@ def test_an_answer_the_cache_does_not_keep_is_parsed_every_time(
     cannot answer for the entry a later answer gets."""
     parses = _count_parses(monkeypatch)
     route = replay_fixture("get_commodities", "all")
-    monkeypatch.setattr(commodities_cache, "set", lambda key, value: None)
+    monkeypatch.setattr(cache, "set", lambda key, value, *, path: None)
     tasks.list_commodities(search="wheat")
     tasks.list_commodities(search="swine")
     assert route.call_count == 2

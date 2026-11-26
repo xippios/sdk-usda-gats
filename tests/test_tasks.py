@@ -89,6 +89,12 @@ def _published_naive(meta: ResultMeta) -> None:
     assert meta.published_at_naive is True
 
 
+def _no_vintage(meta: ResultMeta) -> None:
+    """A task that reads another flow's release list states no release of its own data:
+    ``vintage`` and ``published_at`` stay empty (sdk-core ADR-0060, decisions 2 and 8)."""
+    assert (meta.vintage, meta.published_at, meta.published_at_naive) == (None, None, False)
+
+
 def _json_number(value: object) -> bool:
     """A JSON number as an adapter writes a decimal: an integer where it has no fractional
     digits, else a float (sdk-core ADR-0067)."""
@@ -697,9 +703,38 @@ def test_an_unknown_customs_district_is_refused_before_any_request(
     assert respx_mock.calls.call_count == 0
 
 
+OTHER_FLOWS_LIST: list[Callable[..., Any]] = [
+    tasks.get_census_reexports,
+    tasks.get_census_reexport_series,
+    tasks.get_customs_district_exports,
+    tasks.get_customs_district_imports,
+    tasks.get_customs_district_reexports,
+    tasks.get_un_reexports,
+]
+"""The six tasks whose release list is another flow's: the Census and UN Trade re-exports,
+which have none of their own, and the customs-district tasks, whose records the Census
+lists do not name."""
+
+
+@pytest.mark.parametrize("task", OTHER_FLOWS_LIST, ids=[t.__name__ for t in OTHER_FLOWS_LIST])
+def test_a_task_that_reads_another_flows_list_says_why_its_vintage_is_empty(
+    task: Callable[..., Any],
+) -> None:
+    """Each of the six says in its description, the tool's text, that ``meta.vintage`` and
+    ``meta.published_at`` stay empty and that the list it reads states another release
+    (sdk-core ADR-0060, decisions 2 and 8)."""
+    from xippios.core.mcp.server import _description
+
+    description = " ".join(_description(task).split())
+    assert "``meta.vintage`` and ``meta.published_at`` stay empty" in description
+    assert "assum" in description, "the refusal's assumption that the list holds"
+
+
 def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
     """Iceland in August 2026: 12 records. Only the exports release list is mounted: the
-    re-exports have none of their own, and a request for the imports list would fail."""
+    re-exports have none of their own, and a request for the imports list would fail. The
+    exports list states the exports' release, not the re-exports', so ``vintage`` stays
+    empty."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(RE_EXPORTS, "IC_2026_8")
     result = tasks.get_census_reexports("IC", 2026, 8)
@@ -720,8 +755,7 @@ def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
         "year": 2026,
         "month": 8,
     }
-    assert result.meta.vintage == RELEASED_2026_08 == _release_time(EXPORT_RELEASES, "202608")
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     chapter = tasks.get_census_reexports("IC", 2026, 8, hs10_code="62")
     assert [r.hs10_code for r in chapter.data] == [
         "6201409000",
@@ -743,9 +777,10 @@ def test_a_re_export_month_not_released_says_which_list_was_checked(
     message = info.value.message
     assert message.startswith("GATS has no Census re-exports for 203501: it is not released yet")
     assert "the latest exports month released is 202608" in message
-    assert "GATS publishes no release list for re-exports: the package checks the exports" in (
-        message
-    )
+    assert (
+        "GATS publishes no release list for re-exports: the package read the exports list "
+        "and assumes that it holds for re-exports."
+    ) in message, "the list read and the assumption"
 
 
 @pytest.mark.parametrize(
@@ -797,8 +832,9 @@ def test_customs_district_tasks(
 ) -> None:
     """Iceland in August 2026, by customs district. Only the right release list is
     mounted: the imports list for imports, the exports list for exports and, by
-    assumption, re-exports; a request for the other would fail. ``customs_district_id``
-    keeps one district after the one data request."""
+    assumption, re-exports; a request for the other would fail. The list states the
+    Census flow's release, not the districts' records', so ``vintage`` stays empty.
+    ``customs_district_id`` keeps one district after the one data request."""
     releases = replay_fixture(release_list, "all")
     data = replay_fixture(fixture, "IC_2026_8")
     result = task("IC", 2026, 8)
@@ -812,8 +848,7 @@ def test_customs_district_tasks(
         "year": 2026,
         "month": 8,
     }
-    assert result.meta.vintage == RELEASED_2026_08 == _release_time(release_list, "202608")
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     new_york = task("IC", 2026, 8, customs_district_id=10)
     assert len(new_york.data) == in_ny
     assert {r.customs_district_id for r in new_york.data} == {10}
@@ -845,7 +880,7 @@ def test_both_filters_narrow_the_district_imports(replay_fixture: ReplayFixture)
     assert isinstance(both.data[0].consumption_cif_value, Decimal)
     empty = tasks.get_customs_district_imports("IC", 2026, 8, customs_district_id=99)
     assert empty.data == [], "a listed district without imports from Iceland"
-    assert empty.meta.vintage == RELEASED_2026_08
+    _no_vintage(empty.meta)
 
 
 def test_a_district_month_not_released_is_not_found(replay_fixture: ReplayFixture) -> None:
@@ -854,7 +889,10 @@ def test_a_district_month_not_released_is_not_found(replay_fixture: ReplayFixtur
         NotFoundError, match="GATS has no Census customs-district imports for 203501"
     ) as info:
         tasks.get_customs_district_imports("IC", 2035, 1)
-    assert "the package checks the imports list" in info.value.message
+    assert (
+        "GATS publishes no release list for customs-district imports: the package read the "
+        "imports list and assumes that it holds for customs-district imports."
+    ) in info.value.message
 
 
 @pytest.mark.anyio
@@ -876,7 +914,7 @@ async def test_the_district_tools_name_both_filters_when_cut(
     assert payload["note"] == (
         f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
-    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert (payload["meta"]["vintage"], payload["meta"]["published_at"]) == (None, None)
     assert "customs_district_id" not in payload["meta"]["request"], "not given, left out"
 
 
@@ -911,7 +949,7 @@ async def test_the_district_and_re_export_tools_end_to_end(
     whole = await mcp_call(server, "usda_gats_get_census_reexports", arguments)
     assert len(whole["data"]) == 12
     assert whole["meta"]["endpoint"] == "GATSData_GetCensusReExports"
-    assert whole["meta"]["vintage"] == RELEASED_2026_08
+    assert (whole["meta"]["vintage"], new_york["meta"]["vintage"]) == (None, None)
     assert sent_urls(district) == [IC_DISTRICT_RE_EXPORTS_URL]
     assert sent_urls(re_exports) == [IC_RE_EXPORTS_URL]
     with pytest.raises(AssertionError, match="error: UnknownCode: 12 is not a customs_district_id"):
@@ -1350,7 +1388,8 @@ def test_census_series_tasks(
     """Iceland over July and August 2026: the release list once, then one request per
     month, oldest first, and every record of both months in one list, in month order and
     upstream order within a month. Only the right release list is mounted: the imports
-    list for imports, the exports list for exports and, by assumption, re-exports."""
+    list for imports, the exports list for exports and, by assumption, re-exports, whose
+    series takes no vintage from it."""
     releases = replay_fixture(release_list, "all")
     data = _replay_months(respx_mock, fixture, *IC_MONTHS)
     result = task("IC", start_year=2026, start_month=7, end_year=2026, end_month=8)
@@ -1375,8 +1414,11 @@ def test_census_series_tasks(
     newer = _release_time(release_list, "202608")
     older = _release_time(release_list, "202607")
     assert (older, newer) == (RELEASED_2026_07, RELEASED_2026_08)
-    assert result.meta.vintage == RELEASED_2026_08, "the newer of the two months' releases"
-    _published_naive(result.meta)
+    if task is tasks.get_census_reexport_series:
+        _no_vintage(result.meta)
+    else:
+        assert result.meta.vintage == RELEASED_2026_08, "the newer of the two months' releases"
+        _published_naive(result.meta)
     assert result.meta.total is None
 
 
@@ -1451,8 +1493,13 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
         assert series.data == month.data
         assert len(series.data) == len(_recorded(fixture, f"{partner}_2026_8"))
         assert series.meta.endpoint == month.meta.endpoint == endpoint
-        assert series.meta.vintage == month.meta.vintage == _release_time(release_list, "202608")
-        _published_naive(series.meta)
+        if month_task is tasks.get_census_reexports:
+            _no_vintage(series.meta)
+            _no_vintage(month.meta)
+        else:
+            vintage = _release_time(release_list, "202608")
+            assert series.meta.vintage == month.meta.vintage == vintage
+            _published_naive(series.meta)
         assert series.meta.request == {
             "partner_code": partner,
             "start_year": 2026,
@@ -1743,7 +1790,7 @@ async def test_the_reexport_series_tool_end_to_end(
     }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     assert _json_number(payload["data"][0]["value"])
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusReExports"
-    assert payload["meta"]["vintage"] == RELEASED_2026_08
+    assert (payload["meta"]["vintage"], payload["meta"]["published_at"]) == (None, None)
     assert sent_urls(data) == [_ic_url("censusReExports", 7), _ic_url("censusReExports", 8)]
     for name in (
         "get_census_export_series",
@@ -2130,22 +2177,27 @@ def test_un_data_tasks(
         "reporter_code": reporter_code,
         "year": 2019,
     }
-    assert result.meta.vintage == _un_release_time(release_list, reporter_code, "2019")
-    _published_naive(result.meta)
+    if task is tasks.get_un_reexports:
+        _no_vintage(result.meta)
+    else:
+        assert result.meta.vintage == _un_release_time(release_list, reporter_code, "2019")
+        _published_naive(result.meta)
     assert result.meta.total is None
     assert sent_urls(releases) == [release_url]
     assert sent_urls(data) == [url]
 
 
-def test_the_un_vintages_are_the_recorded_release_times() -> None:
-    """The three reporter-years' ``releaseTimeStamp`` texts, from the recorded lists: the
-    re-exports' is the exports list's, the only list they have."""
+def test_the_un_vintages_are_the_recorded_release_times(replay_fixture: ReplayFixture) -> None:
+    """The reporter-years' ``releaseTimeStamp`` texts, from the recorded lists: the exports'
+    and the imports' are their tasks' vintage, while Macau's 2019 re-exports, which have no
+    list of their own, take neither the exports list's time nor the imports list's."""
     assert _un_release_time(UN_EXPORT_RELEASES, "IC", "2019") == IC_2019_EXPORTS_RELEASED
     assert _un_release_time(UN_IMPORT_RELEASES, "TP", "2019") == "2020-07-16T01:15:37"
     assert _un_release_time(UN_EXPORT_RELEASES, "MC", "2019") == "2020-06-03T05:51:31"
-    assert _un_release_time(UN_IMPORT_RELEASES, "MC", "2019") == "2020-06-05T01:25:43", (
-        "not the re-exports' vintage"
-    )
+    assert _un_release_time(UN_IMPORT_RELEASES, "MC", "2019") == "2020-06-05T01:25:43"
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_RE_EXPORTS, "MC_2019")
+    _no_vintage(tasks.get_un_reexports("MC", 2019).meta)
 
 
 @pytest.mark.parametrize("endpoint", [UN_EXPORT_RELEASES, UN_IMPORT_RELEASES])
@@ -2237,14 +2289,13 @@ def test_a_listed_reporter_year_without_re_exports_is_an_empty_result(
     replay_fixture: ReplayFixture,
 ) -> None:
     """Recorded: Iceland's 2019 re-exports answer 200 with ``[]``. The exports list has
-    Iceland's 2019 and the code is listed, so empty means empty, with the exports'
-    release time as ``vintage``."""
+    Iceland's 2019 and the code is listed, so empty means empty, and the exports' release
+    time is no vintage of the re-exports."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     data = replay_fixture(UN_RE_EXPORTS, "IC_2019")
     result = tasks.get_un_reexports("IC", 2019)
     assert result.data == []
-    assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     assert result.meta.endpoint == "GATSData_GetUNTradeReExports"
     assert sent_urls(data) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
@@ -2292,9 +2343,10 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
         "GATSData_GetUNTradeExportDataReleaseInfo lists no year of exports for reporter CD; "
         "the latest year it lists for any reporter is 2019"
     )
-    assert "GATS publishes no UN Trade release list for re-exports: the package checks the " in (
-        message
-    )
+    assert (
+        "GATS publishes no UN Trade release list for re-exports: the package read the exports "
+        "list and assumes that it holds for re-exports."
+    ) in message, "the list read and the assumption"
     assert "The release list was fetched at " in message, "and from the cache"
     assert " UTC and is kept for a day" in message, "the UN lists' cache, the feed frozen"
     with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
@@ -2718,9 +2770,12 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
     assert _json_number(payload["data"][0]["value"])
     assert payload["meta"]["endpoint"] == endpoint
-    assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
-    assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
-    assert payload["meta"]["published_at_naive"] is True
+    if fixture == UN_RE_EXPORTS:
+        assert (payload["meta"]["vintage"], payload["meta"]["published_at"]) == (None, None)
+    else:
+        assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
+        assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
+        assert payload["meta"]["published_at_naive"] is True
     whole = await mcp_call(server, tool, {**arguments, **narrow})
     assert len(whole["data"]) == narrowed
     assert "note" not in whole

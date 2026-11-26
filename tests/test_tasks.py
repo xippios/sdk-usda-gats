@@ -1721,8 +1721,9 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
     naming 24 and ``--series-months``, in core's words; the ceiling is process-wide, so a
     Python call in the same process meets it too. 24 months pass. NOT RECORDED: no answer
     for Iceland in those 24 months is recorded, so each is served the recorded empty answer
-    of a listed partner without trade, Bouvet Island (``BV``) in August 2026, an input of
-    the test that reads the span check and what was sent (conventions §10)."""
+    of a listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS
+    gives alike there, and the test reads the span check and what was sent (conventions §10,
+    kind 3)."""
     tasks.mcp_apply_options(argparse.Namespace(series_months=24))
     assert tasks.SERIES.value == 24
     arguments: dict[str, object] = {
@@ -1784,7 +1785,7 @@ def test_the_python_api_spans_60_months(
     passes the span check and sends one request per month, oldest first, and 61 months
     are refused with the Python API's message, which names no MCP server. NOT RECORDED:
     the months are served the recorded empty answer of ``BV`` in August 2026, as above, an
-    input of the test (conventions §10)."""
+    answer GATS gives alike there (conventions §10, kind 3)."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = _ic_export_urls(2021, 9, 60)
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
@@ -2734,3 +2735,17 @@ def test_an_answer_names_the_country_its_code_stands_for(
     url = f"{BASE_URL}/api/gats/censusExports/partnerCode/{code}/year/2026/month/8"
     _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", url)
     assert tasks.get_census_exports(code, 2026, 8).meta.names == {"partner_code": {code: name}}
+
+
+@pytest.mark.anyio
+async def test_an_async_answer_without_rows_names_what_the_call_asked_for(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """The ``async def`` of a task names the codes a call asks for as its sync facade does,
+    since ``names_codes`` decorates the ``async def`` itself (sdk-core ADR-0067, decision 3):
+    a Python caller that awaits it gets the partner of an answer without rows too."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(EXPORTS, "no_data_valid_partner")
+    empty = await tasks.get_census_exports_async("BV", 2026, 8)
+    assert empty.data == []
+    assert empty.meta.names == {"partner_code": {"BV": "Bouvet Island"}}

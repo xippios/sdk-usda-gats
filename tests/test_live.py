@@ -41,36 +41,27 @@ from datetime import datetime
 from typing import Any
 
 import pytest
-from xippios.core import PackagedCodes, PackagedList, ResultMeta
+from xippios.core import PackagedCodes, ResultMeta
 from xippios.core.testing.live import *  # noqa: F403
 from xippios.usda.fas import Gateway
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import SOURCE
 from xippios.usda.gats.models import ProductType
-from xippios.usda.gats.params import PACKAGE, validate_partner_code
-
-
-def _codes(name: str, code: str, label: str) -> PackagedCodes:
-    """The packaged list ``name`` declared by its code field and its name field."""
-    return PackagedList.load(PACKAGE, name).codes(code, label, source=SOURCE)
-
+from xippios.usda.gats.params import (
+    COUNTRIES,
+    DISTRICTS,
+    HS6_CODES,
+    REGIONS,
+    UNITS,
+    validate_partner_code,
+)
 
 LIVE_LISTS = {  # each packaged list compared, by its file reference/<name>.json
-    "regions": (_codes("regions", "regionCode", "regionName"), api.get_regions),
-    "countries": (_codes("countries", "countryCode", "countryName"), api.get_countries),
-    "HS6Commodities": (
-        _codes("HS6Commodities", "hS6Code", "commodityName"),
-        api.get_hs6_commodities,
-    ),
-    "unitsOfMeasure": (
-        _codes("unitsOfMeasure", "unitOfMeasureId", "unitOfMeasureName"),
-        api.get_units_of_measure,
-    ),
-    "customsDistricts": (
-        _codes("customsDistricts", "customsDistrictId", "customsDistrictName"),
-        api.get_customs_districts,
-    ),
+    "regions": (REGIONS, api.get_regions),
+    "countries": (COUNTRIES, api.get_countries),
+    "HS6Commodities": (HS6_CODES, api.get_hs6_commodities),
+    "unitsOfMeasure": (UNITS, api.get_units_of_measure),
+    "customsDistricts": (DISTRICTS, api.get_customs_districts),
 }
 NO_LIVE_LIST: dict[str, str] = {}  # every packaged list is compared
 
@@ -216,8 +207,7 @@ async def test_get_census_reexport_series_live(
 
 
 def _districts() -> set[int]:
-    packaged = PackagedList.load(PACKAGE, "customsDistricts")
-    return {int(record["customsDistrictId"]) for record in packaged.records}
+    return {int(record[DISTRICTS.code]) for record in DISTRICTS.packaged.records}
 
 
 @pytest.mark.parametrize(
@@ -258,17 +248,17 @@ UN_YEAR = 2019
 """The UN Trade feed's latest statistical year, as both release lists end on 2026-10-26."""
 
 
-def _listed(name: str, field: str) -> set[str]:
-    packaged = PackagedList.load(PACKAGE, name)
-    return {str(record[field]) for record in packaged.records}
+def _listed(codes: PackagedCodes) -> set[str]:
+    """The codes of one of the packaged lists that ``params`` declares, as text."""
+    return {str(record[codes.code]) for record in codes.packaged.records}
 
 
 def _in_gats_vocabulary(records: list[Any]) -> None:
     """Every reporter, partner and HS6 code is a code of the packaged lists: GATS's own."""
-    countries = _listed("countries", "countryCode")
+    countries = _listed(COUNTRIES)
     assert {r.reporter_country_code for r in records} <= countries
     assert {r.partner_country_code for r in records} <= countries
-    assert {r.hs6_code for r in records} <= _listed("HS6Commodities", "hS6Code")
+    assert {r.hs6_code for r in records} <= _listed(HS6_CODES)
 
 
 @pytest.mark.parametrize(

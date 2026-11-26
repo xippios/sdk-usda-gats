@@ -48,14 +48,13 @@ The three Census series tasks, ``get_census_export_series``, ``get_census_import
 and ``get_census_reexport_series``, answer one partner over a range of months from the
 same wrappers as the month tasks, one data call per month (sdk-usda-psd's
 ``get_time_series`` is the family's precedent for a series assembled from one call per
-period). A call spans at most ``series_ceiling()`` months: ``SERIES_MAX_MONTHS`` (60) in
-Python and over HTTP; the MCP server starts with ``MCP_SERIES_MAX_MONTHS`` (24), and its
-``--series-months`` sets another ceiling from 1 to 60 through core's option hooks
-(``mcp_add_options``, ``mcp_apply_options``; sdk-core ADR-0036, decision 8). The entry point
-``xippios-usda-gats-mcp`` sets the MCP ceiling, since core's ``main`` applies the option, so
-a host that imports ``xippios.usda.gats.mcp.server`` and serves it another way keeps 60.
-The ceiling is process-wide: a Python or HTTP call made in the MCP server's process meets
-the MCP ceiling too. Every argument is checked first, the partner code for the start and
+period). A call spans at most ``SERIES.value`` months, core's one ``Ceiling`` (sdk-core
+ADR-0054): 60 in Python and over HTTP; the MCP server starts with 24, and its
+``--series-months`` sets another ceiling from 1 to 60 through the tool set's hooks
+(``mcp_add_options``, ``mcp_apply_options``). The entry point ``xippios-usda-gats-mcp`` sets
+the MCP ceiling, since core's ``main`` applies the option, and so does a host that applies
+the tool set's hooks with their defaults. The ceiling is process-wide: a Python or HTTP call
+made in the MCP server's process meets the MCP ceiling too. Every argument is checked first, the partner code for the start and
 for the end month, so a code discontinued inside the range is refused when it is no other
 code's parent; a parent code passes for every month (``params.validate_partner_month``).
 The flow's release list is fetched once, the imports list for imports and the exports
@@ -63,7 +62,7 @@ list for exports and, by the same assumption, re-exports; a range with a month t
 lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
 released, never trimmed. Then the months are fetched oldest first, one request after the
 other at the client's pace (``_client.RATE_LIMIT``, one per second, and the quota policy
-on top), never concurrently, and returned as one list in month order: every record
+on top), never concurrently, by core's ``fetch_periods``, and returned as one list in month order: every record
 carries its month in ``date``, so nothing is grouped or summed, and a month that answers
 ``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` is the
 newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
@@ -121,13 +120,13 @@ stays empty. The lists' filters (``search``, ``region_code``, ``hs6_code``, ``hs
 unset: upstream reports no count.
 """
 
-import argparse
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from xippios.core import (
     Answer,
+    Ceiling,
     InvalidRequestError,
     NotFoundError,
     PackagedList,
@@ -136,6 +135,7 @@ from xippios.core import (
     ResultMeta,
     UnknownCode,
     XippiosError,
+    fetch_periods,
     matches,
     sync,
 )
@@ -171,9 +171,6 @@ from xippios.usda.gats.params import (
     validate_reporter_code,
     validate_year,
 )
-
-if TYPE_CHECKING:
-    from mcp.server.mcpserver import MCPServer
 
 __all__ = [
     "get_census_export_series",
@@ -212,29 +209,50 @@ DISTRICT_NOTE = (
 """What a cut customs-district result tells the agent: the two filters the tools have."""
 
 SERIES_NOTE = (
-    "the rows run month by month, oldest first; filter by hs10_code, a full code or a "
-    "prefix such as the chapter '03', or ask for fewer months to see the rest"
+    "the rows run month by month, oldest first, and the rows shown are the newest; filter "
+    "by hs10_code, a full code or a prefix such as the chapter '03', or ask for fewer "
+    "months to see the rest"
 )
-"""What a cut Census series tells the agent: which rows it got, its one filter and a
-shorter range, the two ways to narrow it.
+"""What a cut Census series tells the agent: which rows it got, the newest months' as its
+cap keeps them, its one filter and a shorter range, the two ways to narrow it.
 
-The longest range is the entry point's to set: ``xippios-usda-gats-mcp`` starts the MCP
-server with a ceiling of 24 months (``MCP_SERIES_MAX_MONTHS``), which its
-``--series-months`` sets from 1 to 60, against 60 in Python and over HTTP
-(``SERIES_MAX_MONTHS``, ``series_ceiling``). A range past the ceiling is refused before
-any request, naming it; this note only asks for fewer months."""
+The longest range is ``SERIES``'s: 60 months in Python and over HTTP, 24 on the MCP
+server, which ``--series-months`` sets from 1 to 60. A range past the ceiling is refused
+before any request, naming it; this note only asks for fewer months."""
 
-SERIES_MAX_MONTHS = 60
-"""Most months one Census series call spans in Python and over HTTP, five years, a
-self-imposed bound: one data request per month at the client's pace of one request per
-second, so the longest series takes about a minute and spends 60 of api.data.gov's 1,000
-requests per hour for the key. No ceiling goes above it (``set_series_ceiling``)."""
+SERIES = Ceiling(
+    60,
+    unit="months",
+    mcp=24,
+    option="--series-months",
+    help="one request per month, so 60 months take about a minute of calls",
+    source=SOURCE,
+)
+"""The most months one Census series call spans, core's one ``Ceiling`` (sdk-core ADR-0054).
 
-MCP_SERIES_MAX_MONTHS = 24
-"""The ceiling the entry point ``xippios-usda-gats-mcp`` starts the MCP server with, two
-years: 24 requests, about 24 seconds at the client's pace, for one tool call. Its
-``--series-months`` sets another, from 1 to ``SERIES_MAX_MONTHS`` (``mcp_add_options``,
-``mcp_apply_options``)."""
+60 months, five years, in Python and over HTTP, a self-imposed bound: one data request per
+month at the client's pace of one request per second, so the longest series takes about a
+minute and spends 60 of api.data.gov's 1,000 requests per hour for the key. The MCP server
+starts with 24, two years and about 24 seconds for one tool call, and its
+``--series-months`` sets another from 1 to 60 through the tool set's hooks,
+``mcp_add_options`` and ``mcp_apply_options``. The ceiling in force, ``SERIES.value``, is
+the process's: a Python or HTTP call made in the MCP server's process meets the MCP
+ceiling too, so one ceiling, and one MCP server, per process."""
+
+mcp_add_options = SERIES.add_options
+"""Add ``--series-months`` to the MCP server's command line, a hook of core's ``main``."""
+
+mcp_apply_options = SERIES.apply_options
+"""Set the series' ceiling from ``--series-months``, a hook of core's ``main``; a value
+outside 1 to 60 is the parser's error, exit status 2, nothing served."""
+
+MCP_INSTRUCTIONS = (
+    "USDA FAS Global Agricultural Trade System via xippios. "
+    "Tools are read-only. "
+    "Where list tools (usda_gats_list_*) exist, call them first to find valid values, "
+    "then query."
+)
+"""The MCP server's instructions, which core's tool set reads from this module."""
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
@@ -276,23 +294,23 @@ COMMODITIES_NOTE = (
 """What the cut HS10 list tells the agent: the three filters the tool has."""
 
 MCP_CAPS: Mapping[str, ResultCap] = {
-    "get_census_export_series": ResultCap(note=SERIES_NOTE),
+    "get_census_export_series": ResultCap(note=SERIES_NOTE, keep="last"),
     "get_census_exports": ResultCap(note=HS10_NOTE),
-    "get_census_import_series": ResultCap(note=SERIES_NOTE),
+    "get_census_import_series": ResultCap(note=SERIES_NOTE, keep="last"),
     "get_census_imports": ResultCap(note=HS10_NOTE),
-    "get_census_reexport_series": ResultCap(note=SERIES_NOTE),
+    "get_census_reexport_series": ResultCap(note=SERIES_NOTE, keep="last"),
     "get_census_reexports": ResultCap(note=HS10_NOTE),
-    "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE),
+    "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE, paged=True),
     "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
     "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE),
     "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE),
     "get_un_exports": ResultCap(note=UN_DATA_NOTE),
     "get_un_imports": ResultCap(note=UN_DATA_NOTE),
     "get_un_reexports": ResultCap(note=UN_DATA_NOTE),
-    "get_un_release_dates": ResultCap(note=UN_RELEASE_DATES_NOTE),
-    "list_commodities": ResultCap(note=COMMODITIES_NOTE),
+    "get_un_release_dates": ResultCap(note=UN_RELEASE_DATES_NOTE, paged=True),
+    "list_commodities": ResultCap(note=COMMODITIES_NOTE, paged=True),
     "list_countries": ResultCap(max_rows=400, max_bytes=100_000, note=COUNTRIES_NOTE),
-    "list_hs6_commodities": ResultCap(note=HS6_NOTE),
+    "list_hs6_commodities": ResultCap(note=HS6_NOTE, paged=True),
 }
 """MCP result caps of their own, by task function name (conventions §8, sdk-core ADR-0038).
 
@@ -328,98 +346,6 @@ the default bounds with notes naming their filters, ``search`` and ``hs6_code`` 
 HS6 list. ``list_regions`` (15),
 ``list_units_of_measure`` (108) and ``list_customs_districts`` (53) fit the default.
 """
-
-_series_ceiling = SERIES_MAX_MONTHS
-"""The series ceiling in force, process-wide: ``series_ceiling`` reads it,
-``set_series_ceiling`` sets it."""
-
-
-def series_ceiling() -> int:
-    """The most months one Census series call spans in this process, e.g. ``60``.
-
-    ``SERIES_MAX_MONTHS`` (60) unless ``set_series_ceiling`` set another, as the entry
-    point ``xippios-usda-gats-mcp`` does when it starts the MCP server:
-    ``MCP_SERIES_MAX_MONTHS`` (24), or its ``--series-months``. The setting is
-    process-wide, so every series call in the process meets the same ceiling, from
-    Python, over HTTP or over MCP: one MCP server per process.
-    """
-    return _series_ceiling
-
-
-def set_series_ceiling(months: int) -> None:
-    """Set the most months one Census series call spans, for every call in this process.
-
-    A range longer than the ceiling is refused before any request, naming the ceiling;
-    below ``SERIES_MAX_MONTHS`` the refusal calls it the ceiling set for this process and
-    says that the MCP server starts with 24 by default and that ``--series-months`` raises
-    it, up to 60. No ceiling goes above ``SERIES_MAX_MONTHS``. The entry point
-    ``xippios-usda-gats-mcp`` calls this once when it starts the MCP server
-    (``mcp_apply_options``, which core's ``main`` applies); the setting is process-wide,
-    so it holds for the Python API and an HTTP router in the same process too: one MCP
-    server per process.
-
-    Args:
-        months: A whole number of months from 1 to 60 (``SERIES_MAX_MONTHS``), e.g.
-            ``24`` (the MCP server's default), ``36``, ``60`` (the Python API's).
-
-    Raises:
-        InvalidRequestError: ``months`` is not a whole number from 1 to 60 (``True`` is
-            not ``1``); the ceiling stays as it was.
-    """
-    global _series_ceiling
-    whole = isinstance(months, int) and not isinstance(months, bool)
-    if not whole or not 1 <= months <= SERIES_MAX_MONTHS:
-        raise InvalidRequestError(
-            "the series ceiling, --series-months on the MCP server, must be a whole number "
-            f"of months from 1 to {SERIES_MAX_MONTHS}, got {months!r}.",
-            source=SOURCE,
-        )
-    _series_ceiling = months
-
-
-def mcp_add_options(parser: argparse.ArgumentParser) -> None:
-    """Add ``--series-months`` to the MCP server's command line, a hook of core's ``main``.
-
-    ``--series-months MONTHS`` is the most months one series tool call spans, a whole
-    number from 1 to ``SERIES_MAX_MONTHS`` (60), ``MCP_SERIES_MAX_MONTHS`` (24) when not
-    given; ``mcp_apply_options`` sets it. The ceiling is process-wide: one MCP server per
-    process.
-
-    Args:
-        parser: Core's parser (``xippios.core.mcp.build_parser``), which then accepts
-            e.g. ``xippios-usda-gats-mcp --series-months 36``.
-    """
-    parser.add_argument(
-        "--series-months",
-        type=int,
-        default=MCP_SERIES_MAX_MONTHS,
-        metavar="MONTHS",
-        help=(
-            f"most months one series tool call spans, 1 to {SERIES_MAX_MONTHS} "
-            f"(default {MCP_SERIES_MAX_MONTHS}); one request per month, so "
-            f"{SERIES_MAX_MONTHS} months take about a minute of calls"
-        ),
-    )
-
-
-def mcp_apply_options(namespace: argparse.Namespace, server: "MCPServer") -> "MCPServer":
-    """Set the series ceiling from ``--series-months``, a hook of core's ``main``.
-
-    Calls ``set_series_ceiling(namespace.series_months)`` and returns ``server``
-    unchanged. The ceiling is process-wide: one MCP server per process. A value outside
-    1 to 60 raises ``InvalidRequestError``, which core's ``main`` turns into the parser's
-    error: the message on stderr, exit status 2, nothing served.
-
-    Args:
-        namespace: The parsed command line with ``series_months`` from
-            ``mcp_add_options``, e.g. ``argparse.Namespace(series_months=24)``.
-        server: The server ``mcp.py`` built, returned as it is.
-
-    Returns:
-        ``server`` itself.
-    """
-    set_series_ceiling(namespace.series_months)
-    return server
 
 
 class _Coded(Protocol):
@@ -977,10 +903,10 @@ def _series_months(
     start and then of the end month: a code discontinued inside the range that is no
     other code's parent is refused at the end month, naming its ``discontinuedOn``; a
     parent code passes for every month. Then the start must not be after the end, the
-    span must be at most ``series_ceiling()`` months, and ``hs10_code`` must pass
-    ``validate_hs10_code``. A refusal of the span names the ceiling in force and,
-    below ``SERIES_MAX_MONTHS``, that it is the ceiling set for this process, that the MCP
-    server starts with 24 by default and that ``--series-months`` raises it, up to 60.
+    span must pass ``SERIES.check``, and ``hs10_code`` must pass ``validate_hs10_code``.
+    A refusal of the span is core's: it names the ceiling in force and, below 60, that it
+    is the ceiling set for this process, that the MCP server starts with 24 by default and
+    that ``--series-months`` raises it, up to 60, and says that nothing was sent.
 
     Returns:
         ``(year, month)`` of every month from the start to the end, both included, oldest
@@ -990,7 +916,7 @@ def _series_months(
         UnknownCode: The packaged countries list lacks ``partner_code``.
         InvalidRequestError: A year or a month is not valid, the code is a leaf
             discontinued before the start or the end month, the start is after the end,
-            the range spans more months than ``series_ceiling()``, or ``hs10_code`` is
+            the range spans more months than ``SERIES.value``, or ``hs10_code`` is
             not 1 to 10 digits.
     """
     validate_partner_month(partner_code, start_year, start_month)
@@ -1007,21 +933,14 @@ def _series_months(
     first = start_year * 12 + start_month - 1
     last = end_year * 12 + end_month - 1
     span = last - first + 1
-    ceiling = series_ceiling()
-    if span > ceiling:
-        bound = f"a series spans at most {ceiling} months"
-        if ceiling < SERIES_MAX_MONTHS:
-            bound += (
-                ", the ceiling set for this process (the MCP server starts with "
-                f"{MCP_SERIES_MAX_MONTHS} by default; --series-months raises it, up to "
-                f"{SERIES_MAX_MONTHS})"
-            )
-        raise InvalidRequestError(
-            f"{start} to {end} is {span} months, one request each; {bound}. Ask for a "
-            f"shorter range, or for consecutive ranges of at most {ceiling} months one after "
-            "another.",
-            source=SOURCE,
-        )
+    SERIES.check(
+        span,
+        asked=f"{start} to {end}",
+        advice=(
+            "Ask for a shorter range, or for consecutive ranges of at most "
+            f"{SERIES.value} months one after another."
+        ),
+    )
     if hs10_code is not None:
         validate_hs10_code(hs10_code)
     return [(index // 12, index % 12 + 1) for index in range(first, last + 1)]
@@ -1045,9 +964,11 @@ async def _series[R: _Coded](
     ``product_type`` is fetched once, or answered by the client's cache, and every month
     of the range must be in it: the first month it lacks raises ``NotFoundError``
     (``_release_of``), before any data request, so a range is never trimmed to the
-    months released. Then ``fetch`` runs once per month, oldest first, each request
-    awaited before the next: the client's rate limiter and quota policy pace them, and
-    nothing runs concurrently. ``hs10_code`` filters every month's records, which are
+    months released. Then core's ``fetch_periods`` runs ``fetch`` once per month, oldest
+    first, each request awaited before the next: the client's rate limiter and quota
+    policy pace them, and nothing runs concurrently. A request after the first month that
+    fails raises its error, naming the months answered before it, and the series returns
+    nothing (sdk-core ADR-0054). ``hs10_code`` filters every month's records, which are
     kept in upstream order and concatenated in month order; a month that answers ``[]``
     adds nothing.
 
@@ -1082,12 +1003,12 @@ async def _series[R: _Coded](
         _release_of(code, releases, fetched, flow, operation, data, series=(codes[0], codes[-1]))
         for code in codes
     ]
-    records: list[R] = []
-    retrieved_at = fetched
-    for year, month in months:
-        answer = await fetch(partner_code, year, month)
-        records.extend(_matching(answer.payload, hs10_code))
-        retrieved_at = min(retrieved_at, answer.retrieved_at)
+    answers = await fetch_periods(
+        [f"{year:04d}-{month:02d}" for year, month in months],
+        lambda period: fetch(partner_code, int(period[:4]), int(period[5:])),
+    )
+    records = [record for _, answer in answers for record in _matching(answer.payload, hs10_code)]
+    retrieved_at = min([fetched, *(answer.retrieved_at for _, answer in answers)])
     newest = max(release.release_time_stamp for release in found)
     meta = ResultMeta(
         source=SOURCE,

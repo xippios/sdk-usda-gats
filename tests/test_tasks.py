@@ -78,6 +78,18 @@ RELEASE_DATES_NOTE = (
 )
 RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
+READ = "The release list was read and no data was requested."
+"""What a refusal or a note after the read of a release list says was sent (conventions §5)."""
+COUNTRIES_FETCHED = datetime(2026, 10, 28, 19, 22, 40, tzinfo=UTC)
+"""When the packaged countries list was fetched, the time of an answer it alone gives."""
+D1_2026_08 = (
+    "partner_code 'D1' (Denmark) was discontinued in 198712 (discontinuedOn in GATS's "
+    "countries list, packaged, fetched 2026-10-28) and is no other code's parent: it holds no "
+    "trade after that month, so 2026-08 (202608) answers the empty list. Nothing was sent. "
+    "Listed under the same name: 9U, DA (discontinued 198712)."
+)
+"""The note of a leaf's month after its last, every word of the refusal it replaced but
+what the task answers (https://github.com/xippios/sdk-usda-gats/issues/57, part 7, way P2)."""
 
 
 def _published_naive(meta: ResultMeta) -> None:
@@ -344,16 +356,76 @@ def test_a_month_not_released_yet_is_not_found(replay_fixture: ReplayFixture) ->
     assert message.startswith("GATS has no Census exports for 203501: it is not released yet")
     assert "the latest exports month released is 202608" in message
     assert "716 months, 196701 to 202608" in message
-    assert "The release list was fetched at " in message, "when it came from the wire"
+    assert f"so the package checks the release list first. {READ} It was fetched at " in (
+        message
+    ), "what was sent, and when the list came from the wire (way P2)"
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
 
 
-def test_a_month_before_the_data_is_not_found(replay_fixture: ReplayFixture) -> None:
-    replay_fixture(IMPORT_RELEASES, "all")
-    with pytest.raises(NotFoundError, match="GATS has no Census imports for 196612") as info:
-        tasks.get_census_imports("CH", 1966, 12)
-    assert "the imports data starts at 196701" in info.value.message
+@pytest.mark.parametrize(
+    ("task", "release_list", "flow", "year", "month"),
+    [
+        (tasks.get_census_imports, IMPORT_RELEASES, "imports", 1966, 12),
+        (tasks.get_census_exports, EXPORT_RELEASES, "exports", 1966, 1),
+        (tasks.get_census_exports, EXPORT_RELEASES, "exports", 1000, 1),
+    ],
+    ids=["imports_196612", "exports_196601", "exports_100001"],
+)
+def test_a_month_before_the_data_is_the_empty_list_with_a_note(
+    replay_fixture: ReplayFixture,
+    respx_mock: respx.MockRouter,
+    task: Callable[..., Any],
+    release_list: str,
+    flow: str,
+    year: int,
+    month: int,
+) -> None:
+    """Both Census lists begin at 196701, so a month before it is a period GATS holds no
+    data for: the task answers the empty list with a note that names what the release list
+    holds, and sends no data request, as the maintainer decided for the sources behind the
+    gateway (https://github.com/xippios/sdk-usda-esr/issues/88#issuecomment-7193147010;
+    sdk-core ADR-0061, decision 6). No data route is mounted, so a data request would fail."""
+    operation = {
+        "exports": "GATSData_GetCensusExportDataReleaseInfo",
+        "imports": "GATSData_GetCensusImportDataReleaseInfo",
+    }[flow]
+    releases = replay_fixture(release_list, "all")
+    result = task("CH", year, month)
+    code = f"{year:04d}{month:02d}"
+    assert result.data == []
+    assert result.meta.notes == [
+        f"GATS holds no Census {flow} for {code}: {operation} lists 716 months, 196701 to "
+        f"202608, and not this one. {READ}"
+    ]
+    assert result.meta.request == {"partner_code": "CH", "year": year, "month": month}
+    assert (result.meta.vintage, result.meta.published_at) == (None, None), "no release"
+    entry = cache.get(cache_key("GET", httpx.URL(sent_urls(releases)[0])))
+    assert entry is not None
+    assert result.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert respx_mock.calls.call_count == 1, "the release list alone"
+
+
+@pytest.mark.anyio
+async def test_a_month_before_the_data_over_mcp_and_http(replay_fixture: ReplayFixture) -> None:
+    """The tool and the route answer the empty list with the note, where they answered
+    ``NotFoundError`` and a 404."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from xippios.usda.gats.http import router
+
+    replay_fixture(EXPORT_RELEASES, "all")
+    arguments: dict[str, str | int] = {"partner_code": "CH", "year": 1966, "month": 12}
+    payload = await mcp_call(server, "usda_gats_get_census_exports", arguments)
+    assert payload["data"] == []
+    assert payload["meta"]["notes"][0].startswith("GATS holds no Census exports for 196612:")
+    app = FastAPI()
+    app.include_router(router)
+    response = TestClient(app).get("/usda-gats/get_census_exports", params=arguments)
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == []
+    assert response.json()["meta"]["notes"] == payload["meta"]["notes"]
 
 
 def test_a_refusal_from_the_cached_list_says_when_it_was_fetched(
@@ -369,7 +441,7 @@ def test_a_refusal_from_the_cached_list_says_when_it_was_fetched(
     assert "203501" not in message
     assert "for 202609: it is not released yet" in message
     assert " UTC and is kept for an hour" in message
-    assert "The release list was fetched at " in message
+    assert f"{READ} It was fetched at " in message
 
 
 def test_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) -> None:
@@ -517,17 +589,21 @@ async def test_a_tool_takes_the_three_filters_under_upstreams_names(
 
 
 @pytest.mark.parametrize("task", DATA_TASKS, ids=[t.__name__ for t in DATA_TASKS])
-def test_a_discontinued_leaf_is_refused_after_its_month_before_any_request(
+def test_a_discontinued_leaf_after_its_month_is_the_empty_list_with_a_note_unsent(
     respx_mock: respx.MockRouter, task: Callable[..., Any]
 ) -> None:
-    """``D1`` (Denmark) was discontinued in 198712 and is no other code's parent: 2026-08
-    is refused by every Census task without a request, naming ``9U`` and ``DA``, the
-    codes of the same name."""
-    with pytest.raises(InvalidRequestError) as info:
-        task("D1", 2026, 8)
-    assert not isinstance(info.value, UnknownCode)
-    assert info.value.message.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
-    assert info.value.message.endswith("Listed under the same name: 9U, DA (discontinued 198712).")
+    """``D1`` (Denmark) was discontinued in 198712 and is no other code's parent: every
+    Census task answers 2026-08 with the empty list, sending no request, and a note that
+    keeps every word of the refusal it replaced, ``9U`` and ``DA``, the codes of the same
+    name, among them (https://github.com/xippios/sdk-usda-gats/issues/57, part 7, way P2).
+    The answer is the packaged countries list's, so its time is that list's fetch."""
+    result = task("D1", 2026, 8)
+    assert result.data == []
+    assert result.meta.notes == [D1_2026_08]
+    assert result.meta.request == {"partner_code": "D1", "year": 2026, "month": 8}
+    assert (result.meta.vintage, result.meta.published_at) == (None, None)
+    assert result.meta.retrieved_at == COUNTRIES_FETCHED
+    assert result.meta.names == {"partner_code": {"D1": "Denmark"}}
     assert respx_mock.calls.call_count == 0
 
 
@@ -629,22 +705,23 @@ def test_a_child_or_numbered_code_without_exports_is_an_empty_result(
     assert sent_urls(data) == [_exports_url(code)]
 
 
-def test_a_discontinued_leaf_is_refused_where_upstream_answers_empty(
+def test_a_discontinued_leaf_answers_as_upstream_does_and_sends_nothing(
     replay_fixture: ReplayFixture,
 ) -> None:
     """``GC`` (Germany, Democratic Republic, discontinued 199009) is a leaf, a child of
-    ``GM`` (Germany); GATS answered 2026-08 with ``[]`` as recorded, and the task refuses
-    the month before either request, naming the parent."""
+    ``GM`` (Germany); GATS answered 2026-08 with ``[]`` as recorded, and the task answers
+    the same empty list before either request, with the note naming the parent."""
     assert _recorded(EXPORTS, "GC_2026_8") == []
     releases = replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "GC_2026_8")
-    with pytest.raises(InvalidRequestError) as info:
-        tasks.get_census_exports("GC", 2026, 8)
-    assert not isinstance(info.value, UnknownCode)
-    assert info.value.message.startswith(
+    result = tasks.get_census_exports("GC", 2026, 8)
+    assert result.data == [], "as GATS answered"
+    (note,) = result.meta.notes
+    assert note.startswith(
         "partner_code 'GC' (Germany, Democratic Republic) was discontinued in 199009"
     )
-    assert "Its parent code GM (Germany) is accepted for every month." in info.value.message
+    assert "so 2026-08 (202608) answers the empty list. Nothing was sent." in note
+    assert "Its parent code GM (Germany) is accepted for every month." in note
     assert sent_urls(releases) == []
     assert sent_urls(data) == []
 
@@ -958,10 +1035,12 @@ async def test_the_district_and_re_export_tools_end_to_end(
             "usda_gats_get_customs_district_reexports",
             {**arguments, "customs_district_id": 12},
         )
-    with pytest.raises(AssertionError, match="error: InvalidRequestError: partner_code 'GC'"):
-        await mcp_call(
-            server, "usda_gats_get_census_reexports", {**arguments, "partner_code": "GC"}
-        )
+    ended = await mcp_call(
+        server, "usda_gats_get_census_reexports", {**arguments, "partner_code": "GC"}
+    )
+    assert ended["data"] == []
+    assert ended["meta"]["notes"][0].startswith("partner_code 'GC' (Germany, Democratic")
+    assert sent_urls(re_exports) == [IC_RE_EXPORTS_URL], "the leaf's month sent nothing"
 
 
 @pytest.mark.parametrize(
@@ -1263,8 +1342,9 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     discontinued = http.get(
         "/usda-gats/get_census_exports", params={**params, "partner_code": "GC"}
     )
-    assert discontinued.status_code == 422
-    assert discontinued.json()["title"] == "InvalidRequestError"
+    assert discontinued.status_code == 200, "a leaf's month is no data, not an error"
+    assert discontinued.json()["data"] == []
+    assert discontinued.json()["meta"]["notes"][0].startswith("partner_code 'GC'")
 
 
 SERIES_NOTE = (
@@ -1562,16 +1642,16 @@ def test_series_arguments_are_checked_before_any_request(
         task("IC", start_year=26, start_month=6, end_year=2026, end_month=8)
     with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 20260"):
         task("IC", start_year=2026, start_month=6, end_year=20260, end_month=8)
-    with pytest.raises(InvalidRequestError) as inside:
-        task("D1", start_year=1987, start_month=6, end_year=1988, end_month=1)
-    assert not isinstance(inside.value, UnknownCode)
-    assert inside.value.message.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
-    assert "so 1988-01 (198801) is refused" in inside.value.message
-    assert inside.value.message.endswith(
-        "Listed under the same name: 9U, DA (discontinued 198712)."
-    )
-    with pytest.raises(InvalidRequestError, match="so 2026-06 \\(202606\\) is refused"):
-        task("D1", start_year=2026, start_month=6, end_year=2026, end_month=8)
+    after = task("D1", start_year=2026, start_month=6, end_year=2026, end_month=8)
+    assert after.data == []
+    (note,) = after.meta.notes
+    assert note.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
+    assert "so 2026-06 (202606) to 2026-08 (202608) answer the empty list. Nothing was sent." in (
+        note
+    ), "every month after the leaf's last: the whole range unsent"
+    assert note.endswith("Listed under the same name: 9U, DA (discontinued 198712).")
+    assert after.meta.retrieved_at == COUNTRIES_FETCHED
+    assert (after.meta.vintage, after.meta.published_at) == (None, None)
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
         task("ZZ", start_year=2026, start_month=6, end_year=2026, end_month=8)
     assert unknown.value.closest == ()
@@ -1601,11 +1681,11 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
     flow: str,
 ) -> None:
     """The release lists end at 202608, so a range ending 2026-09 is refused before any
-    data request, naming 202609 and 202608, rather than trimmed to the months released.
-    The longest range, 60 months, passes the span check and meets the same refusal. A
-    range with several months missing is refused at the first: 2026-08 to 2026-10 at
-    202609, not its end 202610, and 1966-11 to 1967-02 at 196611, its start, since the
-    lists begin at 196701."""
+    data request, naming 202609 and 202608, rather than trimmed to the months released,
+    and the refusal says that the list was read and no data requested (way P2). The
+    longest range, 60 months, passes the span check and meets the same refusal. A range
+    with several months missing is refused at the first: 2026-08 to 2026-10 at 202609, not
+    its end 202610."""
     releases = replay_fixture(release_list, "all")
     data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
     with pytest.raises(NotFoundError) as info:
@@ -1617,25 +1697,122 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
     )
     assert "A series is refused whole, never trimmed to the months released" in message
     assert ("GATS publishes no release list for re-exports" in message) is (asked != flow)
+    assert f"{READ} It was fetched at " in message
     assert "api.fas.usda.gov" not in message
     with pytest.raises(NotFoundError) as longest:
         task("IC", start_year=2021, start_month=10, end_year=2026, end_month=9)
     assert "for 202609, in the requested range 202110 to 202609" in longest.value.message
-    assert "The release list was fetched at " in longest.value.message, "from the cache"
+    assert f"{READ} It was fetched at " in longest.value.message, "from the cache"
     with pytest.raises(NotFoundError) as beyond:
         task("IC", start_year=2026, start_month=8, end_year=2026, end_month=10)
     assert beyond.value.message.startswith(
         f"GATS has no Census {asked} for 202609, in the requested range 202608 to 202610: "
         f"it is not released yet: the latest {flow} month released is 202608"
     ), "the first month missing, not the end month"
-    with pytest.raises(NotFoundError) as before:
-        task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
-    assert before.value.message.startswith(
-        f"GATS has no Census {asked} for 196611, in the requested range 196611 to 196702: "
-        f"the {flow} data starts at 196701"
-    ), "the first month missing, the start"
     assert (releases.call_count, data.call_count) == (1, 0)
     assert respx_mock.calls.call_count == 1, "the release list, then no data request"
+
+
+@pytest.mark.parametrize(
+    ("task", "release_list", "flow", "operation"),
+    [
+        (
+            tasks.get_census_export_series,
+            EXPORT_RELEASES,
+            "exports",
+            "GATSData_GetCensusExportDataReleaseInfo",
+        ),
+        (
+            tasks.get_census_import_series,
+            IMPORT_RELEASES,
+            "imports",
+            "GATSData_GetCensusImportDataReleaseInfo",
+        ),
+    ],
+    ids=["exports", "imports"],
+)
+def test_a_series_passes_over_the_months_before_the_data_with_a_note(
+    replay_fixture: ReplayFixture,
+    respx_mock: respx.MockRouter,
+    task: Callable[..., Any],
+    release_list: str,
+    flow: str,
+    operation: str,
+) -> None:
+    """1966-11 to 1967-02: both lists begin at 196701, so the series passes over 196611 and
+    196612 without a request and names them in a note, and fetches 196701 and 196702, as
+    the month task answers each (way P2). NOT RECORDED: no answer for Iceland in 1967 is
+    recorded, so each month of either flow is served the recorded empty exports answer of a
+    listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS gives
+    alike there, and the test checks what was sent, the note and the vintage (conventions
+    §10, kind 3)."""
+    replay_fixture(release_list, "all")
+    path = "censusExports" if flow == "exports" else "censusImports"
+    urls = [f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/1967/month/{m}" for m in (1, 2)]
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
+    result = task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
+    assert result.data == []
+    assert result.meta.notes == [
+        f"GATS holds no Census {flow} for 196611 to 196612: {operation} lists 716 months, "
+        "196701 to 202608, and none of them, so the series passed them over without a data "
+        "request."
+    ]
+    assert sent_urls(months) == urls
+    assert result.meta.vintage == max(
+        str(_release_time(release_list, code)) for code in ("196701", "196702")
+    )
+
+
+def test_the_re_export_series_refuses_a_month_before_the_data(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """The re-exports read the exports list, another flow's, so they keep refusing a month
+    that it lacks, before 1967 too, at the first, naming the list read and the assumption,
+    with no data request."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    with pytest.raises(NotFoundError) as before:
+        tasks.get_census_reexport_series(
+            "IC", start_year=1966, start_month=11, end_year=1967, end_month=2
+        )
+    message = before.value.message
+    assert message.startswith(
+        "GATS has no Census re-exports for 196611, in the requested range 196611 to 196702: "
+        "the exports data starts at 196701"
+    ), "the first month missing, the start"
+    assert (
+        f"the package read the exports list and assumes that it holds for re-exports. {READ}"
+    ) in message
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL]
+    assert respx_mock.calls.call_count == 1
+
+
+def test_a_series_passes_over_a_leafs_months_after_its_last(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
+) -> None:
+    """``D1`` (Denmark) over 1987-06 to 1988-01: the series fetches the seven months to its
+    last, 198712, and passes over 1988-01 without a request, in a note that keeps the words
+    of the refusal it replaced. NOT RECORDED: no answer for Denmark in 1987 is recorded, so
+    each month is served the recorded empty answer of a listed partner without trade, Bouvet
+    Island (``BV``) in August 2026, an answer GATS gives alike there, and the test checks
+    what was sent and the note (conventions §10, kind 3)."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    urls = [
+        f"{BASE_URL}/api/gats/censusExports/partnerCode/D1/year/1987/month/{m}"
+        for m in range(6, 13)
+    ]
+    months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
+    result = tasks.get_census_export_series(
+        "D1", start_year=1987, start_month=6, end_year=1988, end_month=1
+    )
+    assert result.data == []
+    (note,) = result.meta.notes
+    assert note.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
+    assert "so 1988-01 (198801) adds no rows and was not requested." in note
+    assert note.endswith("Listed under the same name: 9U, DA (discontinued 198712).")
+    assert sent_urls(months) == urls
+    assert result.meta.vintage == max(
+        str(_release_time(EXPORT_RELEASES, f"1987{m:02d}")) for m in range(6, 13)
+    )
 
 
 OVER_RATE_LIMIT = {
@@ -2314,27 +2491,51 @@ def test_a_reporter_year_the_list_lacks_is_not_found(replay_fixture: ReplayFixtu
         "GATSData_GetUNTradeExportDataReleaseInfo lists 31 years of exports for reporter IC, "
         "1989 to 2019; the latest year it lists for any reporter is 2019, and its newest "
         "release time is 2021-01-18T01:25:58. GATS answers a reporter-year it has not "
-        "released with an empty list, so the package checks the release list first. The "
-        "release list was fetched at "
-    )
+        f"released with an empty list, so the package checks the release list first. {READ} "
+        "It was fetched at "
+    ), "a year after the latest the list holds: refused, saying what was sent (way P2)"
     assert "api.fas.usda.gov" not in message
     assert (releases.call_count, data.call_count) == (1, 0)
 
 
-def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
+def test_a_reporter_year_the_list_lacks_before_its_latest_is_the_empty_list_with_a_note(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Macau's exports skip 2000 to 2014, 2017 and 2018; Chad (``CD``) is only in the
-    imports list; the re-exports' refusal says which list stood in; a refusal from the
-    cached list says when it was fetched."""
-    replay_fixture(UN_EXPORT_RELEASES, "all")
+    """Macau's exports skip 2000 to 2014, 2017 and 2018, and the list's latest year is 2019,
+    so Macau's 2017 is a period GATS holds no data for: the task answers the empty list with
+    a note naming the reporter's listed years and the list's latest, and sends no data
+    request, as the maintainer decided for the sources behind the gateway
+    (https://github.com/xippios/sdk-usda-esr/issues/88#issuecomment-7193147010). A year after
+    the latest, 2035, is still refused, the release list read and no data requested."""
+    releases = replay_fixture(UN_EXPORT_RELEASES, "all")
     future = replay_fixture(UN_EXPORTS, "future_year")
-    with pytest.raises(NotFoundError) as gap:
-        tasks.get_un_exports("MC", 2017)
-    assert "lists 12 years of exports for reporter MC, 1991 to 1999, 2015, 2016, 2019;" in (
-        gap.value.message
-    )
-    assert "The release list was fetched at " in gap.value.message, "from the wire"
+    gap = tasks.get_un_exports("MC", 2017)
+    assert gap.data == []
+    assert gap.meta.notes == [
+        "GATS holds no UN Trade exports for reporter MC in 2017: "
+        "GATSData_GetUNTradeExportDataReleaseInfo lists 12 years of exports for reporter MC, "
+        "1991 to 1999, 2015, 2016, 2019; the latest year it lists for any reporter is 2019, and "
+        f"its newest release time is 2021-01-18T01:25:58. {READ}"
+    ]
+    assert gap.meta.request == {"reporter_code": "MC", "year": 2017}
+    assert (gap.meta.vintage, gap.meta.published_at) == (None, None)
+    entry = cache.get(cache_key("GET", httpx.URL(UN_EXPORT_RELEASES_URL)))
+    assert entry is not None
+    assert gap.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
+    with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035") as later:
+        tasks.get_un_exports("IC", 2035)
+    assert f"{READ} It was fetched at " in later.value.message
+    assert future.call_count == 0, "GATS's 200 [] for 2035 is never asked for"
+    assert sent_urls(releases) == [UN_EXPORT_RELEASES_URL]
+
+
+def test_the_re_exports_refuse_a_reporter_year_the_exports_list_lacks(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Chad (``CD``) is only in the imports list: the re-exports read the exports list,
+    another flow's, so they keep refusing a reporter-year it lacks, the refusal naming the
+    list read and the assumption, and saying when it was fetched."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
     with pytest.raises(NotFoundError) as none:
         tasks.get_un_reexports("CD", 2019)
     message = none.value.message
@@ -2345,44 +2546,44 @@ def test_the_refusal_names_gaps_a_reporter_without_years_and_the_stand_in_list(
     )
     assert (
         "GATS publishes no UN Trade release list for re-exports: the package read the exports "
-        "list and assumes that it holds for re-exports."
+        f"list and assumes that it holds for re-exports. {READ} It was fetched at "
     ) in message, "the list read and the assumption"
-    assert "The release list was fetched at " in message, "and from the cache"
     assert " UTC and is kept for a day" in message, "the UN lists' cache, the feed frozen"
-    with pytest.raises(NotFoundError, match="UN Trade exports for reporter IC in 2035"):
-        tasks.get_un_exports("IC", 2035)
-    assert future.call_count == 0, "GATS's 200 [] for 2035 is never asked for"
 
 
 def test_an_imports_reporter_year_is_checked_against_the_imports_list(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Haiti (``HA``) is in the exports list only; Chad (``CD``) lists one year of imports."""
+    """Haiti (``HA``) is in the exports list only, and Chad (``CD``) lists one year of
+    imports, 1995: both answer 2019 with the empty list and a note on the imports list."""
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    with pytest.raises(NotFoundError) as info:
-        tasks.get_un_imports("HA", 2019)
-    assert info.value.message.startswith(
-        "GATS has no UN Trade imports for reporter HA in 2019: "
+    haiti = tasks.get_un_imports("HA", 2019)
+    assert haiti.data == []
+    (note,) = haiti.meta.notes
+    assert note.startswith(
+        "GATS holds no UN Trade imports for reporter HA in 2019: "
         "GATSData_GetUNTradeImportDataReleaseInfo lists no year of imports for reporter HA;"
     )
-    assert "publishes no" not in info.value.message
-    with pytest.raises(NotFoundError, match="lists 1 year of imports for reporter CD, 1995;"):
-        tasks.get_un_imports("CD", 2019)
+    assert "publishes no" not in note
+    (chad,) = tasks.get_un_imports("CD", 2019).meta.notes
+    assert "lists 1 year of imports for reporter CD, 1995;" in chad
 
 
 def test_a_discontinued_code_is_accepted_on_the_un_side(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
     """The countries list marks ``AS`` (Australia) and ``DA`` (Denmark) discontinued in
-    198712; the Census tasks refuse ``DA``, a leaf, for 2019, and accept ``AS``, a parent;
-    the UN Trade data keeps both. As a partner ``AS`` selects Macau's 27 re-export records
-    of 2019 (recorded); as a reporter it passes the check and meets the release list,
-    which lists its imports to 2018 and its exports to 2016. NOT RECORDED: no answer for
-    Australia's 2018 imports is recorded, so the data route answers GATS's recorded empty
-    answer, ``[]``, which it gives alike at other reporter-years, and the test checks what
-    was sent and the reporter-year's release time (conventions §10, kind 3)."""
-    with pytest.raises(InvalidRequestError, match="partner_code 'DA' \\(Denmark\\) was disc"):
-        tasks.get_census_exports("DA", 2019, 1)
+    198712; the Census tasks answer ``DA``, a leaf, for 2019 with the empty list and a note,
+    and accept ``AS``, a parent; the UN Trade data keeps both. As a partner ``AS`` selects
+    Macau's 27 re-export records of 2019 (recorded); as a reporter it passes the check and
+    meets the release list, which lists its imports to 2018 and its exports to 2016. NOT
+    RECORDED: no answer for Australia's 2018 imports is recorded, so the data route answers
+    GATS's recorded empty answer, ``[]``, which it gives alike at other reporter-years, and
+    the test checks what was sent and the reporter-year's release time (conventions §10,
+    kind 3)."""
+    denmark = tasks.get_census_exports("DA", 2019, 1)
+    assert denmark.data == []
+    assert denmark.meta.notes[0].startswith("partner_code 'DA' (Denmark) was discontinued")
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")
     australia = tasks.get_un_reexports("MC", 2019, partner_country_code="AS")
@@ -2398,8 +2599,8 @@ def test_a_discontinued_code_is_accepted_on_the_un_side(
     assert reported.meta.vintage == "2020-06-04T13:12:54"
     assert sent_urls(releases) == [UN_IMPORT_RELEASES_URL]
     assert sent_urls(data) == [url]
-    with pytest.raises(NotFoundError, match="lists 28 years of exports for reporter AS, 1989 to"):
-        tasks.get_un_exports("AS", 2019)
+    (exports,) = tasks.get_un_exports("AS", 2019).meta.notes
+    assert "lists 28 years of exports for reporter AS, 1989 to" in exports
 
 
 def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRouter) -> None:

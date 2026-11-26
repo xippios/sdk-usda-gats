@@ -1,20 +1,20 @@
 """The configured ``xippios.core`` client for USDA FAS Global Agricultural Trade System.
 
-One ``AsyncClient`` for the whole package, shared by the tasks, the sync facades and the
-MCP server, on api.data.gov's gateway at ``BASE_URL`` with ``Accept: application/json``.
-It keeps a pace of its own, ``RATE_LIMIT``, since the snapshot documents none. The gateway
-is the shared package's, ``xippios.usda.fas``'s ``Gateway`` (sdk-core ADR-0032, decision 5;
+One ``AsyncClient`` for the whole package, shared by the tasks, the sync facades and the MCP
+server, on api.data.gov's gateway at ``BASE_URL`` with ``Accept: application/json``. It
+keeps a pace of its own, ``RATE_LIMIT``, since the snapshot documents none. The gateway is
+the shared package's, ``xippios.usda.fas``'s ``Gateway`` (sdk-core ADR-0032, decision 5;
 sdk-core ADR-0065, decision 1): ``gateway.auth`` sends the key from ``DATA_GOV_API_KEY`` in
 the ``X-Api-Key`` header; ``Gateway.policy``, the one ``QuotaPolicy`` per process for that
 key, keeps api.data.gov's hourly quota from every answer from the wire and never fires a
-request into a spent one, refusing it without sending (sdk-core ADR-0033, sdk-core
-ADR-0037); and ``classify`` asks ``gateway.classify`` first, which maps the gateway's
-``API_KEY_*`` answers to ``AuthError``, its 429 to ``RateLimitError`` and its ``NOT_FOUND``
-to ``NotFoundError``. ``Gateway(SOURCE)`` names no data path: GATS answers a month or a
-year without data with ``[]`` and never with FAS's empty 404, so no answer of GATS's is
-the shared package's ``NoDataForYear``. ``x-ratelimit-limit: 1000`` and
-``x-ratelimit-remaining`` are on every keyed GATS answer recorded on 2026-10-25, the error
-answers to a valid key included; the gateway sends no reset header.
+request into a spent one, waiting it out within 30 s and otherwise refusing it without
+sending (sdk-core ADR-0033, sdk-core ADR-0037); and ``classify`` asks ``gateway.classify``
+first, which maps the gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to
+``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``. ``Gateway(SOURCE)`` names no
+data path: GATS answers a month or a year without data with ``[]`` and never with FAS's
+empty 404, so no answer of GATS's is the shared package's ``NoDataForYear``. ``x-ratelimit-
+limit: 1000`` and ``x-ratelimit-remaining`` are on every keyed GATS answer recorded on
+2026-10-25, the error answers to a valid key included; the gateway sends no reset header.
 
 Core's response cache keeps five answers and nothing else, one ``MemoryCache`` with a
 lifetime per path, ``LIFETIMES``: the two Census release-date lists for an hour, since

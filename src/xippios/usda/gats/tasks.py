@@ -587,6 +587,7 @@ def _data_meta(
     )
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_exports_async(
     partner_code: str, year: int, month: int, hs10_code: str | None = None
 ) -> Result[list[CensusExport]]:
@@ -636,6 +637,7 @@ async def get_census_exports_async(
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_imports_async(
     partner_code: str, year: int, month: int, hs10_code: str | None = None
 ) -> Result[list[CensusImport]]:
@@ -685,6 +687,7 @@ async def get_census_imports_async(
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_reexports_async(
     partner_code: str, year: int, month: int, hs10_code: str | None = None
 ) -> Result[list[CensusExport]]:
@@ -734,6 +737,7 @@ async def get_census_reexports_async(
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)
 async def get_customs_district_exports_async(
     partner_code: str,
     year: int,
@@ -789,6 +793,7 @@ async def get_customs_district_exports_async(
     return Result(data=selected, meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)
 async def get_customs_district_imports_async(
     partner_code: str,
     year: int,
@@ -843,6 +848,7 @@ async def get_customs_district_imports_async(
     return Result(data=selected, meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)
 async def get_customs_district_reexports_async(
     partner_code: str,
     year: int,
@@ -1039,6 +1045,7 @@ async def _series[R: _Coded](
     return records, meta
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_export_series_async(
     partner_code: str,
     start_year: int,
@@ -1097,6 +1104,7 @@ async def get_census_export_series_async(
     return Result(data=records, meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_import_series_async(
     partner_code: str,
     start_year: int,
@@ -1155,6 +1163,7 @@ async def get_census_import_series_async(
     return Result(data=records, meta=meta)
 
 
+@names_codes(partner_code=COUNTRIES)
 async def get_census_reexport_series_async(
     partner_code: str,
     start_year: int,
@@ -1533,6 +1542,7 @@ def _un_meta(
     )
 
 
+@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
 async def get_un_exports_async(
     reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
 ) -> Result[list[UNTradeRecord]]:
@@ -1590,6 +1600,7 @@ async def get_un_exports_async(
     return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
 
 
+@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
 async def get_un_imports_async(
     reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
 ) -> Result[list[UNTradeRecord]]:
@@ -1643,6 +1654,7 @@ async def get_un_imports_async(
     return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
 
 
+@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
 async def get_un_reexports_async(
     reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
 ) -> Result[list[UNTradeRecord]]:
@@ -1705,6 +1717,7 @@ def _un_release_dates_check(
         validate_year(year)
 
 
+@names_codes(reporter_code=COUNTRIES)
 async def get_un_release_dates_async(
     product_type: ProductType, reporter_code: str | None = None, year: int | None = None
 ) -> Result[list[UNTradeDataReleaseInfo]]:
@@ -1954,34 +1967,20 @@ async def list_commodities_async(
     return Result(data=selected, meta=meta)
 
 
-get_census_export_series = names_codes(partner_code=COUNTRIES)(sync(get_census_export_series_async))
-get_census_exports = names_codes(partner_code=COUNTRIES)(sync(get_census_exports_async))
-get_census_import_series = names_codes(partner_code=COUNTRIES)(sync(get_census_import_series_async))
-get_census_imports = names_codes(partner_code=COUNTRIES)(sync(get_census_imports_async))
-get_census_reexport_series = names_codes(partner_code=COUNTRIES)(
-    sync(get_census_reexport_series_async)
-)
-get_census_reexports = names_codes(partner_code=COUNTRIES)(sync(get_census_reexports_async))
+get_census_export_series = sync(get_census_export_series_async)
+get_census_exports = sync(get_census_exports_async)
+get_census_import_series = sync(get_census_import_series_async)
+get_census_imports = sync(get_census_imports_async)
+get_census_reexport_series = sync(get_census_reexport_series_async)
+get_census_reexports = sync(get_census_reexports_async)
 get_census_release_dates = sync(get_census_release_dates_async)
-get_customs_district_exports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
-    sync(get_customs_district_exports_async)
-)
-get_customs_district_imports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
-    sync(get_customs_district_imports_async)
-)
-get_customs_district_reexports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
-    sync(get_customs_district_reexports_async)
-)
-get_un_exports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
-    sync(get_un_exports_async)
-)
-get_un_imports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
-    sync(get_un_imports_async)
-)
-get_un_reexports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
-    sync(get_un_reexports_async)
-)
-get_un_release_dates = names_codes(reporter_code=COUNTRIES)(sync(get_un_release_dates_async))
+get_customs_district_exports = sync(get_customs_district_exports_async)
+get_customs_district_imports = sync(get_customs_district_imports_async)
+get_customs_district_reexports = sync(get_customs_district_reexports_async)
+get_un_exports = sync(get_un_exports_async)
+get_un_imports = sync(get_un_imports_async)
+get_un_reexports = sync(get_un_reexports_async)
+get_un_release_dates = sync(get_un_release_dates_async)
 list_commodities = sync(list_commodities_async)
 list_countries = sync(list_countries_async)
 list_customs_districts = sync(list_customs_districts_async)

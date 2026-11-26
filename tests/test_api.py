@@ -638,7 +638,9 @@ async def test_the_partner_code_is_quoted_into_the_path(
     No GATS code holds a slash, and a task refuses one before any call
     (``params.validate_partner_code``); this checks the wrapper alone, so the route answers
     ``[]`` and no fixture is needed. respx matches the decoded path, which an unquoted
-    slash would match too: ``sent_urls`` is what shows the quoting.
+    slash would match too: ``sent_urls`` is what shows the quoting. NOT RECORDED here:
+    GATS's recorded empty answer, ``[]``, served at a path no recording holds, for a test
+    that asserts only what was sent (conventions §10, kind 3).
     """
     url = f"{BASE_URL}/api/gats/{path}/partnerCode/C%2FH/year/2026/month/8"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
@@ -689,7 +691,9 @@ async def test_a_month_out_of_range_is_an_empty_404_and_a_not_found_error(
 
 
 async def test_classify_leaves_every_census_probe_to_core(fixtures_dir: Path) -> None:
-    """No GATS-specific mapping yet: the Census answers fall through ``classify``."""
+    """No GATS-specific mapping yet: the Census answers fall through ``classify``. Each
+    recorded answer is rebuilt in memory for ``classify`` to read (conventions §10, kind 3).
+    """
     for case in ("month_0", "month_13", "unknown_partner", "future_month"):
         fixture = load_fixture(fixtures_dir / EXPORTS / f"{case}.json")
         response = httpx.Response(
@@ -717,7 +721,11 @@ async def test_product_type_members_are_the_release_records_codes(
 
 
 async def test_an_unknown_product_type_code_still_parses() -> None:
-    """``product_type`` stays text: a code the enum does not name never fails an answer."""
+    """``product_type`` stays text: a code the enum does not name never fails an answer.
+
+    The record is an input of the test, not an answer from GATS: a literal given to the
+    model, which no route serves and no ``classify`` reads.
+    """
     record = DataReleaseInfo.model_validate(
         {
             "statisticalYearMonth": "202608",
@@ -1019,7 +1027,9 @@ async def test_the_reporter_code_and_year_are_quoted_into_the_path(
 ) -> None:
     """A slash in the reporter code or in the year, both text, is sent as ``%2F``, so each
     stays one path segment; the route answers ``[]`` and no fixture is needed. respx
-    matches the decoded path: ``sent_urls`` is what shows the quoting."""
+    matches the decoded path: ``sent_urls`` is what shows the quoting. NOT RECORDED here:
+    GATS's recorded empty answer served at a path no recording holds, for a test that
+    asserts only what was sent (conventions §10, kind 3)."""
     url = f"{BASE_URL}/api/gats/{path}/reporterCode/I%2FC/year/20%2F19"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
     assert (await wrapper("I/C", "20/19")).payload == []
@@ -1069,7 +1079,8 @@ async def test_a_year_that_is_not_a_number_is_an_empty_404_and_a_not_found_error
 
 
 async def test_classify_leaves_every_un_probe_to_core(fixtures_dir: Path) -> None:
-    """No GATS-specific mapping for the UN Trade answers either."""
+    """No GATS-specific mapping for the UN Trade answers either. Each recorded answer is
+    rebuilt in memory for ``classify`` to read (conventions §10, kind 3)."""
     for case in ("unknown_reporter", "future_year", "unreleased_year", "year_text"):
         fixture = load_fixture(fixtures_dir / UN_EXPORTS / f"{case}.json")
         response = httpx.Response(
@@ -1095,7 +1106,11 @@ async def test_the_un_release_lists_carry_the_product_type_codes_too(
 
 
 async def test_an_unknown_un_product_type_code_still_parses() -> None:
-    """``UNTradeDataReleaseInfo.product_type`` stays text, as the Census record's does."""
+    """``UNTradeDataReleaseInfo.product_type`` stays text, as the Census record's does.
+
+    The record is an input of the test, not an answer from GATS: a literal given to the
+    model, which no route serves and no ``classify`` reads.
+    """
     record = UNTradeDataReleaseInfo.model_validate(
         {
             "statisticalYear": "2019",

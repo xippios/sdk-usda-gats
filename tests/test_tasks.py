@@ -288,8 +288,8 @@ def test_the_first_fetch_of_a_cached_list_reports_the_time_it_was_stored(
 
 
 def test_a_release_list_that_is_not_json_is_asked_again(respx_mock: respx.MockRouter) -> None:
-    """NOT RECORDED: a 200 whose body is no JSON, which GATS was never seen to send, to show
-    what the client's cache does with it (conventions §10). Core stores an answer once it
+    """NOT RECORDED: a 200 whose body is no JSON, a body of no shape GATS sends, to show
+    what the client's cache does with it (conventions §10, kind 5). Core stores an answer once it
     decoded, so the next call asks upstream again
     (https://github.com/xippios/sdk-core/issues/122), where the cache answered the same
     error without a request until its entry expired, an hour for a release list."""
@@ -432,8 +432,9 @@ def test_a_discontinued_leaf_passes_for_a_month_before_its_end(
 ) -> None:
     """``D1`` (Denmark) for 1987-06, before its 198712: the check passes, the recorded
     exports list (from 196701) has the month, and the data request goes out. NOT
-    RECORDED: no answer for Denmark in 1987 is recorded, so the data route answers ``[]``
-    and the test checks what was sent and the month's release time."""
+    RECORDED: no answer for Denmark in 1987 is recorded, so the data route answers GATS's
+    recorded empty answer, ``[]``, an answer GATS gives alike at other months, and the test
+    checks what was sent and the month's release time (conventions §10, kind 3)."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     url = f"{BASE_URL}/api/gats/censusExports/partnerCode/D1/year/1987/month/6"
     data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
@@ -1117,7 +1118,8 @@ def _answering(
 ) -> respx.Route:
     """One route for ``method`` on ``host`` that answers each path of ``answers`` with its
     recorded status, headers and body, as ``replay_fixture`` does; a path not in
-    ``answers`` matches no route and fails the test."""
+    ``answers`` matches no route and fails the test. Each body is a recorded answer served
+    in memory (conventions §10, kind 3)."""
 
     def answer(request: httpx.Request) -> httpx.Response:
         response = answers[request.url.path]
@@ -1134,7 +1136,8 @@ def _replay_months(respx_mock: respx.MockRouter, endpoint: str, *cases: str) -> 
     ``replay_fixture`` mounts one route per fixture, which shows what each route received
     but not the order across them. This route answers every request with the recorded
     exchange of its path, for the recorded method, as ``replay_fixture`` does; a path
-    none of ``cases`` recorded matches no route and fails the test."""
+    none of ``cases`` recorded matches no route and fails the test. Each body is a
+    recorded answer served in memory at its own path (conventions §10, kind 3)."""
     recorded = [load_fixture(FIXTURES / endpoint / f"{case}.json") for case in cases]
     answers = {httpx.URL(fixture.request.url).path: fixture.response for fixture in recorded}
     ((method, host),) = {
@@ -1151,8 +1154,9 @@ def _answer_months(
     ``_replay_months`` for months nothing was recorded for.
 
     NOT RECORDED for ``urls``: each gets the answer recorded for another request, e.g. the
-    empty list GATS sent for Bouvet Island (``BV``) in August 2026, so a test that uses it
-    says so. ``urls`` share the recorded request's host."""
+    empty list GATS sent for Bouvet Island (``BV``) in August 2026, an answer GATS gives
+    alike there, so a test that uses it says so (conventions §10, kind 3). ``urls`` share
+    the recorded request's host."""
     fixture = load_fixture(FIXTURES / endpoint / f"{case}.json")
     (host,) = {httpx.URL(url).host for url in (fixture.request.url, *urls)}
     answers = {httpx.URL(url).path: fixture.response for url in urls}
@@ -1469,7 +1473,8 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     a 429, and the series raises ``RateLimitError`` with the gateway's wait and returns
     nothing, not July's 105 records. The wait is read through the client, so it is the
     snapshot's from now, ``Retry-After``'s 3151 s give or take ``CLOCK_SLACK``: a fraction
-    under, or over where this host's clock steps back. NOT RECORDED here: GATS has no
+    under, or over where this host's clock steps back. NOT RECORDED here (conventions §10,
+    kind 2): GATS has no
     recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not
     marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which
     the plugin leaves on, not the quota policy's pause, which it turns off."""
@@ -2165,8 +2170,9 @@ def test_a_discontinued_code_is_accepted_on_the_un_side(
     the UN Trade data keeps both. As a partner ``AS`` selects Macau's 27 re-export records
     of 2019 (recorded); as a reporter it passes the check and meets the release list,
     which lists its imports to 2018 and its exports to 2016. NOT RECORDED: no answer for
-    Australia's 2018 imports is recorded, so the data route answers ``[]`` and the test
-    checks what was sent and the reporter-year's release time."""
+    Australia's 2018 imports is recorded, so the data route answers GATS's recorded empty
+    answer, ``[]``, which it gives alike at other reporter-years, and the test checks what
+    was sent and the reporter-year's release time (conventions §10, kind 3)."""
     with pytest.raises(InvalidRequestError, match="partner_code 'DA' \\(Denmark\\) was disc"):
         tasks.get_census_exports("DA", 2019, 1)
     replay_fixture(UN_EXPORT_RELEASES, "all")
@@ -2330,7 +2336,8 @@ SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remain
 def test_a_shared_iso_code_is_refused_unranked_when_the_list_cannot_be_read(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """NOT RECORDED here: psd's recorded 429, body and quota headers, mocked on the UN
+    """NOT RECORDED here (conventions §10, kind 2): psd's recorded 429, body and quota
+    headers, in the shape the gateway documents, mocked on the UN
     exports list. The list only ranks the refusal, so a failed read gives way to the
     refusal the first check made: ``UnknownCode`` naming the countries list's order, the
     current ``A2`` first, never the list's ``RateLimitError``; nothing goes to the data

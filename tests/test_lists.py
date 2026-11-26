@@ -539,9 +539,10 @@ def test_list_commodities_parses_the_list_once_per_cache_entry(
 def test_a_slot_never_answers_for_another_answer(
     respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """NOT RECORDED as such: the second answer is the recorded list's first record alone,
-    a stand-in for a list upstream changed. Once the first answer's entry is gone, the
-    slot it filled does not answer for the new one, which is parsed and returned."""
+    """NOT RECORDED as such: the first answer is the recorded list served in memory, the
+    second the recorded list's first record alone, changed in memory as a stand-in for a
+    list upstream changed (conventions §10, kinds 3 and 4). Once the first answer's entry
+    is gone, the slot it filled does not answer for the new one, which is parsed and returned."""
     parses = _count_parses(monkeypatch)
     body = load_fixture(COMMODITIES_FIXTURE).response.body
     assert isinstance(body, str)

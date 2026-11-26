@@ -183,12 +183,13 @@ def test_an_empty_404_falls_through_to_core() -> None:
 @pytest.mark.anyio
 @pytest.mark.rate_limited
 async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, through the package's
-    client. Core's ``observe`` marks the gateway's quota spent until its ``Retry-After``,
-    ``classify`` raises after one request (3151 s is beyond ``backoff_max``) with the
-    snapshot's wait from now, and the next request is refused before it is sent, in the
-    gateway's name. Marked ``rate_limited``: the refusal is the policy's pause, which the
-    plugin turns off."""
+    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
+    documents (conventions §10, kind 2), through the package's client. Core's
+    ``observe`` marks the gateway's quota spent until its ``Retry-After``, ``classify``
+    raises after one request (3151 s is beyond ``backoff_max``) with the snapshot's wait
+    from now, and the next request is refused before it is sent, in the gateway's name.
+    Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns
+    off."""
     route = respx_mock.get(f"{BASE_URL}/api/gats/countries").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
@@ -359,8 +360,8 @@ RELEASE_WRAPPERS = [
 async def test_a_release_list_that_fails_the_models_is_asked_again(
     respx_mock: respx.MockRouter, wrapper: str, path: str
 ) -> None:
-    """NOT RECORDED: a 200 of JSON that is no list of releases, which GATS was never seen
-    to send, to show what the cache does with it (conventions §10). The wrapper parses
+    """NOT RECORDED: a 200 of JSON that is no list of releases, a body of no shape GATS
+    sends, to show what the cache does with it (conventions §10, kind 5). The wrapper parses
     through ``get_answer``, which stores an answer only once it parsed, so the next call
     asks upstream again, where the cache answered the same error without a request until
     its entry expired (https://github.com/xippios/sdk-core/issues/122)."""
@@ -422,7 +423,8 @@ async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> N
 async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path spends the quota; the
+    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
+    documents (conventions §10, kind 2), spends the quota; the
     release list cached before it still answers, since a cache hit returns before the
     quota policy's check (sdk-core ADR-0037), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""

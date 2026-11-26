@@ -224,7 +224,8 @@ def test_the_release_list_is_fetched_once_for_two_task_calls(
     replay_fixture: ReplayFixture,
 ) -> None:
     """The client caches the release list for an hour: the second call of the task sends
-    only its data request."""
+    only its data request, and its ``meta.retrieved_at`` is the oldest of its two reads,
+    the time the cache stored the release list (conventions §4)."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "CH_2026_8")
     first = tasks.get_census_exports("CH", 2026, 8)
@@ -232,13 +233,11 @@ def test_the_release_list_is_fetched_once_for_two_task_calls(
     assert releases.call_count == 1
     assert data.call_count == 2
     assert sent_urls(data) == [CH_EXPORTS_URL, CH_EXPORTS_URL]
-    assert second.meta.retrieved_at >= first.meta.retrieved_at - CLOCK_SLACK, (
-        "the data is fetched anew, so its time is a reading of this call"
-    )
     entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
     assert entry is not None
-    assert second.meta.retrieved_at != datetime.fromtimestamp(entry.stored_at, UTC), (
-        "the data's own time, not the time the cached release list was stored"
+    stored = datetime.fromtimestamp(entry.stored_at, UTC)
+    assert first.meta.retrieved_at == second.meta.retrieved_at == stored, (
+        "the oldest read of each call: the release list, stored at the first call"
     )
 
 

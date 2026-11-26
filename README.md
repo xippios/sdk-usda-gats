@@ -18,12 +18,12 @@ package ships and refreshes before each release. GATS documents path parameters 
 `partnerCode`, `year` and `month` for the Census operations and `reporterCode` and `year`
 for the UN Trade operations, and the tasks take every one. The documentation lists XML
 beside JSON among the forms that each operation produces; the package asks for JSON, so XML
-is the one documented choice that a caller cannot make. What the package adds is one
-partner's series over months and filters that select records of an answer, of a release
-list and of the packaged lists. It ranks no partner, sums no record and picks no month for
-the caller: a caller reads every record as GATS sends it. What the package observed of GATS
-that the documentation does not say, each note with its probe, stands in
-`docs/upstream/OBSERVED.md`.
+is the one documented choice that a caller cannot make
+(https://github.com/xippios/sdk-usda-gats/issues/64). What the package adds is one partner's
+series over months and filters that select records of an answer, of a release list and of
+the packaged lists. It ranks no partner, sums no record and picks no month for the caller:
+a caller reads every record as GATS sends it. What the package observed of GATS that the
+documentation does not say, each note with its probe, stands in `docs/upstream/OBSERVED.md`.
 
 ## Install
 

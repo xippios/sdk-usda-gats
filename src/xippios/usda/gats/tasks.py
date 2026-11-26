@@ -131,46 +131,19 @@ imports task is the reporter-year's ``releaseTimeStamp`` from that list as upstr
 time, naive, with ``meta.published_at_naive`` set, as for the Census tasks; the re-exports
 task leaves both empty, the exports list stating no release of re-exports (sdk-core
 ADR-0060, decisions 2 and 8), and a refusal names the list read and the assumption that it
-holds for re-exports. The year is in ``meta.request`` and on every record. As recorded on
-2026-10-26 the UN Trade feed is frozen (conventions §4): both release lists end with
-statistical year 2019, and their newest release time is 2021-01-18, the last release the
-README's status table names.
+holds for re-exports. The year is in ``meta.request`` and on every record. The UN Trade
+feed is frozen (conventions §4): both release lists end with statistical year 2019, and
+their newest release time is 2021-01-18, the last release the README's status table names,
+as ``docs/upstream/OBSERVED.md`` notes with its probe.
 ``get_un_release_dates`` returns either list, whole or filtered by reporter or by
 ``statistical_year``, named after the field it reads, with ``retrieved_at`` from the cache
 as for the Census list.
 
-The answers as recorded, the measures that the tools' descriptions leave to this place
-(2026-10-25 for the Census data, 2026-10-26 for the UN Trade data and the HS10 list).
-Census: exports to China in August 2026 are 777 records, imports from China 3,294,
-Iceland's re-exports 12, chapter 62 the largest with four. Upstream's documentation
-describes no field of a Census record: every field is as the recorded answers show it. By
-customs district, Iceland's exports are 107 records in 14 districts, 16 of them in district
-10 (NEW YORK, N.Y.), China's 1,697 in 31 districts; Iceland's imports 123 records in 21
-districts, 51 of them fish fillets (``hs10_code`` ``"0304"``) and 28 in district 10; its
-re-exports 13 records in 5 districts, 5 of them in district 10. A parent code answers for
-its children: for August 2026 ``"Y1"`` (Leeward-Windward Islands) held every product of
-``"AC"`` (Antigua and Barbuda) at no lower a value, and ``"AS"`` (Australia) the same
-records as ``"A2"`` apart from the code, while ``"01"`` and ``"18"`` of region ``R99`` gave
-an empty list. The series for Iceland over July and August 2026 are 197 exports records,
-105 and 92, 157 imports records, 83 and 74, of which 85 are fish (``hs10_code`` ``"03"``),
-and 31 re-exports records, 19 and 12, 7 of them in chapter 62. A series' vintage across
-the annual revision is an earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to
-2026-02, December's revised release, not February's. The Census exports list ran to
-``"202608"`` on 2026-10-25. UN Trade: Iceland's 2019 exports are 3,980 records, 646 HS6
-codes to 115 partners, 1,024 of them in chapter 03; Sao Tome and Principe's 2019 imports
-2,377 records, 1,026 HS6 codes and 58 partners, 957 of them with Portugal (``"PO"``);
-Macau's 2019 re-exports 421 records, every quantity 0, 27 of them to ``"AS"``; and Iceland,
-listed for 2019 exports, answers an empty list for its 2019 re-exports. A large reporter
-answers far more: Iceland's 2019 imports are 23,396 records, about 5.2 MB of JSON, India's
-2016 exports 75,919 records, about 17 MB. The UN data keeps codes the countries list marks
-discontinued in 1987, such as ``"AS"`` (Australia) and ``"NO"`` (Norway), for later years,
-never their same-name successors (``"A2"``, ``"N3"``). The UN Trade release lists hold
-3,796 exports records for 206 reporters and 3,832 imports records for 207, 32 reporters
-for 2019 in each; their newest release time is 2021-01-18 (the Netherlands' 2014), and no
-reporter-year has been released since; 32 reporter-years are listed only for exports, 68
-only for imports. The HS10 list holds 24,936 records; a code repeats across product types
-and with a later ``start_date`` (``"0207410000"`` under ``"M"`` is chicken cuts from
-``"198901"`` and ducks from ``"201201"``).
+What GATS answered as the package recorded it is noted in ``docs/upstream/OBSERVED.md``,
+each note with its probe: the answers' shapes and sizes, the measures that the tools'
+descriptions leave out among them, the empty answers, the parents', the release lists'
+months and years and the frozen UN Trade feed. What a caller needs of them stands above and
+in each task's docstring.
 
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
 make no upstream call, through core's ``PackagedList`` (sdk-core ADR-0041, decision 1):

@@ -42,5 +42,6 @@ tests/
                    offline
 docs/
   upstream/        also openapi/, the GATS parts of the portal's document and the backend's
-                   document
+                   document, and OBSERVED.md, the notes by hand on what GATS does but never
+                   documents
 ```

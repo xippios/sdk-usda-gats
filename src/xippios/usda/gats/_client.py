@@ -13,9 +13,9 @@ first, which maps the gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 
 ``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``. ``Gateway(SOURCE)`` names no
 data path: GATS answers a month or a year without data with ``[]`` and never with FAS's
 empty 404, so no answer of GATS's is the shared package's ``NoDataForYear``.
-``x-ratelimit-limit: 1000`` and ``x-ratelimit-remaining`` are on every keyed GATS answer
-recorded on 2026-10-25, the error answers to a valid key included; the gateway sends no
-reset header.
+``x-ratelimit-limit: 1000`` and ``x-ratelimit-remaining`` are on every answer to a valid
+key, the 404s included, and no header says when the quota resets (``docs/upstream/OBSERVED.md``,
+"The gateway's hourly quota").
 
 Core's response cache keeps every answer, by the maintainer's decision of 2026-11-26, in
 one ``MemoryCache`` with a lifetime per path prefix, ``LIFETIMES`` (sdk-core ADR-0040,
@@ -25,14 +25,15 @@ the two Census release-date lists for an hour, since every Census data task fetc
 flow's list before the data and would otherwise cost two requests against the hourly quota;
 every UN Trade answer, its data and its two release-date lists, for a day, since the UN
 Trade feed is frozen (both lists end with statistical year 2019, last released on
-2021-01-18, as recorded on 2026-10-26); and the HS10 commodities list for a day, 7.6 MB that
+2021-01-18: ``docs/upstream/OBSERVED.md``, "The UN Trade release lists end in 2019"); and
+the HS10 commodities list for a day, 7.6 MB that
 ``tasks.list_commodities`` fetches whole for every search. It stores a body of up to
 ``CACHE_MAX_BYTES``, 16 MiB, twice core's default, so that the HS10 list stays cached when
 it grows; a larger answer, as India's 2016 UN Trade exports of about 17 MB, is not stored.
 
 GATS's own answers to an unknown partner, a month out of range or a month without data
-are not mapped here: what they are is recorded under
-``tests/fixtures/get_census_exports/`` and decided with the tasks.
+are not mapped here: what they are is noted in ``docs/upstream/OBSERVED.md`` under "Empty
+answers and refusals", and the tasks decide what to do with them.
 """
 
 from collections.abc import Mapping
@@ -105,10 +106,10 @@ UN_TRADE_PATH = "/api/gats/UNTrade"
 one record per reporter and statistical year, about 400 KB of JSON each. Each UN Trade data
 task (``tasks.get_un_exports`` and the two others) reads its flow's list before the data to
 check the reporter-year, and ``tasks.get_un_release_dates`` answers from it; from the cache
-a task costs one request per flow and one per reporter-year per ``UN_TRADE_TTL``. As
-recorded on 2026-10-26 both lists end with statistical year 2019 and their newest release
-is dated 2021-01-18 (``tests/fixtures/get_un_trade_export_data_release_info/all.json``): the
-feed is frozen, so a day's cache loses nothing an hour's would catch.
+a task costs one request per flow and one per reporter-year per ``UN_TRADE_TTL``. Both lists
+end with statistical year 2019 and their newest release is dated 2021-01-18, as the note
+"The UN Trade release lists end in 2019" of ``docs/upstream/OBSERVED.md`` has it: the feed
+is frozen, so a day's cache loses nothing an hour's would catch.
 """
 
 COMMODITIES_PATH = "/api/gats/commodities"
@@ -140,8 +141,8 @@ month Census has just released, as not released yet, until the entry expires. It
 UN_TRADE_TTL = 86400.0
 """Seconds a cached UN Trade answer answers: one day.
 
-The UN Trade feed is frozen: as recorded on 2026-10-26 both lists end with statistical
-year 2019, and their newest release is dated 2021-01-18, so nothing has been released
+The UN Trade feed is frozen: both lists end with statistical year 2019, and their newest
+release is dated 2021-01-18 (``docs/upstream/OBSERVED.md``), so nothing has been released
 for years and an hour's cache would spend one keyed call per flow per hour for the same
 answer; a day spends one per flow per day. Should GATS release a reporter-year after all,
 a task can refuse it as not listed for up to a day, and its ``NotFoundError`` says when

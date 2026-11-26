@@ -24,6 +24,70 @@ this file.
 The snapshot listed in `docs/upstream/FETCHED.md` is the reference for names, parameters and
 semantics; a wrapper is never written from memory of the API.
 
+## Upstream behaviour the package relies on
+
+The snapshot types every answer as `object` and defines no schema, so what GATS does beyond
+it, the answers' shapes, its empty answers and the gateway's refusals, is noted in
+`docs/upstream/OBSERVED.md`, each note with the probe that showed it: its date, its operation
+and the recording under `tests/fixtures/`, or the request where none was kept. This section
+holds what the package does with it; `_client.classify` maps nothing of GATS's own.
+
+- The arguments that identify a record are positional in the order of upstream's path, and
+  every optional filter and every argument of the package's own is keyword-only (sdk-core
+  ADR-0061, decision 5; https://github.com/xippios/sdk-usda-esr/issues/60, part 1):
+  `get_census_exports("CH", 2026, 8, hs10_code="02")`, `get_census_export_series("IC",
+  start_year=2026, start_month=7, end_year=2026, end_month=8)`, `get_un_exports("IC", 2019,
+  partner_country_code="US")`, `get_census_release_dates("X", statistical_year_month="2026")`
+  and `list_countries(region_code="R05")`.
+- No GATS operation takes a filter, so every filter selects records after the one request,
+  named after upstream's field that it reads (sdk-core ADR-0061, decision 2):
+  `partner_country_code` reads `partnerCountryCode` and `statistical_year` `statisticalYear`,
+  each exactly, `statistical_year_month` is a prefix of `statisticalYearMonth`'s six digits,
+  one year or one month, and `hs10_code` and `hs6_code` a prefix of the code. A filter that no
+  record can match is refused rather than answered with an empty list: a `region_code` that
+  the packaged regions list lacks before any request, and a `product_type` that no record of
+  the HS10 list carries once the list is read, naming the four it carries
+  (https://github.com/xippios/sdk-usda-gats/issues/31).
+- Empty means empty: an unknown code answers `[]` as a listed partner without trade does, so
+  `params` refuses one before the call by core's `check` of its packaged list (`UnknownCode`,
+  naming the closest codes, an ISO or GENC code leading to GATS's code first), and every
+  refusal before a request says `Nothing was sent.` A month 0 or 13 and a year that is no
+  number, which GATS answers with an empty 404, never reach it.
+- A parent code passes for every month, since a parent answers for its children, and so do
+  the region codes `01` to `18`, for which the package assumes no member list. A discontinued
+  code that is no other code's parent holds no trade after its `discontinuedOn`: every Census
+  task answers such a month with the empty list and `params.leaf_note`, sending no request,
+  the note keeping every word of the refusal it replaced, and a series passes the months over
+  in its note (the maintainer's decision of 2026-11-26,
+  https://github.com/xippios/sdk-usda-gats/issues/57, part 7). The UN Trade tasks check their
+  codes for membership alone, since the UN data keeps codes discontinued in 1987.
+- GATS answers a month or a reporter-year it has not released with `[]`, so every data task
+  reads its flow's release list before the data (`tasks._release_of`, `tasks._un_release_of`).
+  A period after the latest the list holds is refused with `NotFoundError` naming the latest,
+  saying that the release list was read and no data requested (sdk-core ADR-0041, decision
+  6). A period GATS holds no data for, a Census month before 196701 or a UN Trade
+  reporter-year that the flow's list lacks at or before its latest year, answers the empty
+  list with a note that names what the list holds and sends no data request (sdk-core
+  ADR-0061, decision 6; https://github.com/xippios/sdk-usda-esr/issues/88#issuecomment-7193147010).
+- Six tasks read another flow's release list, since upstream publishes none for their data:
+  `get_census_reexports` and `get_census_reexport_series` the Census exports list, the three
+  customs-district tasks the Census list of their flow, and `get_un_reexports` the UN Trade
+  exports list. They leave `meta.vintage` and `meta.published_at` empty, as each docstring
+  says (sdk-core ADR-0060, decisions 2 and 8), and keep refusing every month or reporter-year
+  that the list lacks, the refusal naming the list read and the assumption that it holds for
+  their data (the maintainer's decision of 2026-11-26,
+  https://github.com/xippios/sdk-usda-gats/issues/57, part 6).
+- `meta.vintage` of `get_census_exports`, `get_census_imports`, `get_un_exports`,
+  `get_un_imports` and the exports and imports series is the `releaseTimeStamp` of the month
+  or reporter-year in its list as upstream states it, the series' the newest among its
+  months, and `meta.published_at` that time parsed, naive, with `meta.published_at_naive`
+  set (sdk-core ADR-0041, decision 2): a release list records each month's latest release
+  alone, so the vintage names the release that last revised the figures.
+- Over MCP the six Census month tools and the four tools whose answer a packaged list or the
+  cache holds take a paged cap, the series keep their newest rows, and the UN Trade data
+  tools stay unpaged, since one reporter-year can pass the cache's bound (`tasks.MCP_CAPS`;
+  sdk-core ADR-0061, decision 9).
+
 ## Layout
 
 What this package adds to the family's tree, and its import path, stand in `docs/layout.md`,

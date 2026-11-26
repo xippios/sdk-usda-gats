@@ -10,9 +10,10 @@ year. UN COMTrade reports data on a yearly basis at a HS6 Code Level." The recor
 ``models.UNTradeRecord``: the recorded answer carries the exports' eleven fields in their
 order and nothing else, so the exports' model is reused rather than copied
 (``tests/fixtures/get_un_trade_imports/TP_2019.json``, 2,377 records, about 525 KB of
-JSON, for Sao Tome and Principe in 2019; Iceland's 2019 imports, 23,396 records and about
-5.2 MB, were recorded on 2026-10-26 and not committed). One answer is one reporter-year
-across all partners and products, never paged. Error shapes are mapped once in
+JSON, for Sao Tome and Principe in 2019). One answer is one reporter-year across all
+partners and products, never paged, and Iceland's 2019 imports are about 5.2 MB, as the
+note "One UN Trade answer is a reporter's whole year" of ``docs/upstream/OBSERVED.md`` has
+it. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``; the probes recorded for
 ``GATSData_GetUNTradeExports`` were not repeated here.
 """

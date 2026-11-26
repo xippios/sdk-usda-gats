@@ -105,7 +105,7 @@ upstream's words, under GATS's own codes. Reporter, partner and HS6 codes stay G
 source's codes (sdk-core ADR-0028). Before the call they check the arguments, the two country
 codes for membership only, since the UN data keeps codes the countries list marks
 discontinued in 1987 (``DA``, Denmark) for 2019, and fetch the flow's UN Trade release
-list, which the client keeps for a day (``_client.UN_RELEASE_DATES_TTL``), the feed being
+list, which the client keeps for a day (``_client.UN_TRADE_TTL``), the feed being
 frozen. An ISO or GENC code that several listed codes share (``"AUS"``: ``A2``, ``AS``),
 given as a country code, is refused after that list is read, naming first the codes it
 holds as reporters (``AS``), since the recorded lists follow no rule on the codes
@@ -376,15 +376,15 @@ COMMODITIES_NOTE = (
 
 MCP_CAPS: Mapping[str, ResultCap] = {
     "get_census_export_series": ResultCap(note=SERIES_NOTE, keep="last"),
-    "get_census_exports": ResultCap(note=HS10_NOTE),
+    "get_census_exports": ResultCap(note=HS10_NOTE, paged=True),
     "get_census_import_series": ResultCap(note=SERIES_NOTE, keep="last"),
-    "get_census_imports": ResultCap(note=HS10_NOTE),
+    "get_census_imports": ResultCap(note=HS10_NOTE, paged=True),
     "get_census_reexport_series": ResultCap(note=SERIES_NOTE, keep="last"),
-    "get_census_reexports": ResultCap(note=HS10_NOTE),
+    "get_census_reexports": ResultCap(note=HS10_NOTE, paged=True),
     "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE, paged=True),
-    "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
-    "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE),
-    "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE),
+    "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE, paged=True),
+    "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE, paged=True),
+    "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE, paged=True),
     "get_un_exports": ResultCap(note=UN_DATA_NOTE),
     "get_un_imports": ResultCap(note=UN_DATA_NOTE),
     "get_un_reexports": ResultCap(note=UN_DATA_NOTE),
@@ -400,12 +400,17 @@ own: a tool with a filter names it (§8). One partner-month is one record per HS
 777 records and about 154 KB of JSON for exports to China in August 2026, 3,294 records
 and about 1.1 MB for imports from China; ``hs10_code`` narrows it to a chapter, a heading
 or one product. By customs district it is one record per district and code, 1,697
-records for exports to China, so those notes name ``customs_district_id`` as well.
+records for exports to China, so those notes name ``customs_district_id`` as well. The six
+take a paged cap: the client's cache keeps the month for five minutes and the release list
+for an hour, so ``offset`` answers the next rows without a request (sdk-core ADR-0047,
+ADR-0061, decision 9), and core's note ends with the ``offset`` to continue with.
 The three Census series tools keep the default bounds with a note of their own,
 ``SERIES_NOTE``, naming ``hs10_code`` and a shorter range as the ways to narrow: a series
-is one record per HS10 code and month, in month order, so the rows shown are the oldest
-months' (197 records for exports to Iceland over July and August 2026, all of them within
-the bounds; 777 for exports to China in August 2026 alone, which are cut).
+is one record per HS10 code and month, in month order, and the cap keeps the newest rows
+(197 records for exports to Iceland over July and August 2026, all of them within the
+bounds; 777 for exports to China in August 2026 alone, which are cut). A series stays
+unpaged: its months together can pass the cache's bytes, so a second run could send a
+request per month again.
 ``get_census_release_dates`` keeps the default bounds with a note of its own,
 ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive, 202608
 back to 201001 as recorded, 16 years and 8 months; the note names its one filter,
@@ -1519,7 +1524,7 @@ def _un_check(
 async def _un_releases(product_type: ProductType) -> Answer[list[UNTradeDataReleaseInfo]]:
     """The UN Trade release list of ``product_type`` and when it was retrieved, as ``Answer``.
 
-    One request, or none while the cache holds the list (``_client.UN_RELEASE_DATES_TTL``,
+    One request, or none while the cache holds the list (``_client.UN_TRADE_TTL``,
     a day); the time is the cache's stored time on a hit, else the time the list arrived.
     """
     if product_type is ProductType.X:

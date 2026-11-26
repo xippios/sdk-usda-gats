@@ -31,10 +31,15 @@ successful empty result. ``hs10_code`` keeps the records whose code starts with 
 ``customs_district_id`` the records of one district, after the one data call; nothing
 else is selected, ordered or changed.
 
-Release metadata. ``meta.vintage`` of a data task is ``releaseTimeStamp`` of the
-month's record in its release list, as upstream states it (``"2026-10-06T08:00:00"`` for
-2026-08): upstream's identifier of the release that last revised the month's figures
-(conventions §4), set for an empty result too. Upstream says "Census reports data on a
+Release metadata. ``meta.vintage`` of ``get_census_exports`` and ``get_census_imports`` is
+``releaseTimeStamp`` of the month's record in its release list, as upstream states it
+(``"2026-10-06T08:00:00"`` for 2026-08): upstream's identifier of the release that last
+revised the month's figures (conventions §4), set for an empty result too. The re-exports
+task and the three customs-district tasks leave ``vintage`` and ``published_at`` empty: the
+list they read is another flow's, the Census exports' or imports', which states the release
+of that flow and none of the data they answer (sdk-core ADR-0060, decisions 2 and 8). They
+still check the month against it, assuming that it holds for their data, and a refusal names
+the list read and that assumption. Upstream says "Census reports data on a
 monthly basis with corrections applied once a year", and the list records only each
 month's latest release: the annual revision re-released 2023-01 to 2025-12 at
 ``2026-06-24T08:00:00``. The model keeps the time naive, and ``isoformat()`` gives back
@@ -75,12 +80,14 @@ trimmed. Then the months are fetched oldest first, one request after the other a
 client's pace (``_client.RATE_LIMIT``, one per second, and the quota policy on top), never
 concurrently, by core's ``fetch_periods``, and returned as one list in month order: every
 record carries its month in ``date``, so nothing is grouped or summed, and a month that
-answers ``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` is
-the newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
-recent of the releases that last revised them, which across the annual revision can be an
-earlier month's than the end month's; ``get_census_release_dates`` gives each month's own.
-``meta.published_at`` is that newest time, naive, with ``meta.published_at_naive`` set.
-``meta.request`` carries the arguments, ``hs10_code`` when given.
+answers ``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` of
+the exports and the imports series is the newest ``releaseTimeStamp`` among the range's
+months, as upstream states it: the most recent of the releases that last revised them,
+which across the annual revision can be an earlier month's than the end month's;
+``get_census_release_dates`` gives each month's own. ``meta.published_at`` is that newest
+time, naive, with ``meta.published_at_naive`` set. The re-exports series leaves both empty,
+as the re-exports month task does. ``meta.request`` carries the arguments, ``hs10_code``
+when given.
 
 The three UN Trade data tasks, ``get_un_exports``, ``get_un_imports`` and
 ``get_un_reexports``, answer one reporter and one statistical year across every partner
@@ -106,13 +113,16 @@ on the Census side, the re-exports task check the exports list
 (``GATSData_GetUNTradeExportDataReleaseInfo``): upstream publishes no UN Trade re-export
 release list. An empty list for a listed reporter-year is a successful empty result
 (Iceland's 2019 re-exports). ``partner_country_code``, named after the field it reads, and
-``hs6_code`` select records after the one data call. ``meta.vintage`` is the
-reporter-year's ``releaseTimeStamp`` from that list as upstream states it
+``hs6_code`` select records after the one data call. ``meta.vintage`` of the exports and the
+imports task is the reporter-year's ``releaseTimeStamp`` from that list as upstream states it
 (``"2020-06-03T05:50:46"`` for Iceland's 2019 exports) and ``meta.published_at`` its parsed
-time, naive, with ``meta.published_at_naive`` set, as for the Census tasks; the year is in
-``meta.request`` and on every record. As recorded on 2026-10-26 the UN Trade feed is frozen
-(conventions §4): both release lists end with statistical year 2019, and their newest
-release time is 2021-01-18, the last release the README's status table names.
+time, naive, with ``meta.published_at_naive`` set, as for the Census tasks; the re-exports
+task leaves both empty, the exports list stating no release of re-exports (sdk-core
+ADR-0060, decisions 2 and 8), and a refusal names the list read and the assumption that it
+holds for re-exports. The year is in ``meta.request`` and on every record. As recorded on
+2026-10-26 the UN Trade feed is frozen (conventions §4): both release lists end with
+statistical year 2019, and their newest release time is 2021-01-18, the last release the
+README's status table names.
 ``get_un_release_dates`` returns either list, whole or filtered by reporter or by
 ``statistical_year``, named after the field it reads, with ``retrieved_at`` from the cache
 as for the Census list.
@@ -498,7 +508,8 @@ def _release_of(
         "hour; a month released since then is refused until it is fetched again."
     )
     own = (
-        f" GATS publishes no release list for {asked}: the package checks the {flow} list."
+        f" GATS publishes no release list for {asked}: the package read the {flow} list and "
+        f"assumes that it holds for {asked}."
         if asked != flow
         else ""
     )
@@ -571,7 +582,7 @@ def _in_district[R: _Districted](records: list[R], customs_district_id: int | No
 
 def _data_meta(
     endpoint: str,
-    release: DataReleaseInfo,
+    release: DataReleaseInfo | None,
     retrieved_at: datetime,
     partner_code: str,
     year: int,
@@ -579,24 +590,28 @@ def _data_meta(
     hs10_code: str | None,
     **filters: int | None,
 ) -> ResultMeta:
-    """``ResultMeta`` of a Census data task: ``vintage`` the month's release time.
+    """``ResultMeta`` of a Census data task: ``vintage`` the month's release time, if any.
 
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it: the
     model keeps the time naive, and ``isoformat()`` gives back upstream's text,
     ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` is that time, naive as FAS
-    prints it, with ``published_at_naive`` set (sdk-core ADR-0041, decision 2). ``filters`` are the
-    task's other filters, e.g. ``customs_district_id``, recorded in ``meta.request`` after
-    ``hs10_code``; a filter left ``None`` is left out. ``retrieved_at`` is the oldest of
-    the call's two reads, the release list's and the month's, as the client gives each
-    (conventions §4).
+    prints it, with ``published_at_naive`` set (sdk-core ADR-0041, decision 2). ``release``
+    is ``None`` for a task whose list is another flow's, the re-exports and the three
+    customs-district tasks: the list states the release of the Census exports or imports,
+    not of the data answered, so ``vintage`` and ``published_at`` stay empty (sdk-core
+    ADR-0060, decisions 2 and 8). ``filters`` are the task's other filters, e.g.
+    ``customs_district_id``, recorded in ``meta.request`` after ``hs10_code``; a filter left
+    ``None`` is left out. ``retrieved_at`` is the oldest of the call's two reads, the release
+    list's and the month's, as the client gives each (conventions §4).
     """
+    published_at = None if release is None else release.release_time_stamp
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
-        published_at=release.release_time_stamp,
-        published_at_naive=True,
-        vintage=release.release_time_stamp.isoformat(),
+        published_at=published_at,
+        published_at_naive=published_at is not None,
+        vintage=None if published_at is None else published_at.isoformat(),
         request={
             "partner_code": partner_code,
             "year": year,
@@ -718,10 +733,10 @@ async def get_census_reexports_async(
     re-exported that month, the fields of an export record. At most 2 requests, 8 attempts with
     retries: the exports release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the
     client for an hour), then the month (``GATSData_GetCensusReExports``). Upstream publishes no
-    re-export release list, so the package checks the exports list, by assumption: a month it
-    lacks raises ``NotFoundError``, and ``meta.vintage`` is its release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release; ``meta.published_at`` is
-    that time, naive. The arguments are checked before either request; a listed partner without
+    re-export release list, so the package checks the exports list, assuming that it holds for
+    re-exports: a month it lacks raises ``NotFoundError``. ``meta.vintage`` and
+    ``meta.published_at`` stay empty, since that list states the exports' release, not the
+    re-exports'. The arguments are checked before either request; a listed partner without
     re-exports gives an empty list.
 
     Args:
@@ -742,12 +757,12 @@ async def get_census_reexports_async(
             (the default) keeps every product. Applied after the one data request.
     """
     _check(partner_code, year, month, hs10_code)
-    release, listed_at = await _release(ProductType.X, year, month, "re-exports")
+    _, listed_at = await _release(ProductType.X, year, month, "re-exports")
     answer = await api.get_census_re_exports(partner_code, year, month)
     records = answer.payload
     meta = _data_meta(
         "GATSData_GetCensusReExports",
-        release,
+        None,
         min(listed_at, answer.retrieved_at),
         partner_code,
         year,
@@ -774,10 +789,10 @@ async def get_customs_district_exports_async(
     attempts with retries: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour), then the
     month (``GATSData_GetCustomsDistrictsExports``). The arguments are checked before either. A
-    month not released yet raises ``NotFoundError``; a listed partner without exports gives an
-    empty list. ``meta.vintage`` is the exports list's release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
-    (``meta.published_at_naive``).
+    month the list lacks raises ``NotFoundError``, assuming that the list holds for the district
+    records; a listed partner without exports gives an empty list. ``meta.vintage`` and
+    ``meta.published_at`` stay empty, since that list states the Census exports' release, not
+    the district records'.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
@@ -797,12 +812,12 @@ async def get_customs_district_exports_async(
             lacks is refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release, listed_at = await _release(ProductType.X, year, month, "customs-district exports")
+    _, listed_at = await _release(ProductType.X, year, month, "customs-district exports")
     answer = await api.get_customs_districts_exports(partner_code, year, month)
     records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsExports",
-        release,
+        None,
         min(listed_at, answer.retrieved_at),
         partner_code,
         year,
@@ -830,10 +845,10 @@ async def get_customs_district_imports_async(
     fields among them. At most 2 requests, 8 attempts with retries: the imports release list
     (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an hour), then the
     month (``GATSData_GetCustomsDistrictsImports``). The arguments are checked before either. A
-    month not released yet raises ``NotFoundError``; a listed partner without imports gives an
-    empty list. ``meta.vintage`` is the imports list's release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
-    (``meta.published_at_naive``).
+    month the list lacks raises ``NotFoundError``, assuming that the list holds for the district
+    records; a listed partner without imports gives an empty list. ``meta.vintage`` and
+    ``meta.published_at`` stay empty, since that list states the Census imports' release, not
+    the district records'.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
@@ -853,12 +868,12 @@ async def get_customs_district_imports_async(
             refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release, listed_at = await _release(ProductType.M, year, month, "customs-district imports")
+    _, listed_at = await _release(ProductType.M, year, month, "customs-district imports")
     answer = await api.get_customs_districts_imports(partner_code, year, month)
     records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsImports",
-        release,
+        None,
         min(listed_at, answer.retrieved_at),
         partner_code,
         year,
@@ -887,11 +902,10 @@ async def get_customs_district_reexports_async(
     requests, 8 attempts with retries: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour), then the
     month (``GATSData_GetCustomsDistrictsReExports``). Upstream publishes no re-export release
-    list, so the package checks the exports list, by assumption: a month it lacks raises
-    ``NotFoundError``, and ``meta.vintage`` is its release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release; ``meta.published_at`` is
-    that time, naive. The arguments are checked before either request; a listed partner without
-    re-exports gives an empty list.
+    list, so the package checks the exports list, assuming that it holds for these records: a
+    month it lacks raises ``NotFoundError``. ``meta.vintage`` and ``meta.published_at`` stay
+    empty, since that list states the exports' release, not the re-exports'. The arguments are
+    checked before either request; a listed partner without re-exports gives an empty list.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
@@ -911,12 +925,12 @@ async def get_customs_district_reexports_async(
             refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release, listed_at = await _release(ProductType.X, year, month, "customs-district re-exports")
+    _, listed_at = await _release(ProductType.X, year, month, "customs-district re-exports")
     answer = await api.get_customs_districts_re_exports(partner_code, year, month)
     records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsReExports",
-        release,
+        None,
         min(listed_at, answer.retrieved_at),
         partner_code,
         year,
@@ -1028,8 +1042,9 @@ async def _series[R: _Coded](
     Returns:
         The records in month order and their ``ResultMeta``: ``vintage`` the newest
         ``releaseTimeStamp`` among the range's months as upstream states it,
-        ``published_at`` that time, naive, with ``published_at_naive`` set, ``request``
-        the arguments, ``hs10_code`` when given. The task builds its ``Result`` from the
+        ``published_at`` that time, naive, with ``published_at_naive`` set, both empty when
+        ``data`` names another flow than the list's, ``request`` the arguments,
+        ``hs10_code`` when given. The task builds its ``Result`` from the
         two, since pydantic cannot parametrise ``Result`` with a type variable bound to a
         protocol.
     """
@@ -1048,14 +1063,16 @@ async def _series[R: _Coded](
     )
     records = [record for _, answer in answers for record in _matching(answer.payload, hs10_code)]
     retrieved_at = min([fetched, *(answer.retrieved_at for _, answer in answers)])
-    newest = max(release.release_time_stamp for release in found)
+    # Another flow's list states no release of the data: the re-exports' series leaves both
+    # empty (sdk-core ADR-0060, decisions 2 and 8).
+    newest = None if data is not None else max(release.release_time_stamp for release in found)
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
         published_at=newest,
-        published_at_naive=True,
-        vintage=newest.isoformat(),
+        published_at_naive=newest is not None,
+        vintage=None if newest is None else newest.isoformat(),
         request={
             "partner_code": partner_code,
             "start_year": start_year,
@@ -1205,11 +1222,11 @@ async def get_census_reexport_series_async(
     ``date``. At most 61 requests, 244 attempts with retries, in Python and over HTTP, and 25 in
     100 on the MCP server at its default ceiling of 24 months: the exports release list once, or
     none while the client keeps it, then one ``GATSData_GetCensusReExports`` request per month,
-    one after another. The package checks the exports list, by assumption, since upstream
+    one after another. The package checks the exports list, assuming it holds, since upstream
     publishes none for re-exports. Everything is checked before the first request, and a month
     the list lacks refuses the series with ``NotFoundError``; a failure after the first month
-    names the months answered, and none is returned. ``meta.vintage`` is the newest exports
-    release time among the months, ``meta.published_at`` that time, naive.
+    names the months answered, and none is returned. ``meta.vintage`` and
+    ``meta.published_at`` stay empty: the list states no release of re-exports.
 
     Args:
         partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
@@ -1257,12 +1274,12 @@ async def get_census_release_dates_async(
     716 months as recorded: ``statistical_year_month`` and ``release_time_stamp``, the time of
     the month's latest release, as upstream states it, without a time zone
     (``2026-10-06T08:00:00`` for 2026-08). A month the annual revision corrected carries the
-    revision's time. Compare it with a stored one to fetch only the months that changed; the six
-    Census data tasks give their month's time as ``meta.vintage``, the three series tasks the
-    newest among their months, the re-export forms the exports list's. One request, kept by the
-    client for an hour, the filter applied after it; ``meta.retrieved_at`` is when it was
-    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
-    release.
+    revision's time. Compare it with a stored one to fetch only the months that changed; the
+    exports and imports tasks give their month's time as ``meta.vintage``, their series the
+    newest among their months, and the re-export and customs-district forms none. One request,
+    kept by the client for an hour, the filter applied after it; ``meta.retrieved_at`` is when
+    it was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no
+    single release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
@@ -1483,7 +1500,8 @@ def _un_release_of(
         "day; a reporter-year released since then is refused until it is fetched again."
     )
     own = (
-        f" GATS publishes no UN Trade release list for {asked}: the package checks the {flow} list."
+        f" GATS publishes no UN Trade release list for {asked}: the package read the {flow} "
+        f"list and assumes that it holds for {asked}."
         if asked != flow
         else ""
     )
@@ -1541,7 +1559,7 @@ def _un_selected(
 
 def _un_meta(
     endpoint: str,
-    release: UNTradeDataReleaseInfo,
+    release: UNTradeDataReleaseInfo | None,
     retrieved_at: datetime,
     reporter_code: str,
     year: int,
@@ -1553,21 +1571,25 @@ def _un_meta(
     ``vintage`` is the release record's ``releaseTimeStamp`` as upstream states it, the
     naive time written back with ``isoformat()``: ``"2020-06-03T05:50:46"`` for Iceland's
     2019 exports. ``published_at`` is that time, naive as FAS prints it, with
-    ``published_at_naive`` set (sdk-core ADR-0041, decision 2). A filter left ``None`` is
-    left out of ``request``. ``retrieved_at`` is the oldest of the call's two reads, the
-    release list's and the year's, as the client gives each (conventions §4). A full
-    ``hs6_code`` is named by the packaged HS6 list, so an answer without rows names it too;
-    a prefix names nothing of its own, and the rows' codes name themselves (``NamedBy``).
+    ``published_at_naive`` set (sdk-core ADR-0041, decision 2). ``release`` is ``None`` for
+    the re-exports, whose list is the exports': it states the exports' release, not the
+    re-exports', so ``vintage`` and ``published_at`` stay empty (sdk-core ADR-0060, decisions
+    2 and 8). A filter left ``None`` is left out of ``request``. ``retrieved_at`` is the
+    oldest of the call's two reads, the release list's and the year's, as the client gives
+    each (conventions §4). A full ``hs6_code`` is named by the packaged HS6 list, so an
+    answer without rows names it too; a prefix names nothing of its own, and the rows' codes
+    name themselves (``NamedBy``).
     """
     named = HS6_CODES.name_of(hs6_code) if hs6_code is not None else None
+    published_at = None if release is None else release.release_time_stamp
     return ResultMeta(
         names={} if named is None else {"hs6_code": {hs6_code: named}},
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
-        published_at=release.release_time_stamp,
-        published_at_naive=True,
-        vintage=release.release_time_stamp.isoformat(),
+        published_at=published_at,
+        published_at_naive=published_at is not None,
+        vintage=None if published_at is None else published_at.isoformat(),
         request={
             "reporter_code": reporter_code,
             "year": year,
@@ -1713,10 +1735,10 @@ async def get_un_reexports_async(
     2021-01-18. At most 2 requests, 8 attempts with retries: the exports release list
     (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day), then the year
     (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export release list, so the
-    package checks the exports list, by assumption: a reporter-year it lacks raises
-    ``NotFoundError``, and ``meta.vintage`` is its release time for the reporter-year
-    (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release; ``meta.published_at`` is
-    that time, naive. A listed reporter-year without re-exports gives an empty list.
+    package checks the exports list, assuming that it holds for re-exports: a reporter-year it
+    lacks raises ``NotFoundError``. ``meta.vintage`` and ``meta.published_at`` stay empty,
+    since that list states the exports' release, not the re-exports'. A listed reporter-year
+    without re-exports gives an empty list.
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
@@ -1740,11 +1762,11 @@ async def get_un_reexports_async(
         ProductType.X,
         lambda reporters: _un_check(reporter_code, year, partner_country_code, hs6_code, reporters),
     )
-    release, listed_at = await _un_release(ProductType.X, reporter_code, year, "re-exports")
+    _, listed_at = await _un_release(ProductType.X, reporter_code, year, "re-exports")
     answer = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
         "GATSData_GetUNTradeReExports",
-        release,
+        None,
         min(listed_at, answer.retrieved_at),
         reporter_code,
         year,
@@ -1780,8 +1802,9 @@ async def get_un_release_dates_async(
     ``release_time_stamp``, the time of the reporter-year's latest release as upstream states
     it, without a time zone (``2020-06-03T05:50:46`` for Iceland's 2019 exports). The UN Trade
     feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18,
-    as recorded on 2026-10-26. The three UN data tasks check a reporter-year against this list
-    and give its time as ``meta.vintage``, the re-exports task the exports list's. One request,
+    as recorded on 2026-10-26. The three UN data tasks check a reporter-year against this list,
+    and the exports and imports tasks give its time as ``meta.vintage``; the re-exports task
+    gives none. One request,
     kept by the client for a day, the filters applied after it; ``meta.retrieved_at`` is when it
     was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
     release.

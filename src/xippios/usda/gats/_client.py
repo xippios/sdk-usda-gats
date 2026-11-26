@@ -19,7 +19,7 @@ reset header.
 
 Core's response cache keeps every answer, by the maintainer's decision of 2026-11-26, in
 one ``MemoryCache`` with a lifetime per path prefix, ``LIFETIMES`` (sdk-core ADR-0040,
-decision 3; ADR-0061, decision 9): core's default of 300 seconds for every path, so that a
+decision 3; ADR-0061, decisions 9 and 11): core's default of 300 seconds for every path, so that a
 narrower filter on an answer already read and the next rows of a cut tool send no request;
 the two Census release-date lists for an hour, since every Census data task fetches its
 flow's list before the data and would otherwise cost two requests against the hourly quota;
@@ -124,8 +124,8 @@ DEFAULT_TTL = 300.0
 
 A Census month or a customs-district month, the packaged lists' paths that the reference
 refresh reads and every path that no longer prefix names. Within it, a narrower filter on a month
-already read and the next rows of a cut tool are the cache's (sdk-core ADR-0061, decision
-9), and a month that Census revises in those minutes keeps its earlier figures until the
+already read and the next rows of a cut tool are the cache's (sdk-core ADR-0061, decisions
+9 and 11), and a month that Census revises in those minutes keeps its earlier figures until the
 entry expires.
 """
 

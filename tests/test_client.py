@@ -222,7 +222,7 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
 def test_the_client_caches_every_answer_with_a_lifetime_per_prefix() -> None:
     """Core's one cache with a lifetime per path prefix keeps every answer, by the
     maintainer's decision of 2026-11-26 (sdk-core ADR-0040, decision 3; ADR-0061, decision
-    9): core's default of 300 seconds for every path, the two Census release-date paths for
+    11): core's default of 300 seconds for every path, the two Census release-date paths for
     an hour, every UN Trade path, its data and its two release lists, for a day, the feed
     being frozen, and the commodities path for a day. A body of up to 16 MiB is stored,
     twice core's default."""

@@ -1208,7 +1208,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     note that names ``hs10_code``, the one filter the tool has (sdk-core ADR-0038), and the
     ``offset`` to continue with; the chapter filter returns all 26 rows of chapter 02,
     without a note, from the client's cache, which keeps the month (sdk-core ADR-0061,
-    decision 9)."""
+    decision 11)."""
     replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "CH_2026_8")
     arguments: dict[str, object] = {"partner_code": "CH", "year": 2026, "month": 8}
@@ -1276,7 +1276,7 @@ async def test_a_cut_month_is_read_whole_by_its_offset(replay_fixture: ReplayFix
 def test_a_narrower_filter_on_a_month_already_read_sends_no_request(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Every answer enters the client's cache (sdk-core ADR-0061, decision 9): the month
+    """Every answer enters the client's cache (sdk-core ADR-0061, decision 11): the month
     read whole, the chapter filter answers from the cache, its time the stored one."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "CH_2026_8")

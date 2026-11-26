@@ -2717,3 +2717,20 @@ def test_a_country_names_its_region_and_its_parent(respx_mock: respx.MockRouter)
     districts = tasks.list_customs_districts()
     assert "customs_district_region_code" not in districts.meta.names
     assert not respx_mock.calls
+
+
+@pytest.mark.parametrize(
+    ("code", "name"), [("CN", "Comoros"), ("GB", "Gabon"), ("UK", "United Kingdom")]
+)
+def test_an_answer_names_the_country_its_code_stands_for(
+    replay_fixture: ReplayFixture, respx_mock: respx.MockRouter, code: str, name: str
+) -> None:
+    """GATS's ``CN`` is Comoros and ``GB`` Gabon, not China and the United Kingdom, which are
+    ``CH`` and ``UK``: the answer names the country the code stands for, so a caller sees it.
+    NOT RECORDED for these partners: each month is served the recorded empty answer of a
+    listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS
+    gives alike for any listed partner (conventions §10, kind 3)."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    url = f"{BASE_URL}/api/gats/censusExports/partnerCode/{code}/year/2026/month/8"
+    _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", url)
+    assert tasks.get_census_exports(code, 2026, 8).meta.names == {"partner_code": {code: name}}

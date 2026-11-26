@@ -9,12 +9,13 @@ one with core's ``UnknownCode``, naming the closest known codes, or example code
 none is close (``params``). The same check covers the customs district a task keeps after
 the call, the UN Trade ``reporter_code``, which GATS answers with ``[]`` when unknown
 (``get_un_trade_exports/unknown_reporter.json``), and the UN Trade filters
-``partner_country_code`` and a six-digit ``hs6_code``. The reasons below go into
+``partner_country_code`` and a six-digit ``hs6_code``, and the ``region_code`` that
+``list_countries`` filters by. The reasons below go into
 ``UnknownCode``'s message as its ``reason=``, before core's closing sentence, that the
 packaged list is out of date if upstream added the code since; the customs-district reason
 is written inline in ``params.validate_customs_district_id``. A refusal that points to a
 list task names its MCP tool too, since an agent calls the tool (conventions §8): the
-three names below.
+four names below.
 """
 
 __all__ = [
@@ -23,6 +24,8 @@ __all__ = [
     "HS6_REASON",
     "HS6_TASK",
     "PARTNER_REASON",
+    "REGIONS_TASK",
+    "REGION_REASON",
     "REPORTER_REASON",
     "UN_PARTNER_REASON",
 ]
@@ -35,6 +38,18 @@ DISTRICTS_TASK = "list_customs_districts (over MCP, the tool usda_gats_list_cust
 
 HS6_TASK = "list_hs6_commodities (over MCP, the tool usda_gats_list_hs6_commodities)"
 """The HS6 list task as a refusal names it, with its MCP tool."""
+
+REGIONS_TASK = "list_regions (over MCP, the tool usda_gats_list_regions)"
+"""The regions list task as a refusal names it, with its MCP tool."""
+
+REGION_REASON = (
+    "Every region of the packaged regions list holds a country of the packaged countries "
+    "list, so a region it lacks would keep no country, and the package refuses it."
+)
+"""Why ``list_countries`` refuses a ``region_code`` the packaged regions list lacks: each of
+the 15 packaged regions holds at least one of the 322 packaged countries, so a region the
+list lacks is one no country record carries, and the filter would answer an empty list
+(https://github.com/xippios/sdk-usda-gats/issues/31)."""
 
 PARTNER_REASON = (
     "GATS answers an unknown partner code with an empty result, the same as a partner "

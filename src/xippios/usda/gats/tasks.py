@@ -163,7 +163,11 @@ is when the list was fetched, from the cache's stored time on a hit, and ``vinta
 stays empty. The lists' filters (``search``, ``region_code``, ``hs6_code``, ``hs10_code``,
 ``product_type``) only select records, which keep upstream's order and values;
 ``meta.request`` carries those given and leaves out one not given. ``meta.total`` stays
-unset: upstream reports no count.
+unset: upstream reports no count. A filter that no record can match is refused rather than
+answered with an empty list (https://github.com/xippios/sdk-usda-gats/issues/31): a
+``region_code`` the packaged regions list lacks, before any request and naming the closest,
+since each of the 15 packaged regions holds a packaged country, and a ``product_type`` that
+no record of the HS10 list carries, once the list is read, naming the four it carries.
 """
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping
@@ -189,7 +193,7 @@ from xippios.core import (
 
 from xippios.usda.gats import api
 from xippios.usda.gats._client import SOURCE
-from xippios.usda.gats.errors import UN_PARTNER_REASON
+from xippios.usda.gats.errors import REGION_REASON, REGIONS_TASK, UN_PARTNER_REASON
 from xippios.usda.gats.models import (
     CensusExport,
     CensusImport,
@@ -211,6 +215,7 @@ from xippios.usda.gats.params import (
     DISTRICTS,
     HS6_CODES,
     PACKAGE,
+    REGIONS,
     shared_three_letter_code,
     validate_country_code,
     validate_customs_district_id,
@@ -1865,11 +1870,12 @@ async def list_countries_async(
     (2026-10-28); ``meta.vintage`` stays empty.
 
     Args:
-        region_code: Keep the countries of this GATS region, spelled exactly as
-            ``list_regions`` spells it, e.g. ``"R05"`` (North America: CA, GL, MX, SB,
-            US), ``"R40"`` (East Asia, 9 codes), ``"R55"`` (Sub-Saharan Africa, 67). A
-            code no country carries yields an empty list. Omit (``None``) for every
-            region.
+        region_code: Keep the countries whose ``regionCode`` is this GATS region, spelled
+            exactly as ``list_regions`` spells it, e.g. ``"R05"`` (North America: CA, GL,
+            MX, SB, US), ``"R40"`` (East Asia, 9 codes), ``"R55"`` (Sub-Saharan Africa,
+            67). Every listed region holds a country, so a code the packaged regions list
+            lacks is refused, naming the closest (``"r05"`` names ``"R05"``). Omit
+            (``None``) for every region.
         search: Keep the countries whose code, name, ISO3 code or GENC code contains
             this text, ignoring case, e.g. ``"iceland"`` (IC Iceland), ``"united"`` (AE,
             U0, UK, US), ``"CHN"`` (CH China, by its ISO3 and GENC code), ``"che"`` (SE
@@ -1878,6 +1884,13 @@ async def list_countries_async(
             country.
     """
     _search(search)
+    if region_code is not None:
+        REGIONS.check(
+            "region_code",
+            region_code,
+            otherwise=f"{REGIONS_TASK} lists them.",
+            reason=REGION_REASON,
+        )
     packaged = PackagedList.load(PACKAGE, "countries")
     selected = [
         c
@@ -1967,6 +1980,37 @@ async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
     return Result(data=districts, meta=packaged.meta(SOURCE))
 
 
+def _carried(product_type: str, commodities: list[Commodity]) -> None:
+    """Refuse ``product_type`` when no record of the HS10 list read carries it (conventions §5).
+
+    Upstream documents none of the list's product types, so the list itself says which ones
+    a record carries; ``list_commodities`` compares them exactly, as upstream writes them, so
+    a type none carries would keep no record, ``"x"`` among them
+    (https://github.com/xippios/sdk-usda-gats/issues/31). The refusal comes after the list was
+    read, which it says, and names every type it carries, in the order the list first holds
+    them.
+
+    Args:
+        product_type: The filter as given, e.g. ``"x"``.
+        commodities: The records of the list that the call read.
+
+    Raises:
+        InvalidRequestError: No record carries ``product_type``.
+    """
+    carried = list(dict.fromkeys(c.product_type for c in commodities))
+    if not carried or product_type in carried:  # an empty list keeps none of any type
+        return
+    named = [repr(code) for code in carried]
+    types = ", ".join(named[:-1]) + f" and {named[-1]}" if len(named) > 1 else "".join(named)
+    raise InvalidRequestError(
+        f"product_type {product_type!r} is carried by no record of GATS's HS10 list, so it "
+        "would keep none. The list (GATSData_GetCommodities) was read, and nothing else was "
+        f"sent. Its {len(commodities):,} records carry the product types {types}, in the order "
+        "the list first holds them, compared exactly as upstream writes them.",
+        source=SOURCE,
+    )
+
+
 async def list_commodities_async(
     *,
     search: str | None = None,
@@ -1994,17 +2038,26 @@ async def list_commodities_async(
             a full code such as ``"0103910000"`` or a prefix such as ``"0304"`` (fish
             fillets) or ``"02"`` (chapter 02). A padded ``"T"`` or ``"B"`` code matches
             a prefix of up to seven digits. Omit (``None``) for all.
-        product_type: Keep the records of this product type, exactly as upstream writes it:
-            ``"X"`` (exports), ``"M"`` (imports), ``"T"`` or ``"B"``. A code no record carries
-            yields an empty list. Omit (``None``) for all. As recorded on 2026-10-26: ``"X"``
-            5,919 records (export codes, as in the Census exports and re-exports records),
-            ``"M"`` 14,469 (import codes), ``"T"`` 2,704 and ``"B"`` 1,844.
+        product_type: Keep the records whose ``productType`` is this, exactly as upstream
+            writes it: ``"X"`` (exports), ``"M"`` (imports), ``"T"`` or ``"B"``. A type no
+            record carries is refused once the list is read, naming those it carries. Omit
+            (``None``) for all. As recorded on 2026-10-26: ``"X"`` 5,919 records (export
+            codes, as in the Census exports and re-exports records), ``"M"`` 14,469 (import
+            codes), ``"T"`` 2,704 and ``"B"`` 1,844.
     """
     _search(search)
     if hs10_code is not None:
         validate_hs10_code(hs10_code)
+    if product_type is not None and not isinstance(product_type, str):
+        raise InvalidRequestError(
+            "product_type must be text, a product type as the HS10 list writes it, such as "
+            f"'X' (exports) or 'M' (imports), got {product_type!r}. Nothing was sent.",
+            source=SOURCE,
+        )
     listed = await api.get_commodities()
     commodities, retrieved_at = listed.payload, listed.retrieved_at
+    if product_type is not None:
+        _carried(product_type, commodities)
     selected = [
         c
         for c in commodities

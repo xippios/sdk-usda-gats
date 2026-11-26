@@ -104,6 +104,39 @@ statistical year 2019, and their newest release time is 2021-01-18, the last rel
 README's status table names. ``get_un_release_dates`` returns either list, whole or filtered by
 reporter or year, with ``retrieved_at`` from the cache as for the Census list.
 
+The answers as recorded, the measures that the tools' descriptions leave to this place
+(2026-10-25 for the Census data, 2026-10-26 for the UN Trade data and the HS10 list).
+Census: exports to China in August 2026 are 777 records, imports from China 3,294,
+Iceland's re-exports 12, chapter 62 the largest with four. Upstream's documentation
+describes no field of a Census record: every field is as the recorded answers show it. By
+customs district, Iceland's exports are 107 records in 14 districts, 16 of them in district
+10 (NEW YORK, N.Y.), China's 1,697 in 31 districts; Iceland's imports 123 records in 21
+districts, 51 of them fish fillets (``hs10_code`` ``"0304"``) and 28 in district 10; its
+re-exports 13 records in 5 districts, 5 of them in district 10. A parent code answers for
+its children: for August 2026 ``"Y1"`` (Leeward-Windward Islands) held every product of
+``"AC"`` (Antigua and Barbuda) at no lower a value, and ``"AS"`` (Australia) the same
+records as ``"A2"`` apart from the code, while ``"01"`` and ``"18"`` of region ``R99`` gave
+an empty list. The series for Iceland over July and August 2026 are 197 exports records,
+105 and 92, 157 imports records, 83 and 74, of which 85 are fish (``hs10_code`` ``"03"``),
+and 31 re-exports records, 19 and 12, 7 of them in chapter 62. A series' vintage across
+the annual revision is an earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to
+2026-02, December's revised release, not February's. The Census exports list ran to
+``"202608"`` on 2026-10-25. UN Trade: Iceland's 2019 exports are 3,980 records, 646 HS6
+codes to 115 partners, 1,024 of them in chapter 03; Sao Tome and Principe's 2019 imports
+2,377 records, 1,026 HS6 codes and 58 partners, 957 of them with Portugal (``"PO"``);
+Macau's 2019 re-exports 421 records, every quantity 0, 27 of them to ``"AS"``; and Iceland,
+listed for 2019 exports, answers an empty list for its 2019 re-exports. A large reporter
+answers far more: Iceland's 2019 imports are 23,396 records, about 5.2 MB of JSON, India's
+2016 exports 75,919 records, about 17 MB. The UN data keeps codes the countries list marks
+discontinued in 1987, such as ``"AS"`` (Australia) and ``"NO"`` (Norway), for later years,
+never their same-name successors (``"A2"``, ``"N3"``). The UN Trade release lists hold
+3,796 exports records for 206 reporters and 3,832 imports records for 207, 32 reporters
+for 2019 in each; their newest release time is 2021-01-18 (the Netherlands' 2014), and no
+reporter-year has been released since; 32 reporter-years are listed only for exports, 68
+only for imports. The HS10 list holds 24,936 records; a code repeats across product types
+and with a later ``start_date`` (``"0207410000"`` under ``"M"`` is chicken cuts from
+``"198901"`` and ducks from ``"201201"``).
+
 The ``list_*`` tasks but one answer from the five lists packaged under ``reference/`` and
 make no upstream call, through core's ``PackagedList`` (sdk-core ADR-0041, decision 1):
 ``meta.endpoint`` is the operation the list was fetched from (``"GATSData_GetCountries"``),
@@ -559,36 +592,27 @@ async def get_census_exports_async(
 ) -> Result[list[CensusExport]]:
     """US exports to one partner in one month by HS10 product, as the US Census Bureau reported.
 
-    One record per HS10 code exported that month, as upstream sends it: ``value`` (the
-    snapshot names no currency), ``quantity1`` and ``quantity2`` with four unit-of-measure
-    ids (``list_units_of_measure``); 777 records for China in August 2026. Two requests:
-    the exports release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the
-    client for an hour) to check that the month is released, then the month
-    (``GATSData_GetCensusExports``). The arguments are checked before either: an unknown
-    partner code raises ``InvalidRequestError`` naming up to three close codes with their
-    names (``"CHN"`` leads to ``"CH"``), or pointing to ``list_countries`` when none is
-    close. A parent code, one that is another record's ``country_parent_code`` in
-    ``list_countries``, passes for every month: for August 2026 ``"Y1"``
-    (Leeward-Windward Islands) held every product of ``"AC"`` (Antigua and Barbuda) at no
-    lower a value, and ``"AS"`` (Australia) the same records as ``"A2"`` apart from the
-    code. A code GATS discontinued before the month that is no parent is refused, naming
-    the listed codes of the same name (``"D1"``, Denmark, after 198712, names ``"9U"``).
-    The two-digit codes of region ``R99`` (``"01"`` Caribbean,nes to ``"18"`` ASEAN) pass
-    too; ``"01"`` and ``"18"`` gave an empty list for August 2026. A month not released
-    yet, or before January 1967, raises ``NotFoundError`` naming the months released; a
-    listed partner without exports that month gives an empty list.
-    ``meta.vintage`` is the month's release time from that list, as upstream states it
-    (``"2026-10-06T08:00:00"`` for August 2026): the release that last revised the
-    figures, since Census applies corrections once a year. For up to an hour after a
-    release the cached list may still give the previous release's time, an accepted lag.
-    The month itself is in ``meta.request`` and in every record's ``date``
-    (``"202608"``). ``meta.published_at`` is that time, without a zone as FAS prints it,
-    and ``meta.published_at_naive`` says so.
+    One record per HS10 code exported that month, as upstream sends it: ``value`` (the snapshot
+    names no currency), ``quantity1`` and ``quantity2`` with four unit-of-measure ids
+    (``list_units_of_measure``). At most 2 requests, 8 attempts with retries: the exports
+    release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour),
+    then the month (``GATSData_GetCensusExports``). The arguments are checked before either. A
+    month not released yet, or before January 1967, raises ``NotFoundError`` naming the months
+    released; a listed partner without exports gives an empty list. ``meta.vintage`` is the
+    month's release time in that list, as upstream states it (``"2026-10-06T08:00:00"`` for
+    August 2026), the release that last revised the figures; ``meta.published_at`` is that time,
+    naive as FAS prints it (``meta.published_at_naive``).
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"CH"`` (China), ``"MX"`` (Mexico), ``"CA"`` (Canada),
-            ``"JA"`` (Japan).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"CH"`` (China), ``"MX"`` (Mexico), ``"CA"`` (Canada), ``"JA"`` (Japan).
+            An unknown code is refused naming up to three close codes with their names
+            (``"CHN"`` leads to ``"CH"``), or ``list_countries`` when none is close. A parent
+            code, another record's ``country_parent_code`` in ``list_countries`` (``"Y1"``,
+            ``"AS"``), and the two-digit codes of region ``R99`` (``"01"`` Caribbean,nes to
+            ``"18"`` ASEAN) pass for every month; a code GATS discontinued before the month that
+            is no parent is refused, naming the listed codes of the same name (``"D1"``,
+            Denmark, after 198712, names ``"9U"``).
         year: Calendar year, four digits, e.g. ``2026``; the data starts in 1967.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
@@ -617,35 +641,27 @@ async def get_census_imports_async(
 ) -> Result[list[CensusImport]]:
     """US imports from one partner in one month by HS10 product, as the US Census Bureau reported.
 
-    One record per HS10 code imported that month, as upstream sends it: every field of
-    an export record (``value``, ``quantity1``, ``quantity2``, four unit-of-measure ids)
-    and five more, ``consumption_quantity1``, ``consumption_quantity2``,
-    ``consumption_value``, ``consumption_cif_value`` and ``cif_value``; 3,294 records for
-    China in August 2026. Upstream's documentation describes no field of either record:
-    every field is as the recorded answers show it. Two requests: the imports release
-    list (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an hour) to
-    check that the month is released, then the month (``GATSData_GetCensusImport``). The
-    arguments are checked before either: an unknown partner code raises
-    ``InvalidRequestError`` naming up to three close codes with their names (``"CHN"``
-    leads to ``"CH"``), or pointing to ``list_countries`` when none is close; a code GATS
-    discontinued before the month that is no parent (``"D1"``, Denmark, after 198712) is
-    refused naming the listed codes of the same name (``"9U"``). A parent code, another
-    record's ``country_parent_code`` in ``list_countries`` (``"Y1"``, ``"AS"``), and the
-    two-digit codes of region ``R99`` (``"01"``, ``"18"``) pass for every month, an empty
-    list meaning no data. A month not released yet, or before January 1967, raises
-    ``NotFoundError`` naming the months released; a listed partner without imports that
-    month gives an empty list. ``meta.vintage`` is the month's release time from that list,
-    as upstream states it (``"2026-10-06T08:00:00"`` for August 2026): the release that last
-    revised the figures, since Census applies corrections once a year. For up to an hour
-    after a release the cached list may still give the previous release's time, an accepted
-    lag. The month itself is in ``meta.request`` and in every record's ``date``
-    (``"202608"``). ``meta.published_at`` is that time, without a zone as FAS prints it, and
-    ``meta.published_at_naive`` says so.
+    One record per HS10 code imported that month, as upstream sends it: every field of an export
+    record and five more, ``consumption_quantity1``, ``consumption_quantity2``,
+    ``consumption_value``, ``consumption_cif_value`` and ``cif_value``. At most 2 requests, 8
+    attempts with retries: the imports release list
+    (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an hour), then the
+    month (``GATSData_GetCensusImport``). The arguments are checked before either. A month not
+    released yet, or before January 1967, raises ``NotFoundError`` naming the months released; a
+    listed partner without imports gives an empty list. ``meta.vintage`` is the month's release
+    time in that list, as upstream states it (``"2026-10-06T08:00:00"`` for August 2026);
+    ``meta.published_at`` is that time, naive (``meta.published_at_naive``).
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"CH"`` (China), ``"MX"`` (Mexico), ``"CA"`` (Canada),
-            ``"JA"`` (Japan).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"CH"`` (China), ``"MX"`` (Mexico), ``"CA"`` (Canada), ``"JA"`` (Japan).
+            An unknown code is refused naming up to three close codes with their names
+            (``"CHN"`` leads to ``"CH"``), or ``list_countries`` when none is close. A parent
+            code, another record's ``country_parent_code`` in ``list_countries`` (``"Y1"``,
+            ``"AS"``), and the two-digit codes of region ``R99`` (``"01"`` Caribbean,nes to
+            ``"18"`` ASEAN) pass for every month; a code GATS discontinued before the month that
+            is no parent is refused, naming the listed codes of the same name (``"D1"``,
+            Denmark, after 198712, names ``"9U"``).
         year: Calendar year, four digits, e.g. ``2026``; the data starts in 1967.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
@@ -674,30 +690,27 @@ async def get_census_reexports_async(
 ) -> Result[list[CensusExport]]:
     """US re-exports to one partner in one month by HS10 product, as the US Census Bureau reported.
 
-    Re-exports, in upstream's words, "are all imported commodities from few countries
-    into USA, that are ultimately exported out to other countries from USA". One record
-    per HS10 code re-exported that month, the same ten fields as an export record
-    (``value``, ``quantity1``, ``quantity2``, four unit-of-measure ids); 12 records for
-    Iceland (``"IC"``) in August 2026, chapter 62 the largest with four. Two requests:
-    the exports release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the
-    client for an hour), then the month (``GATSData_GetCensusReExports``). Upstream
-    publishes no re-export release list, so the package checks the exports list, by
-    assumption: every HS10 code of the recorded re-exports is an export code (``"X"``) in
-    ``list_commodities``. A month the exports list lacks raises ``NotFoundError`` naming
-    the months released, and ``meta.vintage`` is that list's release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release, not one the
-    re-exports state. The arguments are checked before either request as for
-    ``get_census_exports``: an unknown partner code names close codes (``"ISL"`` leads to
-    ``"IC"``) or ``list_countries``, a code discontinued before the month is refused when
-    it is no parent, and a parent code (another record's ``country_parent_code`` in
-    ``list_countries``, e.g. ``"Y1"``) or a two-digit code of region ``R99`` (``"01"``)
-    passes for every month. A listed partner without re-exports that month gives an empty
-    list. The month is in ``meta.request`` and in every record's ``date``;
-    ``meta.published_at`` is the release time, naive (``meta.published_at_naive``).
+    Re-exports, in upstream's words, "are all imported commodities from few countries into USA,
+    that are ultimately exported out to other countries from USA". One record per HS10 code
+    re-exported that month, the fields of an export record. At most 2 requests, 8 attempts with
+    retries: the exports release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the
+    client for an hour), then the month (``GATSData_GetCensusReExports``). Upstream publishes no
+    re-export release list, so the package checks the exports list, by assumption: a month it
+    lacks raises ``NotFoundError``, and ``meta.vintage`` is its release time for the month
+    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release; ``meta.published_at`` is
+    that time, naive. The arguments are checked before either request; a listed partner without
+    re-exports gives an empty list.
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). An unknown code is
+            refused naming up to three close codes with their names (``"CHN"`` leads to
+            ``"CH"``), or ``list_countries`` when none is close. A parent code, another record's
+            ``country_parent_code`` in ``list_countries`` (``"Y1"``, ``"AS"``), and the
+            two-digit codes of region ``R99`` (``"01"`` Caribbean,nes to ``"18"`` ASEAN) pass
+            for every month; a code GATS discontinued before the month that is no parent is
+            refused, naming the listed codes of the same name (``"D1"``, Denmark, after 198712,
+            names ``"9U"``).
         year: Calendar year, four digits, e.g. ``2026``; the data starts in 1967.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
@@ -731,25 +744,22 @@ async def get_customs_district_exports_async(
     """US exports to one partner in one month by US customs district and HS10 product.
 
     One record per customs district and HS10 code, as the US Census Bureau reported:
-    ``customs_district_id`` (``list_customs_districts`` names it) and the ten fields of
-    an export record. Over the districts, a code's records add up to its record in
-    ``get_census_exports``, as recorded. 107 records in 14 districts for Iceland
-    (``"IC"``) in August 2026, 16 of them in district 10 (NEW YORK, N.Y.); 1,697 in 31
-    districts for China. Two requests: the exports release list
+    ``customs_district_id`` and the ten fields of an export record; over the districts, a code's
+    records add up to its record in ``get_census_exports``, as recorded. At most 2 requests, 8
+    attempts with retries: the exports release list
     (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour), then the
-    month (``GATSData_GetCustomsDistrictsExports``). The arguments are checked before
-    either, as for ``get_census_exports``, and ``customs_district_id`` against the
-    packaged districts list: an id it lacks raises ``InvalidRequestError`` naming the
-    nearest listed ids with their names. A parent code (``"Y1"``) and a two-digit code of
-    region ``R99`` (``"01"``) pass as there, and a discontinued code that is no parent is
-    refused after its month. A month not released yet raises ``NotFoundError``; a listed
-    partner without exports gives an empty list. ``meta.vintage`` is the exports list's
-    release time for the month (``"2026-10-06T08:00:00"`` for August 2026);
-    ``meta.published_at`` is that time, naive (``meta.published_at_naive``).
+    month (``GATSData_GetCustomsDistrictsExports``). The arguments are checked before either. A
+    month not released yet raises ``NotFoundError``; a listed partner without exports gives an
+    empty list. ``meta.vintage`` is the exports list's release time for the month
+    (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
+    (``meta.published_at_naive``).
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``: an unknown code names close codes, a parent code (``"Y1"``)
+            and a two-digit code of region ``R99`` (``"01"``) pass for every month, and a
+            discontinued code that is no parent is refused after its month.
         year: Calendar year, four digits, e.g. ``2026``.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
@@ -757,8 +767,9 @@ async def get_customs_district_exports_async(
             ``None`` (the default) keeps every product.
         customs_district_id: Keep only this US customs district, an id
             ``list_customs_districts`` lists, e.g. ``10`` (NEW YORK, N.Y.), ``1``
-            (PORTLAND,MAINE), ``52`` (MIAMI, FLA.). ``None`` (the default) keeps every
-            district. Both filters apply after the one data request.
+            (PORTLAND,MAINE), ``52`` (MIAMI, FLA.). ``None`` (the default) keeps every district.
+            Both filters apply after the one data request. An id the packaged districts list
+            lacks is refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release, listed_at = await _release(ProductType.X, year, month, "customs-district exports")
@@ -788,34 +799,31 @@ async def get_customs_district_imports_async(
     """US imports from one partner in one month by US customs district and HS10 product.
 
     One record per customs district and HS10 code, as the US Census Bureau reported:
-    ``customs_district_id`` (``list_customs_districts`` names it) and the fifteen fields
-    of an import record, the consumption and CIF fields among them. 123 records in 21
-    districts for Iceland (``"IC"``) in August 2026, 51 of them fish fillets
-    (``hs10_code`` ``"0304"``), 28 records in district 10 (NEW YORK, N.Y.). Two requests:
-    the imports release list (``GATSData_GetCensusImportDataReleaseInfo``, kept by the
-    client for an hour), then the month (``GATSData_GetCustomsDistrictsImports``). The
-    arguments are checked before either, as for ``get_census_imports``, and
-    ``customs_district_id`` against the packaged districts list: an id it lacks raises
-    ``InvalidRequestError`` naming the nearest listed ids with their names. A parent code
-    (``"Y1"``) and a two-digit code of region ``R99`` (``"01"``) pass as there, and a
-    discontinued code that is no parent is refused after its month. A month not released
-    yet raises ``NotFoundError``; a listed partner without imports gives an empty list.
-    ``meta.vintage`` is the imports list's release time for the month
+    ``customs_district_id`` and the fifteen fields of an import record, the consumption and CIF
+    fields among them. At most 2 requests, 8 attempts with retries: the imports release list
+    (``GATSData_GetCensusImportDataReleaseInfo``, kept by the client for an hour), then the
+    month (``GATSData_GetCustomsDistrictsImports``). The arguments are checked before either. A
+    month not released yet raises ``NotFoundError``; a listed partner without imports gives an
+    empty list. ``meta.vintage`` is the imports list's release time for the month
     (``"2026-10-06T08:00:00"`` for August 2026); ``meta.published_at`` is that time, naive
     (``meta.published_at_naive``).
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``: an unknown code names close codes, a parent code (``"Y1"``)
+            and a two-digit code of region ``R99`` (``"01"``) pass for every month, and a
+            discontinued code that is no parent is refused after its month.
         year: Calendar year, four digits, e.g. ``2026``.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
             digits as text, e.g. ``"0304"`` (fish fillets), ``"0302140003"`` (one
             product), ``"03"`` (chapter 03). ``None`` (the default) keeps every product.
         customs_district_id: Keep only this US customs district, an id
-            ``list_customs_districts`` lists, e.g. ``10`` (NEW YORK, N.Y.), ``4``
-            (BOSTON, MASS.), ``1`` (PORTLAND,MAINE). ``None`` (the default) keeps every
-            district. Both filters apply after the one data request.
+            ``list_customs_districts`` lists, e.g. ``10`` (NEW YORK, N.Y.), ``4`` (BOSTON,
+            MASS.), ``1`` (PORTLAND,MAINE). ``None`` (the default) keeps every district. Both
+            filters apply after the one data request. An id the packaged districts list lacks is
+            refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release, listed_at = await _release(ProductType.M, year, month, "customs-district imports")
@@ -845,35 +853,33 @@ async def get_customs_district_reexports_async(
     """US re-exports to one partner in one month by US customs district and HS10 product.
 
     One record per customs district and HS10 code, as the US Census Bureau reported:
-    ``customs_district_id`` (``list_customs_districts`` names it) and the ten fields of a
-    re-export record; over the districts, a code's records add up to its record in
-    ``get_census_reexports``, as recorded. 13 records in 5 districts for Iceland
-    (``"IC"``) in August 2026, 5 of them in district 10 (NEW YORK, N.Y.). Two requests:
-    the exports release list (``GATSData_GetCensusExportDataReleaseInfo``, kept by the
-    client for an hour), then the month (``GATSData_GetCustomsDistrictsReExports``).
-    Upstream publishes no re-export release list, so the package checks the exports
-    list, by assumption, as ``get_census_reexports`` does: a month it lacks raises
+    ``customs_district_id`` and the ten fields of a re-export record; over the districts, a
+    code's records add up to its record in ``get_census_reexports``, as recorded. At most 2
+    requests, 8 attempts with retries: the exports release list
+    (``GATSData_GetCensusExportDataReleaseInfo``, kept by the client for an hour), then the
+    month (``GATSData_GetCustomsDistrictsReExports``). Upstream publishes no re-export release
+    list, so the package checks the exports list, by assumption: a month it lacks raises
     ``NotFoundError``, and ``meta.vintage`` is its release time for the month
-    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release. The arguments are
-    checked before either request, ``customs_district_id`` against the packaged districts
-    list (an id it lacks names the nearest listed ids); a parent code (``"Y1"``) and a
-    two-digit code of region ``R99`` (``"01"``) pass as for ``get_census_exports``, and a
-    discontinued code that is no parent is refused after its month. A listed partner
-    without re-exports gives an empty list; ``meta.published_at`` is the release time,
-    naive (``meta.published_at_naive``).
+    (``"2026-10-06T08:00:00"`` for August 2026), the exports' release; ``meta.published_at`` is
+    that time, naive. The arguments are checked before either request; a listed partner without
+    re-exports gives an empty list.
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``: an unknown code names close codes, a parent code (``"Y1"``)
+            and a two-digit code of region ``R99`` (``"01"``) pass for every month, and a
+            discontinued code that is no parent is refused after its month.
         year: Calendar year, four digits, e.g. ``2026``.
         month: Calendar month from 1 to 12, e.g. ``8`` (August).
         hs10_code: Keep only the products whose HS10 code starts with this, 1 to 10
             digits as text, e.g. ``"62"`` (chapter 62), ``"1905901049"`` (one product).
             ``None`` (the default) keeps every product.
         customs_district_id: Keep only this US customs district, an id
-            ``list_customs_districts`` lists, e.g. ``10`` (NEW YORK, N.Y.), ``41``
-            (CLEVELAND, OHIO), ``52`` (MIAMI, FLA.). ``None`` (the default) keeps every
-            district. Both filters apply after the one data request.
+            ``list_customs_districts`` lists, e.g. ``10`` (NEW YORK, N.Y.), ``41`` (CLEVELAND,
+            OHIO), ``52`` (MIAMI, FLA.). ``None`` (the default) keeps every district. Both
+            filters apply after the one data request. An id the packaged districts list lacks is
+            refused before any request, naming the nearest listed ids with their names.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
     release, listed_at = await _release(ProductType.X, year, month, "customs-district re-exports")
@@ -1043,47 +1049,33 @@ async def get_census_export_series_async(
 ) -> Result[list[CensusExport]]:
     """US exports to one partner over a range of months by HS10 product, oldest month first.
 
-    The records ``get_census_exports`` answers for each month from the start month to the
-    end month, both included, as one list in month order, each month's records in
-    upstream order; every record carries its month in ``date`` (``"202607"``), and a month
-    without exports adds none. 197 records for Iceland (``"IC"``) over July and August
-    2026, 105 and 92. Up to 60 months in Python and over HTTP; the entry point
-    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
-    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
-    Requests: the exports release list
-    (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
-    it, for an hour; then one ``GATSData_GetCensusExports`` request per month, one after
-    another at the client's pace of one request per second, never at once. Each spends
-    one of api.data.gov's 1,000 requests per hour for the key, and 60 months take about
-    a minute; a quota spent partway raises ``RateLimitError`` and returns none of the
-    months. Everything is checked before the first request: the partner code as for
-    ``get_census_exports`` (an unknown code names close codes) for the start and for the
-    end month, so a code discontinued inside the range that is no parent is refused
-    naming its last month (``"D1"``, Denmark, 198712, for 1987-06 to 1988-01), while a
-    parent code (another record's ``country_parent_code`` in ``list_countries``: ``"Y1"``,
-    ``"AS"``) and a two-digit code of region ``R99`` (``"01"``, ``"18"``) pass for every
-    month, a month without data adding nothing; a start after the end, or a range of more
-    months than the ceiling, raises ``InvalidRequestError`` naming the ceiling. Every month
-    of the range must be released: the first month the release list lacks raises
-    ``NotFoundError`` naming it and the latest month released, so an end month not released
-    yet refuses the series rather than trimming it. ``meta.vintage`` is the newest release
-    time among the range's months, as upstream states it: ``"2026-10-06T08:00:00"`` for
-    2026-06 to 2026-08, August's release. Across Census's annual revision it can be an
-    earlier month's: ``"2026-06-24T08:00:00"`` for 2025-12 to 2026-02, December's revised
-    release, not February's. Each month's own release time is in
-    ``get_census_release_dates``. ``meta.published_at`` is that newest time, naive
-    (``meta.published_at_naive``).
+    The records ``get_census_exports`` answers for each month from the start month to the end
+    month, both included, as one list in month order; every record carries its month in
+    ``date``. At most 61 requests, 244 attempts with retries, in Python and over HTTP, and 25 in
+    100 on the MCP server at its default ceiling of 24 months: the exports release list
+    (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps it, then
+    one ``GATSData_GetCensusExports`` request per month, one after another. A failure after the
+    first month names the months answered, and none is returned. Everything is checked before
+    the first request, and a month the release list lacks refuses the series with
+    ``NotFoundError``. ``meta.vintage`` is the newest release time among the months, as upstream
+    states it; ``meta.published_at`` is that time, naive.
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``, for the start and for the end month, so a code discontinued
+            inside the range that is no parent is refused naming its last month (``"D1"``,
+            Denmark, 198712, for 1987-06 to 1988-01), while a parent code (``"Y1"``, ``"AS"``)
+            and a two-digit code of region ``R99`` (``"01"``, ``"18"``) pass for every month.
         start_year: The first month's year, four digits, e.g. ``2026``; the data starts
             in January 1967.
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
-        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server as
-            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59 months
+            after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``. A start after the
+            end is refused, and so is a range of more months than the ceiling in force,
+            ``SERIES``, naming it.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0203292000"`` for one
@@ -1115,40 +1107,33 @@ async def get_census_import_series_async(
 ) -> Result[list[CensusImport]]:
     """US imports from one partner over a range of months by HS10 product, oldest month first.
 
-    The records ``get_census_imports`` answers for each month from the start month to the
-    end month, both included, as one list in month order, each month's records in
-    upstream order, with their consumption and CIF fields; every record carries its month
-    in ``date``, and a month without imports adds none. 157 records for Iceland
-    (``"IC"``) over July and August 2026, 83 and 74, of which 85 are fish (``hs10_code``
-    ``"03"``). Up to 60 months in Python and over HTTP; the entry point
-    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
-    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
-    Requests: the imports release list
-    (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps
-    it, for an hour; then one ``GATSData_GetCensusImport`` request per month, one after
-    another at the client's pace of one request per second, never at once, each one of
-    api.data.gov's 1,000 requests per hour for the key: 60 months take about a minute,
-    and a quota spent partway raises ``RateLimitError`` and returns none of the months.
-    The arguments are checked before the first request as for
-    ``get_census_export_series``, a parent code or a two-digit code of region ``R99``
-    passing for every month and a discontinued code that is no parent refused after its
-    month; the first month the imports list lacks raises ``NotFoundError`` naming it and the
-    latest month released, so the series is refused, not trimmed. ``meta.vintage`` is the
-    newest release time among the range's months in the imports list, as upstream states it
-    (``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08); each month's own is in
-    ``get_census_release_dates``. ``meta.published_at`` is that newest time, naive
-    (``meta.published_at_naive``).
+    The records ``get_census_imports`` answers for each month from the start month to the end
+    month, both included, as one list in month order; every record carries its month in
+    ``date``. At most 61 requests, 244 attempts with retries, in Python and over HTTP, and 25 in
+    100 on the MCP server at its default ceiling of 24 months: the imports release list
+    (``GATSData_GetCensusImportDataReleaseInfo``) once, or none while the client keeps it, then
+    one ``GATSData_GetCensusImport`` request per month, one after another. A failure after the
+    first month names the months answered, and none is returned. Everything is checked before
+    the first request, and a month the imports list lacks refuses the series with
+    ``NotFoundError``. ``meta.vintage`` is the newest release time among the months in the
+    imports list; ``meta.published_at`` is that time, naive.
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``, for the start and for the end month, so a code discontinued
+            inside the range that is no parent is refused naming its last month (``"D1"``,
+            Denmark, 198712, for 1987-06 to 1988-01), while a parent code (``"Y1"``, ``"AS"``)
+            and a two-digit code of region ``R99`` (``"01"``, ``"18"``) pass for every month.
         start_year: The first month's year, four digits, e.g. ``2026``; the data starts
             in January 1967.
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
-        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server as
-            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59 months
+            after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``. A start after the
+            end is refused, and so is a range of more months than the ceiling in force,
+            ``SERIES``, naming it.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"0304"`` (fish fillets), or a full code such as ``"0302140003"`` for one
@@ -1180,40 +1165,33 @@ async def get_census_reexport_series_async(
 ) -> Result[list[CensusExport]]:
     """US re-exports to one partner over a range of months by HS10 product, oldest month first.
 
-    The records ``get_census_reexports`` answers for each month from the start month to
-    the end month, both included, as one list in month order, each month's records in
-    upstream order; every record carries its month in ``date``, and a month without
-    re-exports adds none. 31 records for Iceland (``"IC"``) over July and August 2026, 19
-    and 12. Up to 60 months in Python and over HTTP; the entry point
-    ``xippios-usda-gats-mcp`` starts the MCP server with a ceiling of 24, which its
-    ``--series-months`` sets from 1 to 60 (``series_ceiling()``, one ceiling per process).
-    Requests: the exports release list
-    (``GATSData_GetCensusExportDataReleaseInfo``) once, or none while the client keeps
-    it, for an hour; then one ``GATSData_GetCensusReExports`` request per month, one
-    after another at the client's pace of one request per second, never at once, each one
-    of api.data.gov's 1,000 requests per hour for the key: 60 months take about a minute,
-    and a quota spent partway raises ``RateLimitError`` and returns none of the months.
-    Upstream publishes no re-export release list, so the package checks the exports list,
-    by assumption, as ``get_census_reexports`` does. The arguments are checked before the
-    first request as for ``get_census_export_series``, a parent code or a two-digit code
-    of region ``R99`` passing for every month and a discontinued code that is no parent
-    refused after its month; the first month the exports list lacks raises ``NotFoundError``
-    naming it and the latest month released, so the series is refused, not trimmed.
-    ``meta.vintage`` is the newest release time among the range's months in the exports list
-    (``"2026-10-06T08:00:00"`` for 2026-06 to 2026-08), the exports' releases, not ones the
-    re-exports state; each month's own is in ``get_census_release_dates``.
-    ``meta.published_at`` is that newest time, naive (``meta.published_at_naive``).
+    The records ``get_census_reexports`` answers for each month from the start month to the end
+    month, both included, as one list in month order; every record carries its month in
+    ``date``. At most 61 requests, 244 attempts with retries, in Python and over HTTP, and 25 in
+    100 on the MCP server at its default ceiling of 24 months: the exports release list once, or
+    none while the client keeps it, then one ``GATSData_GetCensusReExports`` request per month,
+    one after another. The package checks the exports list, by assumption, since upstream
+    publishes none for re-exports. Everything is checked before the first request, and a month
+    the list lacks refuses the series with ``NotFoundError``; a failure after the first month
+    names the months answered, and none is returned. ``meta.vintage`` is the newest exports
+    release time among the months, ``meta.published_at`` that time, naive.
 
     Args:
-        partner_code: GATS's two-character country code, not ISO, as ``list_countries``
-            lists it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico).
+        partner_code: GATS's two-character country code, not ISO, as ``list_countries`` lists
+            it, e.g. ``"IC"`` (Iceland), ``"CH"`` (China), ``"MX"`` (Mexico). Checked as for
+            ``get_census_exports``, for the start and for the end month, so a code discontinued
+            inside the range that is no parent is refused naming its last month (``"D1"``,
+            Denmark, 198712, for 1987-06 to 1988-01), while a parent code (``"Y1"``, ``"AS"``)
+            and a two-digit code of region ``R99`` (``"01"``, ``"18"``) pass for every month.
         start_year: The first month's year, four digits, e.g. ``2026``; the data starts
             in January 1967.
         start_month: The first month, 1 to 12, e.g. ``6`` (June).
         end_year: The last month's year, four digits, e.g. ``2026``.
-        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59
-            months after the first in Python and over HTTP, 23 on the MCP server as
-            ``xippios-usda-gats-mcp`` starts it without ``--series-months``.
+        end_month: The last month, 1 to 12, included, e.g. ``8`` (August); at most 59 months
+            after the first in Python and over HTTP, 23 on the MCP server as
+            ``xippios-usda-gats-mcp`` starts it without ``--series-months``. A start after the
+            end is refused, and so is a range of more months than the ceiling in force,
+            ``SERIES``, naming it.
         hs10_code: Keep only the products whose HS10 code starts with this, in every
             month, 1 to 10 digits as text: a prefix such as ``"03"`` (chapter 03, fish)
             or ``"62"`` (chapter 62, 7 of Iceland's 31 records), or a full code such as
@@ -1240,28 +1218,27 @@ async def get_census_release_dates_async(
 ) -> Result[list[DataReleaseInfo]]:
     """When GATS last released each month of US Census exports or imports: poll for releases.
 
-    One record per statistical month, newest first, from ``"196701"`` to the latest
-    released (``"202608"`` on 2026-10-25), 716 months: ``statistical_year_month`` and
-    ``release_time_stamp``, the time of the month's latest release, as upstream states it,
-    without a time zone (``2026-10-06T08:00:00`` for 2026-08). A month the annual
-    revision corrected carries the revision's time: 2023-01 to 2025-12 read
-    ``2026-06-24T08:00:00``. Compare it with a stored one to fetch only the months that
-    changed; the six Census data tasks give their month's time as ``meta.vintage``, the
-    three series tasks the newest among their months, the re-export forms the exports
-    list's, since re-exports have no list of their own. ``statistical_year`` keeps one
-    year's months, newest first. One request, kept by the client for an hour, the filter
-    applied after it; ``meta.retrieved_at`` is when it was fetched. ``meta.published_at``
-    and ``meta.vintage`` stay empty: the list is no single release.
+    One record per statistical month, newest first, from ``"196701"`` to the latest released,
+    716 months as recorded: ``statistical_year_month`` and ``release_time_stamp``, the time of
+    the month's latest release, as upstream states it, without a time zone
+    (``2026-10-06T08:00:00`` for 2026-08). A month the annual revision corrected carries the
+    revision's time. Compare it with a stored one to fetch only the months that changed; the six
+    Census data tasks give their month's time as ``meta.vintage``, the three series tasks the
+    newest among their months, the re-export forms the exports list's. One request, kept by the
+    client for an hour, the filter applied after it; ``meta.retrieved_at`` is when it was
+    fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
+    release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
             (``GATSData_GetCensusExportDataReleaseInfo``), ``"M"`` imports
             (``GATSData_GetCensusImportDataReleaseInfo``).
-        statistical_year: Keep only the months of this statistical year, four digits,
-            e.g. ``2026`` (202608 back to 202601, eight months as recorded), ``2025``
-            (twelve, all re-released at ``2026-06-24T08:00:00``), ``1987`` (twelve, all
-            at ``2008-01-01T08:00:00``). A year the list lacks, before 1967 or not
-            released yet, gives an empty list. ``None`` (the default) keeps every month.
+        statistical_year: Keep only the months of this statistical year, four digits, e.g.
+            ``2026`` (202608 back to 202601, eight months as recorded), ``2025`` (twelve, all
+            re-released at ``2026-06-24T08:00:00``), ``1987`` (twelve, all at
+            ``2008-01-01T08:00:00``). A year the list lacks, before 1967 or not released yet,
+            gives an empty list. ``None`` (the default) keeps every month. Its months come
+            newest first.
     """
     code = _product_type(product_type)
     if statistical_year is not None:
@@ -1561,45 +1538,34 @@ async def get_un_exports_async(
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's exports in one year by partner and HS6 code, as UN Comtrade reported them.
 
-    Upstream: "Commodity Export data as reported by UN COMTrade for a given year", at the
-    HS6 level. One record per partner and HS6 code, as upstream sends it: ``year``,
-    ``reporter_country_code``, ``partner_country_code``, ``hs6_code``, four
-    unit-of-measure ids (``list_units_of_measure``), ``quantity1``, ``quantity2`` and
-    ``value`` (the snapshot names no currency); 3,980 records for Iceland (``"IC"``) in
-    2019, 646 HS6 codes to 115 partners, 1,024 of them in chapter 03. The codes are
-    GATS's own, as ``list_countries`` and ``list_hs6_commodities`` list them, not UN
-    Comtrade's: the data keeps codes the countries list marks discontinued in 1987, such
-    as ``"AS"`` (Australia) and ``"NO"`` (Norway), for later years, never their same-name
-    successors (``"A2"``, ``"N3"``). The UN Trade data is frozen: its release lists end
-    with statistical year 2019, their newest release on 2021-01-18, as recorded on
-    2026-10-26; ``get_un_release_dates`` lists every reporter-year. Two requests: the
-    exports release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the
-    client for a day) to check that the reporter-year is listed, then the year
-    (``GATSData_GetUNTradeExports``), one answer however large (India's 2016 exports:
-    75,919 records, about 17 MB). The arguments are checked before either request, but
-    for an ISO or GENC code several listed codes share: an unknown reporter or partner
-    code raises ``InvalidRequestError`` naming up to three close codes (``"ISL"`` leads
-    to ``"IC"``), or pointing to ``list_countries``; the Census tasks' discontinuation
-    check does not apply. A shared ISO or GENC code is refused once the release list is
-    read, naming first the codes the list holds as reporters: ``"AUS"`` names ``"AS"``,
-    the code the UN data uses, before ``"A2"``; ``"FRA"`` names ``"F1"`` before
-    ``"FR"``; unranked when the list cannot be read. A reporter-year the list lacks raises
-    ``NotFoundError`` naming the reporter's listed years and the list's latest year; a
-    listed reporter-year without exports gives an empty list. ``meta.vintage`` is the
-    reporter-year's release time from that list, as upstream states it
-    (``"2020-06-03T05:50:46"`` for Iceland 2019); ``meta.published_at`` is that time,
-    without a zone as FAS prints it, and ``meta.published_at_naive`` says so.
+    Upstream: "Commodity Export data as reported by UN COMTrade for a given year", at the HS6
+    level. One record per partner and HS6 code under GATS's own codes, not UN Comtrade's, with
+    four unit-of-measure ids (``list_units_of_measure``), ``quantity1``, ``quantity2`` and
+    ``value`` (the snapshot names no currency). The feed is frozen at statistical year 2019,
+    last released on 2021-01-18. At most 2 requests, 8 attempts with retries: the exports
+    release list (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day),
+    then the year (``GATSData_GetUNTradeExports``). A reporter-year the list lacks raises
+    ``NotFoundError``; a listed reporter-year without exports gives an empty list.
+    ``meta.vintage`` is the reporter-year's release time in that list (``"2020-06-03T05:50:46"``
+    for Iceland 2019); ``meta.published_at`` is that time, naive.
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
-            ``list_countries`` lists it, e.g. ``"IC"`` (Iceland), ``"IN"`` (India,
-            upstream's example, to 2016), ``"AS"`` (Australia, to 2016).
+            ``list_countries`` lists it, e.g. ``"IC"`` (Iceland), ``"IN"`` (India, upstream's
+            example, to 2016), ``"AS"`` (Australia, to 2016). An unknown code is refused before
+            either request, naming up to three close codes (``"ISL"`` leads to ``"IC"``), or
+            pointing to ``list_countries``; the Census tasks' discontinuation check does not
+            apply. An ISO or GENC code several listed codes share is refused once the release
+            list is read, naming first the codes the list holds as reporters: ``"AUS"`` names
+            ``"AS"``, the code the UN data uses, before ``"A2"``; ``"FRA"`` names ``"F1"``
+            before ``"FR"``; unranked when the list cannot be read.
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries``
-            lists, e.g. ``"US"`` (United States, 298 of Iceland's 2019 records), ``"NO"``
-            (Norway), ``"15"`` (Areas, not elsewhere specified). ``None`` (the default)
-            keeps every partner.
+        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
+            e.g. ``"US"`` (United States, 298 of Iceland's 2019 records), ``"NO"`` (Norway),
+            ``"15"`` (Areas, not elsewhere specified). ``None`` (the default) keeps every
+            partner. Checked for membership in the packaged list before either request, as
+            ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"030444"``
             (Codlet Fillets Frh/Ch), or a prefix such as ``"03"`` for chapter 03 or
@@ -1629,35 +1595,30 @@ async def get_un_imports_async(
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's imports in one year by partner and HS6 code, as UN Comtrade reported them.
 
-    Upstream: "Commodity Import data as reported by UN COMTrade for a given year", at the
-    HS6 level. One record per partner and HS6 code, the eleven fields of an export record
-    (``get_un_exports``); 2,377 records for Sao Tome and Principe (``"TP"``) in 2019,
-    1,026 HS6 codes and 58 partners, 957 of the records with Portugal (``"PO"``) as
-    partner. A large reporter answers far more: Iceland's 2019 imports are 23,396
-    records, about 5.2 MB of JSON. The codes are GATS's own, not UN Comtrade's, as for
-    the exports. The UN Trade data is frozen at statistical year 2019, last released on
-    2021-01-18, as recorded on 2026-10-26. Two requests: the
-    imports release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client
-    for a day), then the year (``GATSData_GetUNTradeImports``). The imports list is not
-    the exports list: 68 reporter-years are listed only for imports, 32 only for exports.
-    The arguments are checked as for ``get_un_exports``, membership only and before
-    either request, but for an ISO code several listed codes share, refused once the
-    imports list is read, its reporters named first (``"NOR"`` names ``"NO"`` before
-    ``"N3"``). A reporter-year the imports list lacks raises ``NotFoundError`` naming the
-    reporter's listed years; a listed reporter-year without imports gives an empty list.
-    ``meta.vintage`` is the reporter-year's release time from that list
-    (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019); ``meta.published_at`` is
-    that time, naive (``meta.published_at_naive``).
+    Upstream: "Commodity Import data as reported by UN COMTrade for a given year", at the HS6
+    level. One record per partner and HS6 code, the fields of an export record
+    (``get_un_exports``), under GATS's own codes. The feed is frozen at statistical year 2019,
+    last released on 2021-01-18. At most 2 requests, 8 attempts with retries: the imports
+    release list (``GATSData_GetUNTradeImportDataReleaseInfo``, kept by the client for a day),
+    then the year (``GATSData_GetUNTradeImports``), one answer however large. A reporter-year
+    the imports list lacks raises ``NotFoundError`` naming the reporter's listed years; a listed
+    reporter-year without imports gives an empty list. ``meta.vintage`` is the reporter-year's
+    release time in that list (``"2020-07-16T01:15:37"`` for Sao Tome and Principe 2019);
+    ``meta.published_at`` is that time, naive (``meta.published_at_naive``).
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
             ``list_countries`` lists it, e.g. ``"TP"`` (Sao Tome and Principe), ``"IC"``
-            (Iceland), ``"AS"`` (Australia, to 2018).
+            (Iceland), ``"AS"`` (Australia, to 2018). Checked as for ``get_un_exports``,
+            membership only and before either request, but for an ISO code several listed codes
+            share, refused once the imports list is read, its reporters named first (``"NOR"``
+            names ``"NO"`` before ``"N3"``).
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries``
-            lists, e.g. ``"PO"`` (Portugal), ``"CH"`` (China), ``"F1"`` (France).
-            ``None`` (the default) keeps every partner.
+        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
+            e.g. ``"PO"`` (Portugal), ``"CH"`` (China), ``"F1"`` (France). ``None`` (the
+            default) keeps every partner. Checked for membership in the packaged list before
+            either request, as ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"100630"``
             (Rice, Semi-Milled), or a prefix such as ``"10"`` for chapter 10 or ``"1006"``
@@ -1687,34 +1648,29 @@ async def get_un_reexports_async(
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's re-exports in one year by partner and HS6 code, as UN Comtrade reported them.
 
-    Upstream: "Commodity Re-Export data as reported by UN COMTrade for a given year", at
-    the HS6 level. One record per partner and HS6 code, the eleven fields of an export
-    record (``get_un_exports``); 421 records for Macau (``"MC"``) in 2019, every quantity
-    0, 27 of them to ``"AS"`` (Australia, a code the countries list marks discontinued in
-    1987, kept by the UN data). Iceland, listed for 2019 exports, answers an empty list
-    for its 2019 re-exports. The UN Trade data is frozen at statistical year 2019, last
-    released on 2021-01-18, as recorded on 2026-10-26. Two requests: the exports release list
-    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day), then
-    the year (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export
-    release list, so the package checks the exports list, by assumption, as the Census
-    re-export tasks do: a reporter-year it lacks raises ``NotFoundError`` naming the
-    reporter's listed export years, and ``meta.vintage`` is that list's release time for
-    the reporter-year (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release,
-    not one the re-exports state. The arguments are checked as for ``get_un_exports``,
-    membership only and before either request, but for an ISO code several listed codes
-    share, refused once the exports list is read, its reporters named first. A listed
-    reporter-year without re-exports gives an empty list; ``meta.published_at`` is the
-    release time, naive (``meta.published_at_naive``).
+    Upstream: "Commodity Re-Export data as reported by UN COMTrade for a given year", at the HS6
+    level. One record per partner and HS6 code, the fields of an export record
+    (``get_un_exports``). The feed is frozen at statistical year 2019, last released on
+    2021-01-18. At most 2 requests, 8 attempts with retries: the exports release list
+    (``GATSData_GetUNTradeExportDataReleaseInfo``, kept by the client for a day), then the year
+    (``GATSData_GetUNTradeReExports``). Upstream publishes no UN re-export release list, so the
+    package checks the exports list, by assumption: a reporter-year it lacks raises
+    ``NotFoundError``, and ``meta.vintage`` is its release time for the reporter-year
+    (``"2020-06-03T05:51:31"`` for Macau 2019), the exports' release; ``meta.published_at`` is
+    that time, naive. A listed reporter-year without re-exports gives an empty list.
 
     Args:
         reporter_code: The reporting country, GATS's two-character code, not ISO, as
-            ``list_countries`` lists it, e.g. ``"MC"`` (Macau), ``"IC"`` (Iceland),
-            ``"IN"`` (India, upstream's example, to 2016).
+            ``list_countries`` lists it, e.g. ``"MC"`` (Macau), ``"IC"`` (Iceland), ``"IN"``
+            (India, upstream's example, to 2016). Checked as for ``get_un_exports``, membership
+            only and before either request, but for an ISO code several listed codes share,
+            refused once the exports list is read, its reporters named first.
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries``
-            lists, e.g. ``"HK"`` (Hong Kong), ``"CH"`` (China), ``"AS"`` (Australia).
-            ``None`` (the default) keeps every partner.
+        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
+            e.g. ``"HK"`` (Hong Kong), ``"CH"`` (China), ``"AS"`` (Australia). ``None`` (the
+            default) keeps every partner. Checked for membership in the packaged list before
+            either request, as ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"220421"``
             (Grape Wines , < 2L), or a prefix such as ``"22"`` for chapter 22 or ``"2204"``
@@ -1754,21 +1710,16 @@ async def get_un_release_dates_async(
 ) -> Result[list[UNTradeDataReleaseInfo]]:
     """When GATS last released each reporter-year of UN Trade exports or imports: the coverage.
 
-    One record per reporter and statistical year, newest year first and reporters in code
-    order within a year: ``statistical_year`` (``"2019"``), ``product_type``,
-    ``reporter_code`` and ``release_time_stamp``, the time of the reporter-year's latest
-    release as upstream states it, without a time zone (``2020-06-03T05:50:46`` for
-    Iceland's 2019 exports). The UN Trade feed is frozen: as recorded on 2026-10-26 the
-    lists cover 1989 to 2019: 3,796 exports records for 206 reporters and 3,832 imports
-    records for 207, 32 reporters for 2019 in each; the newest release time is 2021-01-18
-    (the Netherlands' 2014), and no reporter-year has been released since. The two lists
-    differ: 32 reporter-years are listed only for exports, 68 only for imports. The three UN data
-    tasks check a reporter-year against this list and give its time as ``meta.vintage``,
-    the re-exports task the exports list's, since re-exports have no list of their own.
-    One request, kept by the client for a day, since the feed is frozen;
-    ``meta.retrieved_at`` is when it was fetched. ``meta.published_at`` and
-    ``meta.vintage`` stay empty: the list is no single release. The filters apply after
-    the request.
+    One record per reporter and statistical year, newest year first and reporters in code order
+    within a year: ``statistical_year`` (``"2019"``), ``product_type``, ``reporter_code`` and
+    ``release_time_stamp``, the time of the reporter-year's latest release as upstream states
+    it, without a time zone (``2020-06-03T05:50:46`` for Iceland's 2019 exports). The UN Trade
+    feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18,
+    as recorded on 2026-10-26. The three UN data tasks check a reporter-year against this list
+    and give its time as ``meta.vintage``, the re-exports task the exports list's. One request,
+    kept by the client for a day, the filters applied after it; ``meta.retrieved_at`` is when it
+    was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
+    release.
 
     Args:
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
@@ -1957,21 +1908,16 @@ async def list_commodities_async(
 ) -> Result[list[Commodity]]:
     """List GATS's HS10 commodity codes with their product types and units, fetched live.
 
-    Every commodity record ``GATSData_GetCommodities`` lists, current and historical, in
-    code order: an HS10 code, its start month, a product type, a short name, a
-    description, an agricultural flag and four unit-of-measure ids
-    (``list_units_of_measure``). 24,936 records on 2026-10-26, by ``product_type``:
-    ``"X"`` 5,919 (export codes, as in the Census exports and re-exports records), ``"M"``
-    14,469 (import codes), ``"T"`` 2,704 and ``"B"`` 1,844. Upstream documents none of
-    the four; the ``"T"`` and ``"B"`` records carry seven-digit codes padded with three
-    spaces (``"0011010   "``) and no description, kept as sent. A code is not unique: it
-    repeats across product types and with a later ``start_date`` (``"0207410000"`` under
-    ``"M"`` is chicken cuts from ``"198901"`` and ducks from ``"201201"``). Not packaged,
-    for its size: one request, kept by the client for a day and parsed into records once
-    for it, so a search after the first sends nothing and builds no records anew;
-    ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage``
-    and ``meta.published_at`` stay empty: upstream gives the list no version or date. The
-    filters apply after the one request; for HS6 codes use ``list_hs6_commodities``.
+    Every commodity record ``GATSData_GetCommodities`` lists, current and historical, in code
+    order: an HS10 code, its start month, a product type, a short name, a description, an
+    agricultural flag and four unit-of-measure ids (``list_units_of_measure``). Upstream
+    documents none of the product types; the ``"T"`` and ``"B"`` records carry seven-digit codes
+    padded with three spaces (``"0011010   "``) and no description, kept as sent; a code repeats
+    across product types and start months. Not packaged, for its size: one request, kept by the
+    client for a day and parsed into records once for it, so a search after the first sends
+    nothing; ``meta.retrieved_at`` is when the list was fetched. ``meta.vintage`` and
+    ``meta.published_at`` stay empty: upstream gives the list no version or date. The filters
+    apply after the one request; for HS6 codes use ``list_hs6_commodities``.
 
     Args:
         search: Keep the records where this text occurs, ignoring case, in the name or
@@ -1981,9 +1927,11 @@ async def list_commodities_async(
             a full code such as ``"0103910000"`` or a prefix such as ``"0304"`` (fish
             fillets) or ``"02"`` (chapter 02). A padded ``"T"`` or ``"B"`` code matches
             a prefix of up to seven digits. Omit (``None``) for all.
-        product_type: Keep the records of this product type, exactly as upstream writes
-            it: ``"X"`` (exports), ``"M"`` (imports), ``"T"`` or ``"B"``. A code no record
-            carries yields an empty list. Omit (``None``) for all.
+        product_type: Keep the records of this product type, exactly as upstream writes it:
+            ``"X"`` (exports), ``"M"`` (imports), ``"T"`` or ``"B"``. A code no record carries
+            yields an empty list. Omit (``None``) for all. As recorded on 2026-10-26: ``"X"``
+            5,919 records (export codes, as in the Census exports and re-exports records),
+            ``"M"`` 14,469 (import codes), ``"T"`` 2,704 and ``"B"`` 1,844.
     """
     _search(search)
     if hs10_code is not None:

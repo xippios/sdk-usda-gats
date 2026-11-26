@@ -17,6 +17,7 @@ import httpx
 import pytest
 import respx
 from xippios.core import (
+    Ceiling,
     InvalidRequestError,
     NotFoundError,
     RateLimitError,
@@ -1003,7 +1004,9 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
 ) -> None:
     """The exports release list, 716 months, over MCP: cut at the default 200 rows, with a
     note of its own that says the rows shown are the newest months and names the tool's
-    one filter, ``statistical_year`` (sdk-core ADR-0038)."""
+    one filter, ``statistical_year``, and a paged cap: the client's cache keeps the list
+    for an hour, so ``offset`` answers the next months without a request (sdk-core
+    ADR-0047, ADR-0061, decision 9)."""
     route = replay_fixture(EXPORT_RELEASES, "all")
     payload = await mcp_call(server, "usda_gats_get_census_release_dates", {"product_type": "X"})
     assert len(payload["data"]) == 200
@@ -1015,10 +1018,16 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
     }
     assert payload["data"][-1]["statistical_year_month"] == "201001", "16 years and 8 months"
     assert payload["note"] == (
-        f"showing 200 of 716 rows (cap: 200 rows or 65536 bytes); {RELEASE_DATES_NOTE}"
+        f"showing 200 of 716 rows (cap: 200 rows or 65536 bytes); {RELEASE_DATES_NOTE}; "
+        "continue with offset=200"
     )
     assert "statistical_year" in payload["note"], "the note names the tool's one filter"
-    assert sent_urls(route) == [EXPORT_RELEASES_URL]
+    after = await mcp_call(
+        server, "usda_gats_get_census_release_dates", {"product_type": "X", "offset": 200}
+    )
+    assert after["data"][0]["statistical_year_month"] == "200912"
+    assert after["note"].startswith("showing rows 201 to 400 of 716")
+    assert sent_urls(route) == [EXPORT_RELEASES_URL], "the continuation is the cache's"
 
 
 def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> None:
@@ -1078,8 +1087,9 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
 
 
 SERIES_NOTE = (
-    "the rows run month by month, oldest first; filter by hs10_code, a full code or a "
-    "prefix such as the chapter '03', or ask for fewer months to see the rest"
+    "the rows run month by month, oldest first, and the rows shown are the newest; filter "
+    "by hs10_code, a full code or a prefix such as the chapter '03', or ask for fewer "
+    "months to see the rest"
 )
 RELEASED_2026_07 = "2026-09-03T08:00:00"
 """``releaseTimeStamp`` of ``"202607"`` in both recorded release lists, as upstream wrote it."""
@@ -1344,7 +1354,7 @@ def test_series_arguments_are_checked_before_any_request(
     with pytest.raises(InvalidRequestError) as span:
         task("IC", 2021, 8, 2026, 8)
     assert span.value.message.startswith(
-        "2021-08 to 2026-08 is 61 months, one request each; a series spans at most 60 months."
+        "2021-08 to 2026-08 is 61 months; one call fetches at most 60 months. Nothing was sent."
     )
     for start_month, end_month in [(0, 8), (6, 13)]:
         with pytest.raises(InvalidRequestError, match="month must be a whole number from 1"):
@@ -1467,6 +1477,9 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     slack = CLOCK_SLACK.total_seconds()
     assert 3151 - slack <= info.value.retry_after <= 3151 + slack
     assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in info.value.message
+    assert info.value.message.endswith(
+        "The series stopped at 2026-08 after 1 period answered, 2026-07, and returns nothing."
+    ), "core's fetch_periods names the months answered before the failure"
     assert sent_urls(july) == [_ic_url("censusExports", 7)]
     assert sent_urls(august) == [_ic_url("censusExports", 8)], "sent once, not retried"
     assert releases.call_count == 1
@@ -1490,7 +1503,7 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
             IMPORTS,
             IMPORT_RELEASES,
             3294,
-            185,
+            183,
         ),
     ],
     ids=["exports", "imports"],
@@ -1521,8 +1534,10 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     shown = len(payload["data"])
     assert shown == cut
     assert payload["note"] == (
-        f"showing {shown} of {total} rows (cap: 200 rows or 65536 bytes); {SERIES_NOTE}"
-    )
+        f"showing rows {total - shown + 1} to {total} of {total} (cap: 200 rows or 65536 "
+        f"bytes); {SERIES_NOTE}"
+    ), "a series shows its newest rows (conventions §8)"
+    assert "offset" not in payload["note"], "a series sends requests: no paged cap"
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == RELEASED_2026_08
     assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
@@ -1648,49 +1663,40 @@ def _ic_export_urls(start_year: int, start_month: int, count: int) -> list[str]:
 @pytest.fixture
 def restore_series_ceiling() -> Iterator[None]:
     """The series ceiling is process-wide: a test that sets it leaves the Python API's,
-    ``SERIES_MAX_MONTHS``, for the tests after it."""
+    ``SERIES.most``, for the tests after it."""
     yield
-    tasks.set_series_ceiling(tasks.SERIES_MAX_MONTHS)
+    tasks.SERIES.set(tasks.SERIES.most)
 
 
-def test_the_series_ceilings_and_the_option(monkeypatch: pytest.MonkeyPatch) -> None:
-    """60 months for the Python API and the HTTP router, the ceiling in force while no MCP
-    server applied its options; ``--series-months`` on core's parser, 24 by default. The
-    help is compared as plain text, so the test pins its colors and its width."""
+def test_the_series_ceiling_is_cores_one_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One ``Ceiling`` of core's holds the series' ceiling (sdk-core ADR-0054): 60 months in
+    Python and over HTTP, the MCP server's 24 and ``--series-months`` to set another, its
+    two hooks the tool set's, and the package's own ``series_ceiling`` and
+    ``set_series_ceiling`` gone. The help is compared as plain text, so the test pins its
+    colors and its width."""
     monkeypatch.setenv("PYTHON_COLORS", "0")
     monkeypatch.setenv("COLUMNS", "100")
-    assert (tasks.SERIES_MAX_MONTHS, tasks.MCP_SERIES_MAX_MONTHS) == (60, 24)
-    assert tasks.series_ceiling() == 60
+    ceiling = tasks.SERIES
+    assert isinstance(ceiling, Ceiling)
+    assert (ceiling.most, ceiling.unit, ceiling.mcp, ceiling.option, ceiling.source) == (
+        60,
+        "months",
+        24,
+        "--series-months",
+        "usda-gats",
+    )
+    assert ceiling.value == 60
+    assert tasks.mcp_add_options == ceiling.add_options
+    assert tasks.mcp_apply_options == ceiling.apply_options
+    assert not hasattr(tasks, "series_ceiling")
+    assert not hasattr(tasks, "set_series_ceiling")
     parser = build_parser(server.name, add_options=tasks.mcp_add_options)
     assert parser.parse_args([]).series_months == 24
     assert parser.parse_args(["--series-months", "36"]).series_months == 36
-    assert parser.parse_args(["--series-months", "61"]).series_months == 61, (
-        "the range is checked when the option is applied, then exit status 2"
-    )
     assert (
-        "--series-months MONTHS most months one series tool call spans, 1 to 60 (default 24); "
+        "--series-months MONTHS most months one tool call fetches, 1 to 60 (default 24); "
         "one request per month, so 60 months take about a minute of calls"
     ) in " ".join(parser.format_help().split())
-
-
-@pytest.mark.usefixtures("restore_series_ceiling")
-@pytest.mark.parametrize("months", [1, 24, 60])
-def test_set_series_ceiling_takes_1_to_60(months: int) -> None:
-    tasks.set_series_ceiling(months)
-    assert tasks.series_ceiling() == months
-
-
-@pytest.mark.usefixtures("restore_series_ceiling")
-@pytest.mark.parametrize("months", [0, 61, -24, True, "24", 24.0, None])
-def test_set_series_ceiling_refuses_anything_else(months: object) -> None:
-    """Never above 60, never below 1, never a bool, a text or a float; the ceiling in
-    force stays."""
-    tasks.set_series_ceiling(36)
-    with pytest.raises(InvalidRequestError) as info:
-        tasks.set_series_ceiling(months)  # type: ignore[arg-type]
-    assert info.value.message == CEILING_REFUSAL.format(months)
-    assert info.value.source == "usda-gats"
-    assert tasks.series_ceiling() == 36
 
 
 @pytest.mark.anyio
@@ -1698,15 +1704,15 @@ def test_set_series_ceiling_refuses_anything_else(months: object) -> None:
 async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_request(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """``mcp_apply_options`` with the default, 24, returns the server itself and sets the
-    ceiling: a 25-month call to each series tool is refused before any request (respx is
-    active with no route mounted), naming 24 and ``--series-months``; the ceiling is
-    process-wide, so a Python call in the same process meets it too. 24 months pass.
-    NOT RECORDED: no answer for Iceland in those 24 months is recorded, so each is served
-    the recorded empty answer of a listed partner without trade, Bouvet Island (``BV``)
-    in August 2026; the test checks the span check and what was sent."""
-    assert tasks.mcp_apply_options(argparse.Namespace(series_months=24), server) is server
-    assert tasks.series_ceiling() == 24
+    """``mcp_apply_options`` with the default, 24, sets the ceiling: a 25-month call to each
+    series tool is refused before any request (respx is active with no route mounted),
+    naming 24 and ``--series-months``, in core's words; the ceiling is process-wide, so a
+    Python call in the same process meets it too. 24 months pass. NOT RECORDED: no answer
+    for Iceland in those 24 months is recorded, so each is served the recorded empty answer
+    of a listed partner without trade, Bouvet Island (``BV``) in August 2026, an input of
+    the test that reads the span check and what was sent (conventions §10)."""
+    tasks.mcp_apply_options(argparse.Namespace(series_months=24))
+    assert tasks.SERIES.value == 24
     arguments: dict[str, object] = {
         "partner_code": "IC",
         "start_year": 2024,
@@ -1715,10 +1721,10 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
         "end_month": 8,
     }
     refusal = (
-        "2024-08 to 2026-08 is 25 months, one request each; a series spans at most 24 months, "
-        "the ceiling set for this process (the MCP server starts with 24 by default; "
-        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
-        "ranges of at most 24 months one after another."
+        "2024-08 to 2026-08 is 25 months; one call fetches at most 24 months, the ceiling set "
+        "for this process (the MCP server starts with 24 by default; --series-months raises "
+        "it, up to 60). Nothing was sent. Ask for a shorter range, or for consecutive ranges "
+        "of at most 24 months one after another."
     )
     for tool in SERIES_TOOLS:
         with pytest.raises(AssertionError) as info:
@@ -1742,18 +1748,18 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
 def test_a_ceiling_set_from_python_is_refused_in_the_same_words(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """A Python caller that calls ``set_series_ceiling(12)``, with no MCP server in the
-    process, meets the refusal the MCP server gives: the ceiling set for this process, the
-    MCP server's default and ``--series-months``, each true for that caller too. Refused
-    before any request (respx is active with no route mounted)."""
-    tasks.set_series_ceiling(12)
+    """A Python caller that sets the ceiling to 12, with no MCP server in the process, meets
+    the refusal the MCP server gives: the ceiling set for this process, the MCP server's
+    default and ``--series-months``, each true for that caller too. Refused before any
+    request (respx is active with no route mounted)."""
+    tasks.SERIES.set(12)
     with pytest.raises(InvalidRequestError) as info:
         tasks.get_census_import_series("IC", 2025, 8, 2026, 8)
     assert info.value.message == (
-        "2025-08 to 2026-08 is 13 months, one request each; a series spans at most 12 months, "
-        "the ceiling set for this process (the MCP server starts with 24 by default; "
-        "--series-months raises it, up to 60). Ask for a shorter range, or for consecutive "
-        "ranges of at most 12 months one after another."
+        "2025-08 to 2026-08 is 13 months; one call fetches at most 12 months, the ceiling set "
+        "for this process (the MCP server starts with 24 by default; --series-months raises "
+        "it, up to 60). Nothing was sent. Ask for a shorter range, or for consecutive ranges "
+        "of at most 12 months one after another."
     )
     assert respx_mock.calls.call_count == 0, "refused before any request"
 
@@ -1765,23 +1771,24 @@ def test_the_python_api_spans_60_months(
     """With no MCP options applied, and with ``--series-months 60``, a 60-month Python call
     passes the span check and sends one request per month, oldest first, and 61 months
     are refused with the Python API's message, which names no MCP server. NOT RECORDED:
-    the months are served the recorded empty answer of ``BV`` in August 2026, as above."""
+    the months are served the recorded empty answer of ``BV`` in August 2026, as above, an
+    input of the test (conventions §10)."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = _ic_export_urls(2021, 9, 60)
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
     for namespace in (None, argparse.Namespace(series_months=60)):
         if namespace is not None:
-            assert tasks.mcp_apply_options(namespace, server) is server
-        assert tasks.series_ceiling() == 60
+            tasks.mcp_apply_options(namespace)
+        assert tasks.SERIES.value == 60
         result = tasks.get_census_export_series("IC", 2021, 9, 2026, 8)
         assert result.data == []
         assert result.meta.vintage == RELEASED_2026_08
         with pytest.raises(InvalidRequestError) as longer:
             tasks.get_census_export_series("IC", 2021, 8, 2026, 8)
         assert longer.value.message == (
-            "2021-08 to 2026-08 is 61 months, one request each; a series spans at most 60 "
-            "months. Ask for a shorter range, or for consecutive ranges of at most 60 months "
-            "one after another."
+            "2021-08 to 2026-08 is 61 months; one call fetches at most 60 months. Nothing was "
+            "sent. Ask for a shorter range, or for consecutive ranges of at most 60 months one "
+            "after another."
         )
     assert sent_urls(months) == urls * 2
 
@@ -1790,188 +1797,60 @@ def test_the_python_api_spans_60_months(
 def test_the_entry_point_applies_series_months_or_exits_with_status_2(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``mcp.run`` hands the hooks to core's ``main``: ``--series-months 36`` sets the
-    ceiling before the server runs, on stdio; 61 or 0 ends the process with exit status 2
-    and the refusal on stderr, before anything is served, the ceiling unchanged; a value
-    that is no integer is argparse's own exit status 2. The server's ``run`` is replaced,
-    so nothing is served. The direct call to ``main`` lets mypy check the hooks against
-    its signature."""
+    """Core's ``main`` builds the server from ``mcp.build`` and applies the hooks:
+    ``--series-months 36`` sets the ceiling before the server runs, on stdio; 61 or 0 ends
+    the process with exit status 2 and the refusal on stderr, before anything is served,
+    the ceiling unchanged. ``MCPServer.run`` is replaced on the class, since ``main`` builds
+    the server that it runs, so nothing is served."""
+    from mcp.server.mcpserver import MCPServer
+
+    from xippios.usda.gats.mcp import build
+
     served: list[dict[str, object]] = []
-    monkeypatch.setattr(server, "run", lambda **kwargs: served.append(kwargs))
-    monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", "36"])
-    run()
+    monkeypatch.setattr(MCPServer, "run", lambda self, **kwargs: served.append(kwargs))
+    main(build, argv=["--series-months", "36"])
     assert served == [{"transport": "stdio"}]
-    assert tasks.series_ceiling() == 36
+    assert tasks.SERIES.value == 36
     for value in ("61", "0"):
-        monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", value])
         with pytest.raises(SystemExit) as exit_info:
-            run()
+            main(build, argv=["--series-months", value])
         assert exit_info.value.code == 2
         assert capsys.readouterr().err.endswith(f"error: {CEILING_REFUSAL.format(int(value))}\n")
-    monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", "two"])
-    with pytest.raises(SystemExit) as not_int:
-        run()
-    assert not_int.value.code == 2
-    assert "--series-months: invalid int value: 'two'" in capsys.readouterr().err
-    with pytest.raises(SystemExit) as direct:
-        main(
-            server,
-            ["--series-months", "61"],
-            add_options=tasks.mcp_add_options,
-            apply_options=tasks.mcp_apply_options,
-        )
-    assert direct.value.code == 2
-    assert capsys.readouterr().err.endswith(f"error: {CEILING_REFUSAL.format(61)}\n")
     assert served == [{"transport": "stdio"}], "nothing served after a refusal"
-    assert tasks.series_ceiling() == 36
-    with pytest.raises(InvalidRequestError, match="got 61"):
-        tasks.mcp_apply_options(argparse.Namespace(series_months=61), server)
-
-
-@pytest.mark.usefixtures("restore_series_ceiling")
-def test_the_entry_point_names_itself_in_its_usage_help_and_errors(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Core's ``main`` names the entry point that runs, ``xippios-usda-gats-mcp``, where it
-    named the source's slug, ``usda-gats``, and its help lists ``--series-months`` beside
-    core's options, with ``--allow-remote`` saying it changes nothing on this read server
-    (https://github.com/xippios/sdk-core/issues/167). The plain output is compared, so the
-    test pins its colors and its width."""
-    monkeypatch.setenv("PYTHON_COLORS", "0")
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setenv("COLUMNS", "100")
-    monkeypatch.setattr(server, "run", lambda **kwargs: None)
-    monkeypatch.setattr(sys, "argv", ["/opt/venv/bin/xippios-usda-gats-mcp", "--help"])
-    with pytest.raises(SystemExit) as helped:
-        run()
-    assert helped.value.code == 0
-    usage = capsys.readouterr().out
-    assert usage.startswith("usage: xippios-usda-gats-mcp ")
-    words = " ".join(usage.split())
-    assert "--series-months MONTHS most months one series tool call spans" in words
-    assert "--allow-remote changes nothing: this read server is not held to loopback" in words
-    monkeypatch.setattr(
-        sys, "argv", ["/opt/venv/bin/xippios-usda-gats-mcp", "--series-months", "61"]
-    )
-    with pytest.raises(SystemExit) as refused:
-        run()
-    assert refused.value.code == 2
-    err = capsys.readouterr().err
-    assert err.startswith("usage: xippios-usda-gats-mcp ")
-    assert err.splitlines()[-1] == f"xippios-usda-gats-mcp: error: {CEILING_REFUSAL.format(61)}"
+    assert tasks.SERIES.value == 36
+    monkeypatch.setattr(sys, "argv", ["xippios-usda-gats-mcp", "--series-months", "24"])
+    run()
+    assert tasks.SERIES.value == 24, "the entry point's run applies the option too"
 
 
 def test_the_package_contract_for_a_host() -> None:
-    """``mcp.build()`` is the tool set a host serves as the entry point does: every task,
-    the caps, the text and the ``--series-months`` hooks, with the variable the package
-    reads, the gateway's key, in ``ENV_VARS`` (conventions §8; sdk-core ADR-0026,
-    amendment 2026-11-18, points c and d; https://github.com/xippios/sdk-core/issues/245)."""
-    from xippios.core import EnvVar
-    from xippios.core.mcp import ToolSet
-
-    from xippios.usda.gats import _client
+    """``mcp.build()`` is the tool set a host serves as the entry point does: the caps, the
+    server's text from ``tasks.MCP_INSTRUCTIONS`` and the ``--series-months`` hooks
+    (conventions §8; sdk-core ADR-0063, decision 7)."""
     from xippios.usda.gats import mcp as entry
 
-    assert entry.ENV_VARS is _client.ENV_VARS
-    assert (EnvVar("DATA_GOV_API_KEY", secret=True, required=True),) == _client.ENV_VARS
     tools = entry.build()
-    assert isinstance(tools, ToolSet)
-    assert tools.source == "usda-gats"
-    assert [task.__name__ for task in tools.tasks] == list(tasks.__all__)
     assert dict(tools.caps) == dict(tasks.MCP_CAPS)
-    assert tools.instructions == entry.INSTRUCTIONS
-    assert tools.read_only
-    assert not tools.loopback_only
+    assert tools.instructions == tasks.MCP_INSTRUCTIONS
     assert (tools.add_options, tools.apply_options) == (
         tasks.mcp_add_options,
         tasks.mcp_apply_options,
     )
-    assert tools.option_defaults().series_months == tasks.MCP_SERIES_MAX_MONTHS
+    assert tools.option_defaults().series_months == tasks.SERIES.mcp == 24
 
 
 @pytest.mark.usefixtures("restore_series_ceiling")
 def test_a_host_applies_the_options_as_the_entry_point_does() -> None:
-    """A host builds its server from the tool set and applies its hooks' defaults, so a
-    series spans 24 months at most there, as on ``xippios-usda-gats-mcp`` without
-    ``--series-months``; until it applies them, the Python API's 60 stand."""
-    from xippios.core.mcp import build_server
-
+    """A host applies the tool set's hooks with their defaults, so a series spans 24 months
+    at most there, as on ``xippios-usda-gats-mcp`` without ``--series-months``; until it
+    applies them, the Python API's 60 stand."""
     from xippios.usda.gats import mcp as entry
 
     tools = entry.build()
-    hosted = build_server(tools)
-    assert tasks.series_ceiling() == tasks.SERIES_MAX_MONTHS
+    assert tasks.SERIES.value == tasks.SERIES.most == 60
     assert tools.apply_options is not None
-    assert tools.apply_options(tools.option_defaults(), hosted) is hosted
-    assert tasks.series_ceiling() == tasks.MCP_SERIES_MAX_MONTHS
-
-
-@pytest.mark.anyio
-async def test_a_tool_error_answer_is_flagged_and_an_undeclared_argument_refused(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Over an in-process MCP client, a tool's error answer sets ``isError`` beside the
-    family's text (https://github.com/xippios/sdk-core/issues/168), and an argument the
-    tool does not declare is refused before it runs, naming the ones it takes, where it
-    was dropped and the tool answered all 322 countries
-    (https://github.com/xippios/sdk-core/issues/84). The lists are packaged, so nothing
-    is sent either way (respx is active with no route mounted)."""
-    from mcp.client import Client
-    from mcp.types import TextContent
-
-    async with Client(server) as client:
-        refused = await client.call_tool(
-            "usda_gats_get_census_exports", {"partner_code": "ZZ", "year": 2026, "month": 8}
-        )
-        undeclared = await client.call_tool("usda_gats_list_countries", {"serach": "CHN"})
-        answered = await client.call_tool("usda_gats_list_countries", {"search": "CHN"})
-    texts = []
-    for result in (refused, undeclared, answered):
-        content = result.content[0]
-        assert isinstance(content, TextContent)
-        texts.append(content.text)
-    assert refused.is_error
-    assert texts[0].startswith("error: UnknownCode: 'ZZ' is not a partner_code")
-    assert texts[0].endswith("If upstream added it since, the packaged list is out of date.")
-    assert undeclared.is_error
-    assert texts[1] == (
-        "error: InvalidRequestError: serach: Not an argument of this tool; it takes "
-        "region_code, search"
-    )
-    assert not answered.is_error
-    assert [row["country_code"] for row in json.loads(texts[2])["data"]] == ["CH"]
-    assert not respx_mock.calls
-
-
-def test_a_route_answers_a_refused_argument_as_problem_details(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A year that is no integer, a product type outside ``X`` and ``M`` and a missing
-    month are refused before the task runs as problem details, the detail worded as the
-    MCP adapter words it and echoing no input, where FastAPI's own 422 answered a
-    ``detail`` list that echoed it (https://github.com/xippios/sdk-core/issues/66)."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
-    from xippios.usda.gats.http import router
-
-    app = FastAPI()
-    app.include_router(router)
-    http = TestClient(app)
-    cases: list[tuple[str, dict[str, str | int], str, str | None]] = [
-        ("get_census_exports", {"partner_code": "CH", "year": "abc", "month": 8}, "year", "abc"),
-        ("get_census_release_dates", {"product_type": "Z"}, "product_type", "'Z'"),
-        ("get_census_exports", {"partner_code": "CH", "year": 2026}, "month", None),
-    ]
-    for path, params, argument, value in cases:
-        answer = http.get(f"/usda-gats/{path}", params=params)
-        assert answer.status_code == 422, path
-        body = answer.json()
-        assert body["title"] == "InvalidRequestError"
-        assert body["detail"].startswith(f"{argument}: ")
-        if value is not None:
-            assert value not in body["detail"]
-    assert not respx_mock.calls
+    tools.apply_options(tools.option_defaults())
+    assert tasks.SERIES.value == tasks.SERIES.mcp == 24
 
 
 UN_EXPORTS = "get_un_trade_exports"
@@ -2674,8 +2553,13 @@ async def test_the_un_release_dates_tool_names_its_filters_when_cut(
     }
     assert payload["data"][-1]["statistical_year"] == "2017"
     assert payload["note"] == (
-        f"showing 200 of 3796 rows (cap: 200 rows or 65536 bytes); {UN_RELEASE_DATES_NOTE}"
+        f"showing 200 of 3796 rows (cap: 200 rows or 65536 bytes); {UN_RELEASE_DATES_NOTE}; "
+        "continue with offset=200"
     )
+    after = await mcp_call(
+        server, "usda_gats_get_un_release_dates", {"product_type": "X", "offset": 200}
+    )
+    assert after["note"].startswith("showing rows 201 to 400 of 3796")
     iceland = await mcp_call(
         server, "usda_gats_get_un_release_dates", {"product_type": "X", "reporter_code": "IC"}
     )

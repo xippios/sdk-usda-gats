@@ -14,16 +14,17 @@ The checks built on them: a country code against ``countries`` (``validate_count
 named by its parameter: ``validate_partner_code`` for the Census partner,
 ``validate_reporter_code`` for the UN Trade reporter; a refusal of an ISO or GENC code
 several listed codes share, ``shared_three_letter_code``, can be ranked by a UN Trade
-release list's reporters), a Census partner that is no other
-code's parent against its ``discontinuedOn`` month as well (``validate_partner_month``),
-a customs district id against ``customsDistricts`` (``validate_customs_district_id``) and
-a full HS6 code against ``HS6Commodities`` (``validate_hs6_code``). The UN Trade tasks
-check membership only: their data keeps codes the countries list marks discontinued in
-1987, such as ``DA`` (Denmark), for 2019. The other checks need no list: a four-digit
-year, a month from 1 to 12, an HS10 code or prefix of 1 to 10 digits, an HS6 prefix of 1
-to 5, for the ``list_hs6_commodities`` filter an HS6 code or prefix of 1 to 6
-(``validate_hs6_prefix``) and for the Census release lists' filter one year or one month
-as text (``validate_statistical_year_month``). All of them run before any call.
+release list's reporters), a Census partner with its year and month
+(``validate_partner_month``), whose month after the ``discontinuedOn`` of a code that is no
+other code's parent is a period without data, answered with ``leaf_note``
+(``leaf_last_month``), a customs district id against ``customsDistricts``
+(``validate_customs_district_id``) and a full HS6 code against ``HS6Commodities``
+(``validate_hs6_code``). The UN Trade tasks check membership only: their data keeps codes
+the countries list marks discontinued in 1987, such as ``DA`` (Denmark), for 2019. The other
+checks need no list: a four-digit year, a month from 1 to 12, an HS10 code or prefix of 1 to
+10 digits, an HS6 prefix of 1 to 5, for the ``list_hs6_commodities`` filter an HS6 code or
+prefix of 1 to 6 (``validate_hs6_prefix``) and for the Census release lists' filter one year
+or one month as text (``validate_statistical_year_month``). All of them run before any call.
 
 Refresh policy: ``/refresh-reference-data`` runs as a PR of its own before the release
 PR, never inside it (conventions §12), and whenever a validation failure names a code the
@@ -32,7 +33,7 @@ package lacks.
 
 import functools
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
 from xippios.core import InvalidRequestError, PackagedCodes, PackagedList, closest
@@ -54,6 +55,8 @@ __all__ = [
     "PACKAGED_LISTS",
     "REGIONS",
     "UNITS",
+    "leaf_last_month",
+    "leaf_note",
     "shared_three_letter_code",
     "validate_country_code",
     "validate_customs_district_id",
@@ -230,10 +233,10 @@ def validate_country_code(
 
     The membership check of every code a task takes from that list: the Census
     ``partner_code`` (``validate_partner_code``), the UN Trade ``reporter_code``
-    (``validate_reporter_code``) and the UN Trade ``partner_country_code`` filter. Every listed
-    code passes, the 26 with a ``discontinuedOn`` month included; only the Census tasks
-    check that month too, for the 7 of them that are no other code's parent
-    (``validate_partner_month``).
+    (``validate_reporter_code``) and the UN Trade ``partner_country_code`` filter. Every
+    listed code passes, the 26 with a ``discontinuedOn`` month included; only the Census
+    tasks read that month too, for the 7 of them that are no other code's parent, and answer
+    a month after it with the empty list (``leaf_last_month``).
 
     Args:
         code: Two characters, as ``GATSData_GetCountries`` lists them, e.g. ``"CH"``
@@ -284,15 +287,15 @@ def validate_partner_code(partner_code: str) -> str:
     GATS answers an unknown code with HTTP 200 and ``[]``, the same as a listed partner
     without trade (``unknown_partner.json``, ``no_data_valid_partner.json``), so the
     check runs before any upstream call. Every listed code passes here, the 26 with a
-    ``discontinuedOn`` month included; ``validate_partner_month`` then refuses the 7 that
-    are no other code's parent for a month after it. A parent code, one another record
-    names as its ``countryParentCode`` (``list_countries`` shows it), is taken for the
-    aggregate of its children: as recorded for 2026-08, ``Y1`` (Leeward-Windward Islands)
-    answers every HS10 code of ``AC`` (Antigua and Barbuda), one of its nine islands, at
-    no lower a value (``Y1_2026_8.json``, ``AC_2026_8.json``). The two-digit codes of
-    region ``R99``, ``01`` (Caribbean,nes) to ``18`` (ASEAN), are nobody's parent and
-    pass as well; ``01`` and ``18`` answered 2026-08 with ``[]`` as recorded, and an empty
-    answer means no data, as for any listed partner without trade.
+    ``discontinuedOn`` month included; the tasks answer a month after it of the 7 that are
+    no other code's parent with the empty list (``leaf_last_month``). A parent code, one
+    another record names as its ``countryParentCode`` (``list_countries`` shows it), is
+    taken for the aggregate of its children: as recorded for 2026-08, ``Y1``
+    (Leeward-Windward Islands) answers every HS10 code of ``AC`` (Antigua and Barbuda), one
+    of its nine islands, at no lower a value (``Y1_2026_8.json``, ``AC_2026_8.json``). The
+    two-digit codes of region ``R99``, ``01`` (Caribbean,nes) to ``18`` (ASEAN), are
+    nobody's parent and pass as well; ``01`` and ``18`` answered 2026-08 with ``[]`` as
+    recorded, and an empty answer means no data, as for any listed partner without trade.
     ``validate_country_code`` with ``"partner_code"`` and ``errors.PARTNER_REASON``.
 
     Args:
@@ -351,28 +354,12 @@ def validate_reporter_code(reporter_code: str, *, reporters: Collection[str] | N
 
 
 def validate_partner_month(partner_code: str, year: int, month: int) -> str:
-    """Check a partner code, a year and a month, and that a discontinued leaf was current then.
+    """Check a Census partner code, a year and a month, every one before any call.
 
-    Runs ``validate_partner_code``, ``validate_year`` and ``validate_month``, then the
-    code's ``discontinuedOn`` if the code is no other code's parent. 26 codes of the
-    packaged ``countries`` list carry one, a year and month as six digits (``"198712"``).
-    19 of them are parents, codes another record names as its ``countryParentCode``
-    (``SZ``, Switzerland, the parent of ``SR`` Switzerland and ``LS`` Liechtenstein). Two
-    were recorded for 2026-08: ``Y1`` (Leeward-Windward Islands, discontinued 198801)
-    answers every HS10 code of ``AC`` (Antigua and Barbuda), one of its nine islands, at
-    no lower a value, as the sum of its children would; ``AS`` (Australia, discontinued
-    198712) answers the 669 records of ``A2`` (Australia), its child of the same name,
-    apart from the code, while ``NF`` (Norfolk Island), another child, answers ``[]``. On
-    that evidence the package accepts every parent for every month, by decision: the
-    other parents were not recorded. The remaining 7 of the 26 are leaves, nobody's parent:
-    ``D1`` and ``DA`` (Denmark), ``GC`` and ``GE`` (the two former Germanys), ``RB`` (Serbia
-    and Kosovo), ``YE`` and ``YS`` (the two former Yemens). The package reads a leaf's month
-    as its last: a month at or before it passes, a later one is refused before any call,
-    naming the leaf's own parent where it has one (``GM``, Germany, for ``GC`` and ``GE``;
-    ``YM``, Yemen, for ``YE`` and ``YS``) and the listed codes with the same
-    ``countryName``; ``GC`` answered 2026-08 with ``[]`` as recorded. Months are compared as
-    six-digit text, as upstream writes them; ``YS`` (Yemen (Aden)) reads ``"199091"``, so
-    every month of 1990 passes for it and 1991-01 on is refused.
+    Runs ``validate_partner_code``, ``validate_year`` and ``validate_month``. A code that
+    GATS discontinued passes for every month: a leaf's month after its last is no error but
+    a period without data, which the tasks answer with the empty list and ``leaf_note``,
+    sending no request (``leaf_last_month``).
 
     Args:
         partner_code: GATS's two-character code, e.g. ``"GE"`` (Germany, Federal Republic
@@ -387,17 +374,64 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
 
     Raises:
         UnknownCode: When the list lacks the code (``validate_partner_code``).
-        InvalidRequestError: When the year or the month is not valid, or the code is a
-            leaf and the month is after its ``discontinuedOn``, e.g. ``GE`` for 2026-08.
+        InvalidRequestError: When the year or the month is not valid.
     """
     validate_partner_code(partner_code)
     validate_year(year)
     validate_month(month)
+    return partner_code
+
+
+def leaf_last_month(partner_code: str) -> str | None:
+    """The last month a discontinued leaf holds trade, its ``discontinuedOn``; else ``None``.
+
+    26 codes of the packaged ``countries`` list carry a ``discontinuedOn``, a year and month
+    as six digits (``"198712"``). 19 of them are parents, codes another record names as its
+    ``countryParentCode`` (``SZ``, Switzerland, the parent of ``SR`` Switzerland and ``LS``
+    Liechtenstein). Two were recorded for 2026-08: ``Y1`` (Leeward-Windward Islands,
+    discontinued 198801) answers every HS10 code of ``AC`` (Antigua and Barbuda), one of its
+    nine islands, at no lower a value, as the sum of its children would; ``AS`` (Australia,
+    discontinued 198712) answers the 669 records of ``A2`` (Australia), its child of the
+    same name, apart from the code, while ``NF`` (Norfolk Island), another child, answers
+    ``[]``. On that evidence the package accepts every parent for every month, by decision:
+    the other parents were not recorded, and a parent has no last month here. The remaining
+    7 of the 26 are leaves, nobody's parent: ``D1`` and ``DA`` (Denmark), ``GC`` and ``GE``
+    (the two former Germanys), ``RB`` (Serbia and Kosovo), ``YE`` and ``YS`` (the two former
+    Yemens). The package reads a leaf's ``discontinuedOn`` as its last month: a month after
+    it holds no trade, ``GC`` answered 2026-08 with ``[]`` as recorded, and the Census tasks
+    answer it with the empty list and ``leaf_note``. Months compare as six-digit text, as
+    upstream writes them; ``YS`` (Yemen (Aden)) reads ``"199091"``, so every month of 1990
+    is at or before it and 1991-01 on is after.
+
+    Args:
+        partner_code: A listed code, e.g. ``"D1"`` (``"198712"``), ``"SZ"`` (``None``, a
+            parent), ``"CH"`` (``None``, current).
+    """
     record = _countries()[partner_code]
     ended = record["discontinuedOn"]
-    asked = f"{year:04d}{month:02d}"
-    if not ended or partner_code in _parent_codes() or asked <= ended:
-        return partner_code
+    if not ended or partner_code in _parent_codes():
+        return None
+    return str(ended)
+
+
+def leaf_note(partner_code: str, months: Sequence[tuple[int, int]], *, whole: bool) -> str:
+    """The note on a leaf's months after its last, in every word of the refusal it replaced.
+
+    A Census task refused a leaf's month after its ``discontinuedOn`` until the
+    maintainer's decision of 2026-11-26 made it a period without data: the task answers the
+    empty list and sends no request for it, and this note keeps every word of that refusal,
+    the code's month in GATS's countries list, its own parent where it has one (``GM``,
+    Germany, for ``GC`` and ``GE``; ``YM``, Yemen, for ``YE`` and ``YS``) and the listed
+    codes of the same ``countryName``, but for what the task answers.
+
+    Args:
+        partner_code: A leaf, e.g. ``"D1"`` (Denmark, 198712).
+        months: ``(year, month)`` of the months after its last that the call asked for, in
+            order and one run, e.g. ``[(2026, 8)]`` or ``[(1988, 1), (1988, 2)]``.
+        whole: Whether they are every month of the call, so that nothing was sent; else a
+            series that requested its other months and not these.
+    """
+    record = _countries()[partner_code]
     name = record["countryName"]
     fetched = COUNTRIES.packaged.fetched
     same = [
@@ -411,7 +445,7 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
         else f"No other listed code carries the name {name!r}; {COUNTRIES_TASK} searches them."
     )
     # A refreshed list may give a leaf no parent, or one it does not list: name a parent
-    # only when it is another listed code, so the refusal itself never fails.
+    # only when it is another listed code, so the note itself never fails.
     countries = _countries()
     parent = record.get("countryParentCode")
     if isinstance(parent, str) and parent != partner_code and parent in countries:
@@ -419,12 +453,22 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
             f"Its parent code {parent} ({countries[parent]['countryName']}) is accepted "
             f"for every month. {instead}"
         )
-    raise InvalidRequestError(
-        f"partner_code {partner_code!r} ({name}) was discontinued in {ended} "
+    named = [f"{year:04d}-{month:02d} ({year:04d}{month:02d})" for year, month in months]
+    asked = named[0] if len(named) == 1 else f"{named[0]} to {named[-1]}"
+    if whole:
+        answer = "answers the empty list" if len(named) == 1 else "answer the empty list"
+        answer += ". Nothing was sent."
+    else:
+        answer = (
+            "adds no rows and was not requested."
+            if len(named) == 1
+            else "add no rows and were not requested."
+        )
+    return (
+        f"partner_code {partner_code!r} ({name}) was discontinued in {record['discontinuedOn']} "
         f"(discontinuedOn in GATS's countries list, packaged, fetched {fetched:%Y-%m-%d}) "
-        f"and is no other code's parent: it holds no trade after that month, so "
-        f"{year:04d}-{month:02d} ({asked}) is refused. Nothing was sent. {instead}",
-        source=SOURCE,
+        f"and is no other code's parent: it holds no trade after that month, so {asked} "
+        f"{answer} {instead}"
     )
 
 

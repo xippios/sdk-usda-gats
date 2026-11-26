@@ -558,16 +558,18 @@ async def _releases(product_type: ProductType) -> Answer[list[DataReleaseInfo]]:
 
 async def _release(
     product_type: ProductType, year: int, month: int, data: str | None = None
-) -> DataReleaseInfo:
-    """The month's record in the release list of ``product_type``; see ``_release_of``.
+) -> tuple[DataReleaseInfo, datetime]:
+    """The month's record in the release list of ``product_type`` and the list's time.
 
-    The list comes from the client's cache when it holds it; ``data`` names what was
-    asked for in the refusal, e.g. ``"re-exports"``.
+    The list comes from the client's cache when it holds it, and its time is the cache's
+    stored time on a hit, else the time it arrived; ``data`` names what was asked for in
+    the refusal, e.g. ``"re-exports"``. See ``_release_of``.
     """
     listed = await _releases(product_type)
     releases, fetched = listed.payload, listed.retrieved_at
     flow, operation = RELEASE_LISTS[product_type]
-    return _release_of(f"{year:04d}{month:02d}", releases, fetched, flow, operation, data)
+    release = _release_of(f"{year:04d}{month:02d}", releases, fetched, flow, operation, data)
+    return release, fetched
 
 
 def _matching[R: _Coded](records: list[R], hs10_code: str | None) -> list[R]:
@@ -587,6 +589,7 @@ def _in_district[R: _Districted](records: list[R], customs_district_id: int | No
 def _data_meta(
     endpoint: str,
     release: DataReleaseInfo,
+    retrieved_at: datetime,
     partner_code: str,
     year: int,
     month: int,
@@ -600,11 +603,14 @@ def _data_meta(
     ``"2026-10-06T08:00:00"`` for 2026-08. ``published_at`` is that time, naive as FAS
     prints it, with ``published_at_naive`` set (sdk-core ADR-0041, decision 2). ``filters`` are the
     task's other filters, e.g. ``customs_district_id``, recorded in ``meta.request`` after
-    ``hs10_code``; a filter left ``None`` is left out.
+    ``hs10_code``; a filter left ``None`` is left out. ``retrieved_at`` is the oldest of
+    the call's two reads, the release list's and the month's, as the client gives each
+    (conventions §4).
     """
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
+        retrieved_at=retrieved_at,
         published_at=release.release_time_stamp,
         published_at_naive=True,
         vintage=release.release_time_stamp.isoformat(),
@@ -661,9 +667,18 @@ async def get_census_exports_async(
             (the default) keeps every product. Applied after the one data request.
     """
     _check(partner_code, year, month, hs10_code)
-    release = await _release(ProductType.X, year, month)
-    records = await api.get_census_exports(partner_code, year, month)
-    meta = _data_meta("GATSData_GetCensusExports", release, partner_code, year, month, hs10_code)
+    release, listed_at = await _release(ProductType.X, year, month)
+    answer = await api.get_census_exports(partner_code, year, month)
+    records = answer.payload
+    meta = _data_meta(
+        "GATSData_GetCensusExports",
+        release,
+        min(listed_at, answer.retrieved_at),
+        partner_code,
+        year,
+        month,
+        hs10_code,
+    )
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
@@ -709,9 +724,18 @@ async def get_census_imports_async(
             (the default) keeps every product. Applied after the one data request.
     """
     _check(partner_code, year, month, hs10_code)
-    release = await _release(ProductType.M, year, month)
-    records = await api.get_census_import(partner_code, year, month)
-    meta = _data_meta("GATSData_GetCensusImport", release, partner_code, year, month, hs10_code)
+    release, listed_at = await _release(ProductType.M, year, month)
+    answer = await api.get_census_import(partner_code, year, month)
+    records = answer.payload
+    meta = _data_meta(
+        "GATSData_GetCensusImport",
+        release,
+        min(listed_at, answer.retrieved_at),
+        partner_code,
+        year,
+        month,
+        hs10_code,
+    )
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
@@ -752,9 +776,18 @@ async def get_census_reexports_async(
             (the default) keeps every product. Applied after the one data request.
     """
     _check(partner_code, year, month, hs10_code)
-    release = await _release(ProductType.X, year, month, "re-exports")
-    records = await api.get_census_re_exports(partner_code, year, month)
-    meta = _data_meta("GATSData_GetCensusReExports", release, partner_code, year, month, hs10_code)
+    release, listed_at = await _release(ProductType.X, year, month, "re-exports")
+    answer = await api.get_census_re_exports(partner_code, year, month)
+    records = answer.payload
+    meta = _data_meta(
+        "GATSData_GetCensusReExports",
+        release,
+        min(listed_at, answer.retrieved_at),
+        partner_code,
+        year,
+        month,
+        hs10_code,
+    )
     return Result(data=_matching(records, hs10_code), meta=meta)
 
 
@@ -798,11 +831,13 @@ async def get_customs_district_exports_async(
             district. Both filters apply after the one data request.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release = await _release(ProductType.X, year, month, "customs-district exports")
-    records = await api.get_customs_districts_exports(partner_code, year, month)
+    release, listed_at = await _release(ProductType.X, year, month, "customs-district exports")
+    answer = await api.get_customs_districts_exports(partner_code, year, month)
+    records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsExports",
         release,
+        min(listed_at, answer.retrieved_at),
         partner_code,
         year,
         month,
@@ -853,11 +888,13 @@ async def get_customs_district_imports_async(
             district. Both filters apply after the one data request.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release = await _release(ProductType.M, year, month, "customs-district imports")
-    records = await api.get_customs_districts_imports(partner_code, year, month)
+    release, listed_at = await _release(ProductType.M, year, month, "customs-district imports")
+    answer = await api.get_customs_districts_imports(partner_code, year, month)
+    records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsImports",
         release,
+        min(listed_at, answer.retrieved_at),
         partner_code,
         year,
         month,
@@ -909,11 +946,13 @@ async def get_customs_district_reexports_async(
             district. Both filters apply after the one data request.
     """
     _check(partner_code, year, month, hs10_code, customs_district_id)
-    release = await _release(ProductType.X, year, month, "customs-district re-exports")
-    records = await api.get_customs_districts_re_exports(partner_code, year, month)
+    release, listed_at = await _release(ProductType.X, year, month, "customs-district re-exports")
+    answer = await api.get_customs_districts_re_exports(partner_code, year, month)
+    records = answer.payload
     meta = _data_meta(
         "GATSData_GetCustomsDistrictsReExports",
         release,
+        min(listed_at, answer.retrieved_at),
         partner_code,
         year,
         month,
@@ -989,7 +1028,7 @@ def _series_months(
 
 
 async def _series[R: _Coded](
-    fetch: Callable[[str, int, int], Awaitable[list[R]]],
+    fetch: Callable[[str, int, int], Awaitable[Answer[list[R]]]],
     endpoint: str,
     product_type: ProductType,
     data: str | None,
@@ -1044,12 +1083,16 @@ async def _series[R: _Coded](
         for code in codes
     ]
     records: list[R] = []
+    retrieved_at = fetched
     for year, month in months:
-        records.extend(_matching(await fetch(partner_code, year, month), hs10_code))
+        answer = await fetch(partner_code, year, month)
+        records.extend(_matching(answer.payload, hs10_code))
+        retrieved_at = min(retrieved_at, answer.retrieved_at)
     newest = max(release.release_time_stamp for release in found)
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
+        retrieved_at=retrieved_at,
         published_at=newest,
         published_at_naive=True,
         vintage=newest.isoformat(),
@@ -1497,16 +1540,18 @@ def _un_release_of(
 
 async def _un_release(
     product_type: ProductType, reporter_code: str, year: int, data: str | None = None
-) -> UNTradeDataReleaseInfo:
-    """The reporter-year's record in the UN release list of ``product_type``.
+) -> tuple[UNTradeDataReleaseInfo, datetime]:
+    """The reporter-year's record in the UN release list of ``product_type``, and its time.
 
-    The list comes from the client's cache when it holds it; ``data`` names what was
-    asked for in the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
+    The list comes from the client's cache when it holds it, and its time is the cache's
+    stored time on a hit, else the time it arrived; ``data`` names what was asked for in
+    the refusal, e.g. ``"re-exports"``. See ``_un_release_of``.
     """
     listed = await _un_releases(product_type)
     releases, fetched = listed.payload, listed.retrieved_at
     flow, operation = UN_RELEASE_LISTS[product_type]
-    return _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
+    release = _un_release_of(reporter_code, year, releases, fetched, flow, operation, data)
+    return release, fetched
 
 
 def _un_selected(
@@ -1524,6 +1569,7 @@ def _un_selected(
 def _un_meta(
     endpoint: str,
     release: UNTradeDataReleaseInfo,
+    retrieved_at: datetime,
     reporter_code: str,
     year: int,
     partner_code: str | None,
@@ -1535,11 +1581,13 @@ def _un_meta(
     naive time written back with ``isoformat()``: ``"2020-06-03T05:50:46"`` for Iceland's
     2019 exports. ``published_at`` is that time, naive as FAS prints it, with
     ``published_at_naive`` set (sdk-core ADR-0041, decision 2). A filter left ``None`` is
-    left out of ``request``.
+    left out of ``request``. ``retrieved_at`` is the oldest of the call's two reads, the
+    release list's and the year's, as the client gives each (conventions §4).
     """
     return ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
+        retrieved_at=retrieved_at,
         published_at=release.release_time_stamp,
         published_at_naive=True,
         vintage=release.release_time_stamp.isoformat(),
@@ -1606,12 +1654,18 @@ async def get_un_exports_async(
         ProductType.X,
         lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
     )
-    release = await _un_release(ProductType.X, reporter_code, year)
-    records = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
+    release, listed_at = await _un_release(ProductType.X, reporter_code, year)
+    answer = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
-        "GATSData_GetUNTradeExports", release, reporter_code, year, partner_code, hs6_code
+        "GATSData_GetUNTradeExports",
+        release,
+        min(listed_at, answer.retrieved_at),
+        reporter_code,
+        year,
+        partner_code,
+        hs6_code,
     )
-    return Result(data=_un_selected(records, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
 
 
 async def get_un_imports_async(
@@ -1658,12 +1712,18 @@ async def get_un_imports_async(
         ProductType.M,
         lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
     )
-    release = await _un_release(ProductType.M, reporter_code, year)
-    records = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
+    release, listed_at = await _un_release(ProductType.M, reporter_code, year)
+    answer = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
     meta = _un_meta(
-        "GATSData_GetUNTradeImports", release, reporter_code, year, partner_code, hs6_code
+        "GATSData_GetUNTradeImports",
+        release,
+        min(listed_at, answer.retrieved_at),
+        reporter_code,
+        year,
+        partner_code,
+        hs6_code,
     )
-    return Result(data=_un_selected(records, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
 
 
 async def get_un_reexports_async(
@@ -1709,12 +1769,18 @@ async def get_un_reexports_async(
         ProductType.X,
         lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
     )
-    release = await _un_release(ProductType.X, reporter_code, year, "re-exports")
-    records = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
+    release, listed_at = await _un_release(ProductType.X, reporter_code, year, "re-exports")
+    answer = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
     meta = _un_meta(
-        "GATSData_GetUNTradeReExports", release, reporter_code, year, partner_code, hs6_code
+        "GATSData_GetUNTradeReExports",
+        release,
+        min(listed_at, answer.retrieved_at),
+        reporter_code,
+        year,
+        partner_code,
+        hs6_code,
     )
-    return Result(data=_un_selected(records, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
 
 
 def _un_release_dates_check(

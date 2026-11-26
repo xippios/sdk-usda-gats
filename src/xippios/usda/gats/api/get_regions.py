@@ -10,24 +10,27 @@ of ``GATSData_GetCountries``. Error shapes are mapped once in
 ``xippios.usda.gats._client.classify``.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import Region
 
 __all__ = ["get_regions"]
 
 
-async def get_regions() -> list[Region]:
+async def get_regions() -> Answer[list[Region]]:
     """Call ``GATSData_GetRegions``.
 
     Returns:
-        Every GATS region, in upstream order, one ``Region`` per record, e.g.
-            ``Region(region_code="R40", region_name="East Asia")``
+        Core's ``Answer``: as ``payload`` every GATS region, in upstream order, one ``Region`` per
+        record, e.g.
+            ``Region(region_code="R40", region_name="East Asia")``,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
     """
-    raw = await client.get_json("/api/gats/regions")
-    return parse(list[Region], raw, source=SOURCE, endpoint="GATSData_GetRegions")
+    return await client.get_answer(
+        "/api/gats/regions", parse=list[Region], endpoint="GATSData_GetRegions"
+    )

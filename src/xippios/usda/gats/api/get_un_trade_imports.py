@@ -19,15 +19,15 @@ across all partners and products, never paged. Error shapes are mapped once in
 
 from urllib.parse import quote
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import UNTradeRecord
 
 __all__ = ["get_un_trade_imports"]
 
 
-async def get_un_trade_imports(reporter_code: str, year: str) -> list[UNTradeRecord]:
+async def get_un_trade_imports(reporter_code: str, year: str) -> Answer[list[UNTradeRecord]]:
     """Call ``GATSData_GetUNTradeImports``.
 
     Args:
@@ -37,8 +37,9 @@ async def get_un_trade_imports(reporter_code: str, year: str) -> list[UNTradeRec
             upstream's example is 2010.
 
     Returns:
-        One ``UNTradeRecord`` per partner and HS6 code, in upstream order; ``[]`` when
-        upstream has none.
+        Core's ``Answer``: as ``payload`` one ``UNTradeRecord`` per partner and HS6 code, in
+        upstream order; ``[]`` when upstream has none,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         NotFoundError: Upstream answered HTTP 404.
@@ -49,5 +50,6 @@ async def get_un_trade_imports(reporter_code: str, year: str) -> list[UNTradeRec
         f"/api/gats/UNTradeImports/reporterCode/{quote(reporter_code, safe='')}"
         f"/year/{quote(year, safe='')}"
     )
-    raw = await client.get_json(path)
-    return parse(list[UNTradeRecord], raw, source=SOURCE, endpoint="GATSData_GetUNTradeImports")
+    return await client.get_answer(
+        path, parse=list[UNTradeRecord], endpoint="GATSData_GetUNTradeImports"
+    )

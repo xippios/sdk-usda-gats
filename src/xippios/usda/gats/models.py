@@ -20,9 +20,12 @@ plain ``int``.
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import Field
-from xippios.core import UpstreamModel
+from xippios.core import NamedBy, UpstreamModel
+
+from xippios.usda.gats.params import COUNTRIES, DISTRICTS, HS6_CODES, REGIONS, UNITS
 
 __all__ = [
     "CensusExport",
@@ -105,8 +108,10 @@ class Country(UpstreamModel):
     """
 
     country_code: str = Field(validation_alias="countryCode")
-    region_code: str = Field(validation_alias="regionCode")
-    country_parent_code: str = Field(validation_alias="countryParentCode")
+    region_code: Annotated[str, NamedBy(REGIONS)] = Field(validation_alias="regionCode")
+    country_parent_code: Annotated[str, NamedBy(COUNTRIES)] = Field(
+        validation_alias="countryParentCode"
+    )
     country_name: str = Field(validation_alias="countryName")
     description: str | None = Field(validation_alias="description")
     iso3_code: str = Field(validation_alias="isO3Code")
@@ -179,10 +184,14 @@ class Commodity(UpstreamModel):
     commodity_name: str = Field(validation_alias="commodityName")
     commodity_description: str | None = Field(validation_alias="commodityDescription")
     is_ag_commodity: bool = Field(validation_alias="isAgCommodity")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
 
 
 class HS6Commodity(UpstreamModel):
@@ -211,10 +220,14 @@ class HS6Commodity(UpstreamModel):
     hs6_code: str = Field(validation_alias="hS6Code")
     commodity_name: str = Field(validation_alias="commodityName")
     commodity_description: str = Field(validation_alias="commodityDescription")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
 
 
 class UnitOfMeasure(UpstreamModel):
@@ -265,7 +278,9 @@ class CustomsDistrict(UpstreamModel):
 
     customs_district_id: int = Field(validation_alias="customsDistrictId")
     customs_district_name: str = Field(validation_alias="customsDistrictName")
-    customs_district_region_code: str = Field(validation_alias="customsDistrictRegionCode")
+    customs_district_region_code: Annotated[str, NamedBy("customs_district_region_name")] = Field(
+        validation_alias="customsDistrictRegionCode"
+    )
     customs_district_region_name: str = Field(validation_alias="customsDistrictRegionName")
 
 
@@ -296,7 +311,7 @@ class DataReleaseInfo(UpstreamModel):
 
     statistical_year_month: str = Field(validation_alias="statisticalYearMonth")
     product_type: str = Field(validation_alias="productType")
-    reporter_code: str = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="reporterCode")
     release_time_stamp: datetime = Field(validation_alias="releaseTimeStamp")
 
 
@@ -327,12 +342,16 @@ class CensusExport(UpstreamModel):
     """
 
     date: str = Field(validation_alias="date")
-    country_code: str = Field(validation_alias="countryCode")
+    country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="countryCode")
     hs10_code: str = Field(validation_alias="hS10Code")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
     quantity1: Decimal = Field(validation_alias="quantity1")
     quantity2: Decimal = Field(validation_alias="quantity2")
     value: Decimal = Field(validation_alias="value")
@@ -374,12 +393,16 @@ class CensusImport(UpstreamModel):
     consumption_cif_value: Decimal = Field(validation_alias="consumptionCIFValue")
     cif_value: Decimal = Field(validation_alias="cifValue")
     date: str = Field(validation_alias="date")
-    country_code: str = Field(validation_alias="countryCode")
+    country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="countryCode")
     hs10_code: str = Field(validation_alias="hS10Code")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
     quantity1: Decimal = Field(validation_alias="quantity1")
     quantity2: Decimal = Field(validation_alias="quantity2")
     value: Decimal = Field(validation_alias="value")
@@ -415,14 +438,20 @@ class CustomsDistrictExport(UpstreamModel):
         value: ``value``, e.g. ``Decimal("6905.0")``; the snapshot names no currency.
     """
 
-    customs_district_id: int = Field(validation_alias="customsDistrictId")
+    customs_district_id: Annotated[int, NamedBy(DISTRICTS)] = Field(
+        validation_alias="customsDistrictId"
+    )
     date: str = Field(validation_alias="date")
-    country_code: str = Field(validation_alias="countryCode")
+    country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="countryCode")
     hs10_code: str = Field(validation_alias="hS10Code")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
     quantity1: Decimal = Field(validation_alias="quantity1")
     quantity2: Decimal = Field(validation_alias="quantity2")
     value: Decimal = Field(validation_alias="value")
@@ -457,19 +486,25 @@ class CustomsDistrictImport(UpstreamModel):
         value: ``value``, e.g. ``Decimal("4814084.0")``; the snapshot names no currency.
     """
 
-    customs_district_id: int = Field(validation_alias="customsDistrictId")
+    customs_district_id: Annotated[int, NamedBy(DISTRICTS)] = Field(
+        validation_alias="customsDistrictId"
+    )
     consumption_quantity1: Decimal = Field(validation_alias="consumptionQuantity1")
     consumption_quantity2: Decimal = Field(validation_alias="consumptionQuantity2")
     consumption_value: Decimal = Field(validation_alias="consumptionValue")
     consumption_cif_value: Decimal = Field(validation_alias="consumptionCIFValue")
     cif_value: Decimal = Field(validation_alias="cifValue")
     date: str = Field(validation_alias="date")
-    country_code: str = Field(validation_alias="countryCode")
+    country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="countryCode")
     hs10_code: str = Field(validation_alias="hS10Code")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
     quantity1: Decimal = Field(validation_alias="quantity1")
     quantity2: Decimal = Field(validation_alias="quantity2")
     value: Decimal = Field(validation_alias="value")
@@ -509,7 +544,7 @@ class UNTradeDataReleaseInfo(UpstreamModel):
 
     statistical_year: str = Field(validation_alias="statisticalYear")
     product_type: str = Field(validation_alias="productType")
-    reporter_code: str = Field(validation_alias="reporterCode")
+    reporter_code: Annotated[str, NamedBy(COUNTRIES)] = Field(validation_alias="reporterCode")
     release_time_stamp: datetime = Field(validation_alias="releaseTimeStamp")
 
 
@@ -555,13 +590,21 @@ class UNTradeRecord(UpstreamModel):
     """
 
     year: str = Field(validation_alias="year")
-    reporter_country_code: str = Field(validation_alias="reporterCountryCode")
-    partner_country_code: str = Field(validation_alias="partnerCountryCode")
-    hs6_code: str = Field(validation_alias="hS6Code")
-    census_uom_id1: int = Field(validation_alias="censusUOMId1")
-    census_uom_id2: int = Field(validation_alias="censusUOMId2")
-    fas_converted_uom_id: int = Field(validation_alias="fasConvertedUOMId")
-    fas_non_converted_uom_id: int = Field(validation_alias="fasNonConvertedUOMId")
+    reporter_country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(
+        validation_alias="reporterCountryCode"
+    )
+    partner_country_code: Annotated[str, NamedBy(COUNTRIES)] = Field(
+        validation_alias="partnerCountryCode"
+    )
+    hs6_code: Annotated[str, NamedBy(HS6_CODES)] = Field(validation_alias="hS6Code")
+    census_uom_id1: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId1")
+    census_uom_id2: Annotated[int, NamedBy(UNITS)] = Field(validation_alias="censusUOMId2")
+    fas_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasConvertedUOMId"
+    )
+    fas_non_converted_uom_id: Annotated[int, NamedBy(UNITS)] = Field(
+        validation_alias="fasNonConvertedUOMId"
+    )
     quantity1: Decimal = Field(validation_alias="quantity1")
     quantity2: Decimal = Field(validation_alias="quantity2")
     value: Decimal = Field(validation_alias="value")

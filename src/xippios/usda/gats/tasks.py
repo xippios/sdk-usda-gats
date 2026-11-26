@@ -45,31 +45,31 @@ cache stored the list when the cache answered (conventions §4), else the time t
 arrived.
 
 The three Census series tasks, ``get_census_export_series``, ``get_census_import_series``
-and ``get_census_reexport_series``, answer one partner over a range of months from the
-same wrappers as the month tasks, one data call per month (sdk-usda-psd's
-``get_time_series`` is the family's precedent for a series assembled from one call per
-period). A call spans at most ``SERIES.value`` months, core's one ``Ceiling`` (sdk-core
-ADR-0054): 60 in Python and over HTTP; the MCP server starts with 24, and its
-``--series-months`` sets another ceiling from 1 to 60 through the tool set's hooks
-(``mcp_add_options``, ``mcp_apply_options``). The entry point ``xippios-usda-gats-mcp`` sets
-the MCP ceiling, since core's ``main`` applies the option, and so does a host that applies
-the tool set's hooks with their defaults. The ceiling is process-wide: a Python or HTTP call
-made in the MCP server's process meets the MCP ceiling too. Every argument is checked first, the partner code for the start and
-for the end month, so a code discontinued inside the range is refused when it is no other
-code's parent; a parent code passes for every month (``params.validate_partner_month``).
-The flow's release list is fetched once, the imports list for imports and the exports
-list for exports and, by the same assumption, re-exports; a range with a month the list
-lacks is refused whole as ``NotFoundError`` naming the first such month and the latest
-released, never trimmed. Then the months are fetched oldest first, one request after the
-other at the client's pace (``_client.RATE_LIMIT``, one per second, and the quota policy
-on top), never concurrently, by core's ``fetch_periods``, and returned as one list in month order: every record
-carries its month in ``date``, so nothing is grouped or summed, and a month that answers
-``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` is the
-newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
-recent of the releases that last revised them, which across the annual revision can be
-an earlier month's than the end month's; ``get_census_release_dates`` gives each month's
-own. ``meta.published_at`` is that newest time, naive, with ``meta.published_at_naive``
-set. ``meta.request`` carries the arguments, ``hs10_code`` when given.
+and ``get_census_reexport_series``, answer one partner over a range of months from the same
+wrappers as the month tasks, one data call per month (sdk-usda-psd's ``get_time_series`` is
+the family's precedent for a series assembled from one call per period). A call spans at
+most ``SERIES.value`` months, core's one ``Ceiling`` (sdk-core ADR-0054): 60 in Python and
+over HTTP; the MCP server starts with 24, and its ``--series-months`` sets another ceiling
+from 1 to 60 through the tool set's hooks (``mcp_add_options``, ``mcp_apply_options``). The
+entry point ``xippios-usda-gats-mcp`` sets the MCP ceiling, since core's ``main`` applies
+the option, and so does a host that applies the tool set's hooks with their defaults. The
+ceiling is process-wide: a Python or HTTP call made in the MCP server's process meets the
+MCP ceiling too. Every argument is checked first, the partner code for the start and for the
+end month, so a code discontinued inside the range is refused when it is no other code's
+parent; a parent code passes for every month (``params.validate_partner_month``). The flow's
+release list is fetched once, the imports list for imports and the exports list for exports
+and, by the same assumption, re-exports; a range with a month the list lacks is refused
+whole as ``NotFoundError`` naming the first such month and the latest released, never
+trimmed. Then the months are fetched oldest first, one request after the other at the
+client's pace (``_client.RATE_LIMIT``, one per second, and the quota policy on top), never
+concurrently, by core's ``fetch_periods``, and returned as one list in month order: every
+record carries its month in ``date``, so nothing is grouped or summed, and a month that
+answers ``[]`` contributes nothing. ``hs10_code`` filters every month. ``meta.vintage`` is
+the newest ``releaseTimeStamp`` among the range's months, as upstream states it: the most
+recent of the releases that last revised them, which across the annual revision can be an
+earlier month's than the end month's; ``get_census_release_dates`` gives each month's own.
+``meta.published_at`` is that newest time, naive, with ``meta.published_at_naive`` set.
+``meta.request`` carries the arguments, ``hs10_code`` when given.
 
 The three UN Trade data tasks, ``get_un_exports``, ``get_un_imports`` and
 ``get_un_reexports``, answer one reporter and one statistical year across every partner
@@ -137,6 +137,7 @@ from xippios.core import (
     XippiosError,
     fetch_periods,
     matches,
+    names_codes,
     sync,
 )
 
@@ -160,6 +161,9 @@ from xippios.usda.gats.models import (
     UNTradeRecord,
 )
 from xippios.usda.gats.params import (
+    COUNTRIES,
+    DISTRICTS,
+    HS6_CODES,
     PACKAGE,
     shared_three_letter_code,
     validate_country_code,
@@ -382,7 +386,7 @@ def _product_type(product_type: ProductType) -> ProductType:
     except (ValueError, TypeError):
         raise InvalidRequestError(
             f'product_type must be "X" (exports) or "M" (imports), upstream\'s productType '
-            f"codes, got {product_type!r}.",
+            f"codes, got {product_type!r}. Nothing was sent.",
             source=SOURCE,
         ) from None
 
@@ -925,9 +929,9 @@ def _series_months(
     end = f"{end_year:04d}-{end_month:02d}"
     if (start_year, start_month) > (end_year, end_month):
         raise InvalidRequestError(
-            f"the range starts at {start}, after its end {end}: pass the earlier month as "
-            "start_year and start_month, e.g. start_year=2026, start_month=6, end_year=2026, "
-            "end_month=8.",
+            f"the range starts at {start}, after its end {end}. Nothing was sent. Pass the "
+            "earlier month as start_year and start_month, e.g. start_year=2026, "
+            "start_month=6, end_year=2026, end_month=8.",
             source=SOURCE,
         )
     first = start_year * 12 + start_month - 1
@@ -1359,11 +1363,38 @@ async def _un_ranked(
         refused = unknown
     if refused is None:
         return
+    flow, operation = UN_RELEASE_LISTS[product_type]
+    listed = f"The UN Trade {flow} release list ({operation}) was"
     try:
         releases = (await _un_releases(product_type)).payload
-    except XippiosError:
-        raise refused from None
-    check(frozenset(release.reporter_code for release in releases))
+    except XippiosError as failed:
+        sent = (
+            f"{listed} asked for to rank the codes and could not be read "
+            f"({type(failed).__name__}), and nothing else was sent."
+        )
+        raise _sent(refused, sent) from None
+    try:
+        check(frozenset(release.reporter_code for release in releases))
+    except UnknownCode as ranked:
+        raise _sent(
+            ranked, f"{listed} read to rank the codes, and nothing else was sent."
+        ) from None
+
+
+def _sent(refusal: UnknownCode, sent: str) -> UnknownCode:
+    """``refusal`` saying what was sent in place of ``Nothing was sent.`` (conventions §5).
+
+    ``UnknownCode`` says ``Nothing was sent.``, true for a check before any request; a
+    refusal that ``_un_ranked`` raises once it asked for the UN Trade release list says
+    instead that the list was read, or asked for and not read, and that nothing else was.
+
+    Args:
+        refusal: The check's refusal, e.g. of ``"AUS"`` as ``reporter_code``.
+        sent: The sentence that takes ``Nothing was sent.``'s place.
+    """
+    refusal.message = refusal.message.replace("Nothing was sent.", sent, 1)
+    refusal.args = (refusal.message,)
+    return refusal
 
 
 def _years(years: Iterable[str]) -> str:
@@ -1503,9 +1534,13 @@ def _un_meta(
     2019 exports. ``published_at`` is that time, naive as FAS prints it, with
     ``published_at_naive`` set (sdk-core ADR-0041, decision 2). A filter left ``None`` is
     left out of ``request``. ``retrieved_at`` is the oldest of the call's two reads, the
-    release list's and the year's, as the client gives each (conventions §4).
+    release list's and the year's, as the client gives each (conventions §4). A full
+    ``hs6_code`` is named by the packaged HS6 list, so an answer without rows names it too;
+    a prefix names nothing of its own, and the rows' codes name themselves (``NamedBy``).
     """
+    named = HS6_CODES.name_of(hs6_code) if hs6_code is not None else None
     return ResultMeta(
+        names={} if named is None else {"hs6_code": {hs6_code: named}},
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
@@ -1773,7 +1808,9 @@ async def get_un_release_dates_async(
 def _search(search: str | None) -> str | None:
     """``search`` unchanged, or ``InvalidRequestError`` when it is neither text nor ``None``."""
     if search is not None and not isinstance(search, str):
-        raise InvalidRequestError(f"search must be text, got {search!r}.", source=SOURCE)
+        raise InvalidRequestError(
+            f"search must be text, got {search!r}. Nothing was sent.", source=SOURCE
+        )
     return search
 
 
@@ -1969,20 +2006,34 @@ async def list_commodities_async(
     return Result(data=selected, meta=meta)
 
 
-get_census_export_series = sync(get_census_export_series_async)
-get_census_exports = sync(get_census_exports_async)
-get_census_import_series = sync(get_census_import_series_async)
-get_census_imports = sync(get_census_imports_async)
-get_census_reexport_series = sync(get_census_reexport_series_async)
-get_census_reexports = sync(get_census_reexports_async)
+get_census_export_series = names_codes(partner_code=COUNTRIES)(sync(get_census_export_series_async))
+get_census_exports = names_codes(partner_code=COUNTRIES)(sync(get_census_exports_async))
+get_census_import_series = names_codes(partner_code=COUNTRIES)(sync(get_census_import_series_async))
+get_census_imports = names_codes(partner_code=COUNTRIES)(sync(get_census_imports_async))
+get_census_reexport_series = names_codes(partner_code=COUNTRIES)(
+    sync(get_census_reexport_series_async)
+)
+get_census_reexports = names_codes(partner_code=COUNTRIES)(sync(get_census_reexports_async))
 get_census_release_dates = sync(get_census_release_dates_async)
-get_customs_district_exports = sync(get_customs_district_exports_async)
-get_customs_district_imports = sync(get_customs_district_imports_async)
-get_customs_district_reexports = sync(get_customs_district_reexports_async)
-get_un_exports = sync(get_un_exports_async)
-get_un_imports = sync(get_un_imports_async)
-get_un_reexports = sync(get_un_reexports_async)
-get_un_release_dates = sync(get_un_release_dates_async)
+get_customs_district_exports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
+    sync(get_customs_district_exports_async)
+)
+get_customs_district_imports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
+    sync(get_customs_district_imports_async)
+)
+get_customs_district_reexports = names_codes(partner_code=COUNTRIES, customs_district_id=DISTRICTS)(
+    sync(get_customs_district_reexports_async)
+)
+get_un_exports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
+    sync(get_un_exports_async)
+)
+get_un_imports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
+    sync(get_un_imports_async)
+)
+get_un_reexports = names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)(
+    sync(get_un_reexports_async)
+)
+get_un_release_dates = names_codes(reporter_code=COUNTRIES)(sync(get_un_release_dates_async))
 list_commodities = sync(list_commodities_async)
 list_countries = sync(list_countries_async)
 list_customs_districts = sync(list_customs_districts_async)

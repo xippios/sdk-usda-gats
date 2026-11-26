@@ -31,11 +31,10 @@ package lacks.
 
 import functools
 import re
-from collections.abc import Collection
-from datetime import datetime
+from collections.abc import Collection, Mapping
 from typing import Any
 
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, closest, nearest
+from xippios.core import InvalidRequestError, PackagedCodes, PackagedList, closest
 
 from xippios.usda.gats._client import SOURCE
 from xippios.usda.gats.errors import (
@@ -48,7 +47,12 @@ from xippios.usda.gats.errors import (
 )
 
 __all__ = [
+    "COUNTRIES",
+    "DISTRICTS",
+    "HS6_CODES",
     "PACKAGED_LISTS",
+    "REGIONS",
+    "UNITS",
     "shared_three_letter_code",
     "validate_country_code",
     "validate_customs_district_id",
@@ -75,10 +79,36 @@ PACKAGED_LISTS: tuple[str, ...] = (
 """Lists that ship inside the package, named as the upstream path names them, in the
 snapshot's order.
 
-Keep in step with ``ID_LISTS`` and ``TABLES`` in ``scripts/refresh_reference.py``, which
-checks it before a refresh. The HS10 list (``commodities``) is not packaged:
+Keep in step with ``LISTS`` in ``scripts/refresh_reference.py``, one ``Listed`` per list,
+which core's frame checks before a refresh. The HS10 list (``commodities``) is not packaged:
 ``tasks.list_commodities`` fetches it live.
 """
+
+COUNTRIES: PackagedCodes = PackagedList.load(PACKAGE, "countries").codes(
+    "countryCode", "countryName", source=SOURCE
+)
+"""The packaged countries list, declared once: the check of a country code and the names of
+every country code an answer carries (sdk-core ADR-0045, ADR-0067)."""
+
+REGIONS: PackagedCodes = PackagedList.load(PACKAGE, "regions").codes(
+    "regionCode", "regionName", source=SOURCE
+)
+"""The packaged regions list, which names a country's ``region_code``."""
+
+HS6_CODES: PackagedCodes = PackagedList.load(PACKAGE, "HS6Commodities").codes(
+    "hS6Code", "commodityName", source=SOURCE
+)
+"""The packaged HS6 list: the check of a full ``hs6_code`` and the names of the HS6 codes."""
+
+UNITS: PackagedCodes = PackagedList.load(PACKAGE, "unitsOfMeasure").codes(
+    "unitOfMeasureId", "unitOfMeasureName", source=SOURCE
+)
+"""The packaged units list, which names the four unit ids of every record that holds them."""
+
+DISTRICTS: PackagedCodes = PackagedList.load(PACKAGE, "customsDistricts").codes(
+    "customsDistrictId", "customsDistrictName", source=SOURCE
+)
+"""The packaged customs districts list: the check of ``customs_district_id`` and its names."""
 
 PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'
 """Two partner codes from the packaged list, for messages that name no close code."""
@@ -86,14 +116,6 @@ PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'
 _HS10 = re.compile(r"[0-9]{1,10}")
 _HS6 = re.compile(r"[0-9]{1,6}")
 _THREE = re.compile(r"[A-Z0-9]{3}")
-
-
-@functools.cache
-def _codes(name: str, code_field: str, name_field: str) -> tuple[datetime, dict[str, str]]:
-    """When a packaged list was fetched and its ``{code: upstream name}``, in upstream order."""
-    packaged = PackagedList.load(PACKAGE, name)
-    codes = {str(record[code_field]): str(record[name_field]) for record in packaged.records}
-    return packaged.fetched, codes
 
 
 @functools.cache
@@ -164,13 +186,12 @@ def shared_three_letter_code(value: object) -> bool:
     """
     if not isinstance(value, str):
         return False
-    _, codes = _codes("countries", "countryCode", "countryName")
-    return value not in codes and len(_three_letter_codes().get(value.upper(), [])) > 1
+    return value not in _countries() and len(_three_letter_codes().get(value.upper(), [])) > 1
 
 
 def _closest(
     value: str,
-    codes: dict[str, str],
+    codes: Mapping[str, str],
     three_letter: dict[str, list[str]] | None = None,
     reporters: Collection[str] | None = None,
 ) -> list[tuple[str, str]]:
@@ -235,31 +256,22 @@ def validate_country_code(
             current code before a discontinued one), or two examples and
             ``list_countries`` when none is close.
     """
-    fetched, codes = _codes("countries", "countryCode", "countryName")
     if not isinstance(code, str):
         raise InvalidRequestError(
             f"{param} must be a two-character GATS country code as text, such as "
-            f"{PARTNER_EXAMPLES}, got {code!r}. {COUNTRIES_TASK} lists them.",
+            f"{PARTNER_EXAMPLES}, got {code!r}. Nothing was sent. {COUNTRIES_TASK} lists them.",
             source=SOURCE,
         )
-    if code in codes:
-        return code
-    close = _closest(code, codes, _three_letter_codes(), reporters)
-    raise UnknownCode(
+    return COUNTRIES.check(
         param,
         code,
-        list_name="countries",
-        fetched=fetched,
-        closest=close,
-        hint=None
-        if close
-        else (
+        closest=lambda value, codes: _closest(str(value), codes, _three_letter_codes(), reporters),
+        otherwise=(
             "GATS's country codes are its own, two characters, as GATSData_GetCountries "
             f"lists them, e.g. {PARTNER_EXAMPLES}; {COUNTRIES_TASK} lists every one and "
             "searches them by name, ISO or GENC code."
         ),
         reason=reason,
-        source=SOURCE,
     )
 
 
@@ -384,7 +396,7 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
     if not ended or partner_code in _parent_codes() or asked <= ended:
         return partner_code
     name = record["countryName"]
-    fetched, _ = _codes("countries", "countryCode", "countryName")
+    fetched = COUNTRIES.packaged.fetched
     same = [
         f"{code} (discontinued {other['discontinuedOn']})" if other["discontinuedOn"] else code
         for code, other in _countries().items()
@@ -408,7 +420,7 @@ def validate_partner_month(partner_code: str, year: int, month: int) -> str:
         f"partner_code {partner_code!r} ({name}) was discontinued in {ended} "
         f"(discontinuedOn in GATS's countries list, packaged, fetched {fetched:%Y-%m-%d}) "
         f"and is no other code's parent: it holds no trade after that month, so "
-        f"{year:04d}-{month:02d} ({asked}) is refused. {instead}",
+        f"{year:04d}-{month:02d} ({asked}) is refused. Nothing was sent. {instead}",
         source=SOURCE,
     )
 
@@ -437,22 +449,15 @@ def validate_customs_district_id(customs_district_id: int) -> int:
     if isinstance(customs_district_id, bool) or not isinstance(customs_district_id, int):
         raise InvalidRequestError(
             "customs_district_id must be an integer id such as 10 (NEW YORK, N.Y.), got "
-            f"{customs_district_id!r}. {DISTRICTS_TASK} lists them.",
+            f"{customs_district_id!r}. Nothing was sent. {DISTRICTS_TASK} lists them.",
             source=SOURCE,
         )
-    fetched, codes = _codes("customsDistricts", "customsDistrictId", "customsDistrictName")
-    if str(customs_district_id) in codes:
-        return customs_district_id
-    raise UnknownCode(
+    return DISTRICTS.check(
         "customs_district_id",
         customs_district_id,
-        list_name="customsDistricts",
-        fetched=fetched,
-        closest=nearest(customs_district_id, codes),
         reason="The customs-district operations take no district; the task keeps this "
         "district's records after the call, so an id the packaged list lacks would give an "
         f"empty result, and the package refuses it. {DISTRICTS_TASK} lists the ids.",
-        source=SOURCE,
     )
 
 
@@ -481,8 +486,8 @@ def validate_year(year: int, param: str = "year") -> int:
     """
     if isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= 9999:
         raise InvalidRequestError(
-            f"{param} must be a four-digit year such as 2026, got {year!r}. GATS's Census "
-            "data starts in January 1967, its UN Trade data in 1989.",
+            f"{param} must be a four-digit year such as 2026, got {year!r}. Nothing was sent. "
+            "GATS's Census data starts in January 1967, its UN Trade data in 1989.",
             source=SOURCE,
         )
     return year
@@ -509,7 +514,8 @@ def validate_month(month: int) -> int:
     if isinstance(month, bool) or not isinstance(month, int) or not 1 <= month <= 12:
         raise InvalidRequestError(
             f"month must be a whole number from 1 (January) to 12 (December), got "
-            f"{month!r}. GATS answers month 0 and month 13 with HTTP 404 and an empty body; "
+            f"{month!r}. Nothing was sent. GATS answers month 0 and month 13 with HTTP 404 and "
+            "an empty body; "
             "it has no whole-year form of the Census data: ask month by month.",
             source=SOURCE,
         )
@@ -536,13 +542,14 @@ def validate_hs10_code(hs10_code: str) -> str:
     if not isinstance(hs10_code, str) or _HS10.fullmatch(hs10_code) is None:
         raise InvalidRequestError(
             "hs10_code must be 1 to 10 digits as text: a full HS10 code such as "
-            f'"0103910000" or a prefix such as "02" (chapter 02), got {hs10_code!r}.',
+            f'"0103910000" or a prefix such as "02" (chapter 02), got {hs10_code!r}. Nothing '
+            "was sent.",
             source=SOURCE,
         )
     return hs10_code
 
 
-def _sharing_digits(value: str, codes: dict[str, str]) -> list[tuple[str, str]]:
+def _sharing_digits(value: str, codes: Mapping[str, str]) -> list[tuple[str, str]]:
     """Up to three listed codes sharing the most leading digits with ``value``, nearest first.
 
     HS codes nest by their leading digits, chapter, heading and subheading, so a listed
@@ -584,7 +591,8 @@ def validate_hs6_prefix(hs6_code: str, *, hint: str = f"{HS6_TASK} lists the cod
     if not isinstance(hs6_code, str) or _HS6.fullmatch(hs6_code) is None:
         raise InvalidRequestError(
             "hs6_code must be 1 to 6 digits as text: a full HS6 code such as "
-            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. {hint}',
+            f'"030444" or a prefix such as "03" (chapter 03), got {hs6_code!r}. Nothing was '
+            f"sent. {hint}",
             source=SOURCE,
         )
     return hs6_code
@@ -617,15 +625,9 @@ def validate_hs6_code(hs6_code: str) -> str:
     validate_hs6_prefix(hs6_code)
     if len(hs6_code) < 6:
         return hs6_code
-    fetched, codes = _codes("HS6Commodities", "hS6Code", "commodityName")
-    if hs6_code in codes:
-        return hs6_code
-    raise UnknownCode(
+    return HS6_CODES.check(
         "hs6_code",
         hs6_code,
-        list_name="HS6Commodities",
-        fetched=fetched,
-        closest=_sharing_digits(hs6_code, codes),
+        closest=lambda value, codes: _sharing_digits(str(value), codes),
         reason=HS6_REASON,
-        source=SOURCE,
     )

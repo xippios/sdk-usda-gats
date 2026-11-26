@@ -9,7 +9,7 @@ one with core's ``UnknownCode``, naming the closest known codes, or example code
 none is close (``params``). The same check covers the customs district a task keeps after
 the call, the UN Trade ``reporter_code``, which GATS answers with ``[]`` when unknown
 (``get_un_trade_exports/unknown_reporter.json``), and the UN Trade filters
-``partner_code`` and a six-digit ``hs6_code``. The reasons below go into
+``partner_country_code`` and a six-digit ``hs6_code``. The reasons below go into
 ``UnknownCode``'s message as its ``reason=``, before core's closing sentence, that the
 packaged list is out of date if upstream added the code since; the customs-district reason
 is written inline in ``params.validate_customs_district_id``. A refusal that points to a
@@ -56,7 +56,8 @@ UN_PARTNER_REASON = (
     "the call, so a code the packaged list lacks would give an empty result, and the "
     "package refuses it."
 )
-"""Why an unknown ``partner_code`` of a UN Trade task is refused: there it is a filter."""
+"""Why an unknown ``partner_country_code`` of a UN Trade task is refused: there it is a
+filter, named after the records' ``partnerCountryCode`` that it reads."""
 
 HS6_REASON = (
     "The UN Trade operations take no product: the task keeps the records whose HS6 code "

@@ -2,6 +2,16 @@
 
 ``/add-endpoint`` adds them.
 
+The arguments that identify a record are positional, in the order of upstream's path: the
+Census ``partner_code``, ``year`` and ``month``, the UN Trade ``reporter_code`` and
+``year``, and the release list's ``product_type``. Every filter and every argument of the
+package's own, the series' four months among them, is keyword-only (sdk-core ADR-0061,
+decision 5). Every filter selects records after the fetch, since no GATS operation takes
+one, and is named after upstream's field that it reads, by equality or by prefix
+(decision 2): ``partner_country_code`` reads ``partnerCountryCode``, ``statistical_year``
+``statisticalYear`` and ``statistical_year_month`` the first four or all six digits of
+``statisticalYearMonth``.
+
 The six Census data tasks, ``get_census_exports``, ``get_census_imports`` and
 ``get_census_reexports``, and ``get_customs_district_exports``,
 ``get_customs_district_imports`` and ``get_customs_district_reexports`` by US customs
@@ -38,8 +48,9 @@ with ``meta.published_at_naive`` set (sdk-core ADR-0041, decision 2): an invente
 shift it by hours in an as-of store, so a consumer that knows the publisher's zone assigns
 it.
 ``get_census_release_dates`` returns every month's time as upstream states it, or one
-statistical year's months (``statistical_year``, a filter applied after the one request
-and recorded in ``meta.request``), and leaves ``vintage`` and ``published_at`` empty,
+statistical year's months or one month (``statistical_year_month``, a prefix of the field
+of that name, a filter applied after the one request and recorded in ``meta.request``),
+and leaves ``vintage`` and ``published_at`` empty,
 since it answers no single release; its ``meta.retrieved_at`` is the time the client's
 cache stored the list when the cache answered (conventions §4), else the time the list
 arrived.
@@ -94,15 +105,17 @@ years and the list's latest year. The imports task checks the imports list
 on the Census side, the re-exports task check the exports list
 (``GATSData_GetUNTradeExportDataReleaseInfo``): upstream publishes no UN Trade re-export
 release list. An empty list for a listed reporter-year is a successful empty result
-(Iceland's 2019 re-exports). ``partner_code`` and ``hs6_code`` select records after the
-one data call. ``meta.vintage`` is the reporter-year's ``releaseTimeStamp`` from that
-list as upstream states it (``"2020-06-03T05:50:46"`` for Iceland's 2019 exports) and
-``meta.published_at`` its parsed time, naive, with ``meta.published_at_naive`` set, as for
-the Census tasks; the year is in ``meta.request`` and on every record. As recorded on
-2026-10-26 the UN Trade feed is frozen (conventions §4): both release lists end with
-statistical year 2019, and their newest release time is 2021-01-18, the last release the
-README's status table names. ``get_un_release_dates`` returns either list, whole or filtered by
-reporter or year, with ``retrieved_at`` from the cache as for the Census list.
+(Iceland's 2019 re-exports). ``partner_country_code``, named after the field it reads, and
+``hs6_code`` select records after the one data call. ``meta.vintage`` is the
+reporter-year's ``releaseTimeStamp`` from that list as upstream states it
+(``"2020-06-03T05:50:46"`` for Iceland's 2019 exports) and ``meta.published_at`` its parsed
+time, naive, with ``meta.published_at_naive`` set, as for the Census tasks; the year is in
+``meta.request`` and on every record. As recorded on 2026-10-26 the UN Trade feed is frozen
+(conventions §4): both release lists end with statistical year 2019, and their newest
+release time is 2021-01-18, the last release the README's status table names.
+``get_un_release_dates`` returns either list, whole or filtered by reporter or by
+``statistical_year``, named after the field it reads, with ``retrieved_at`` from the cache
+as for the Census list.
 
 The answers as recorded, the measures that the tools' descriptions leave to this place
 (2026-10-25 for the Census data, 2026-10-26 for the UN Trade data and the HS10 list).
@@ -206,6 +219,7 @@ from xippios.usda.gats.params import (
     validate_hs10_code,
     validate_partner_month,
     validate_reporter_code,
+    validate_statistical_year_month,
     validate_year,
 )
 
@@ -293,21 +307,22 @@ MCP_INSTRUCTIONS = (
 
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
-    "200 months reach back more than sixteen years; filter by statistical_year, e.g. "
-    "1987, to see the rest"
+    "200 months reach back more than sixteen years; filter by statistical_year_month, a "
+    "year such as '1987' or a month such as '198706', to see the rest"
 )
 """What a cut release-date list tells the agent: which months it got and its one filter,
-``statistical_year``, which keeps one year's months, twelve at most (sdk-core ADR-0038)."""
+``statistical_year_month``, which keeps one year's months, twelve at most, or one month
+(sdk-core ADR-0038)."""
 
 UN_DATA_NOTE = (
-    "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
-    "prefix such as the chapter '03', to see the rest"
+    "filter by partner_country_code, e.g. 'US' (United States), or by hs6_code, a full code "
+    "or a prefix such as the chapter '03', to see the rest"
 )
 """What a cut UN Trade data result tells the agent: the two filters the tools have."""
 
 UN_RELEASE_DATES_NOTE = (
     "the list runs newest year first, one row per reporter and year; filter by "
-    "reporter_code, e.g. 'IC' (Iceland), or by year, e.g. 2019, to see the rest"
+    "reporter_code, e.g. 'IC' (Iceland), or by statistical_year, e.g. 2019, to see the rest"
 )
 """What a cut UN Trade release-date list tells the agent: its order and its two filters."""
 
@@ -365,13 +380,13 @@ the bounds; 777 for exports to China in August 2026 alone, which are cut).
 ``get_census_release_dates`` keeps the default bounds with a note of its own,
 ``RELEASE_DATES_NOTE``: 716 months, newest first, of which the newest 200 arrive, 202608
 back to 201001 as recorded, 16 years and 8 months; the note names its one filter,
-``statistical_year``, which keeps one year's months, twelve at most, so any year fits.
-The UN Trade data tools keep the default bounds too, with a note naming
-their two filters, ``partner_code`` and ``hs6_code``: one reporter-year is one record per
+``statistical_year_month``, which keeps one year's months, twelve at most, so any year
+fits, or one month. The UN Trade data tools keep the default bounds too, with a note naming
+their two filters, ``partner_country_code`` and ``hs6_code``: one reporter-year is one record per
 partner and HS6 code, about 240 bytes each, so 200 rows arrive within 64 KB; 3,980
 records for Iceland's 2019 exports, 23,396 (about 5.2 MB) for its imports, 75,919
 (about 17 MB) for India's 2016 exports, as recorded. ``get_un_release_dates`` keeps the
-default bounds with a note naming ``reporter_code`` and ``year``: the exports list holds
+default bounds with a note naming ``reporter_code`` and ``statistical_year``: the exports list holds
 3,796 reporter-years, newest year first, so the 200 rows shown are 2019's 32, 2018's 80
 and 88 of 2017's as recorded; one reporter (31 years for Iceland) or one year (32
 reporters for 2019) fits. ``list_countries`` is a reference list an agent needs whole: 322 codes,
@@ -589,7 +604,7 @@ def _data_meta(
 
 @names_codes(partner_code=COUNTRIES)
 async def get_census_exports_async(
-    partner_code: str, year: int, month: int, hs10_code: str | None = None
+    partner_code: str, year: int, month: int, *, hs10_code: str | None = None
 ) -> Result[list[CensusExport]]:
     """US exports to one partner in one month by HS10 product, as the US Census Bureau reported.
 
@@ -639,7 +654,7 @@ async def get_census_exports_async(
 
 @names_codes(partner_code=COUNTRIES)
 async def get_census_imports_async(
-    partner_code: str, year: int, month: int, hs10_code: str | None = None
+    partner_code: str, year: int, month: int, *, hs10_code: str | None = None
 ) -> Result[list[CensusImport]]:
     """US imports from one partner in one month by HS10 product, as the US Census Bureau reported.
 
@@ -689,7 +704,7 @@ async def get_census_imports_async(
 
 @names_codes(partner_code=COUNTRIES)
 async def get_census_reexports_async(
-    partner_code: str, year: int, month: int, hs10_code: str | None = None
+    partner_code: str, year: int, month: int, *, hs10_code: str | None = None
 ) -> Result[list[CensusExport]]:
     """US re-exports to one partner in one month by HS10 product, as the US Census Bureau reported.
 
@@ -742,6 +757,7 @@ async def get_customs_district_exports_async(
     partner_code: str,
     year: int,
     month: int,
+    *,
     hs10_code: str | None = None,
     customs_district_id: int | None = None,
 ) -> Result[list[CustomsDistrictExport]]:
@@ -798,6 +814,7 @@ async def get_customs_district_imports_async(
     partner_code: str,
     year: int,
     month: int,
+    *,
     hs10_code: str | None = None,
     customs_district_id: int | None = None,
 ) -> Result[list[CustomsDistrictImport]]:
@@ -853,6 +870,7 @@ async def get_customs_district_reexports_async(
     partner_code: str,
     year: int,
     month: int,
+    *,
     hs10_code: str | None = None,
     customs_district_id: int | None = None,
 ) -> Result[list[CustomsDistrictExport]]:
@@ -1048,6 +1066,7 @@ async def _series[R: _Coded](
 @names_codes(partner_code=COUNTRIES)
 async def get_census_export_series_async(
     partner_code: str,
+    *,
     start_year: int,
     start_month: int,
     end_year: int,
@@ -1107,6 +1126,7 @@ async def get_census_export_series_async(
 @names_codes(partner_code=COUNTRIES)
 async def get_census_import_series_async(
     partner_code: str,
+    *,
     start_year: int,
     start_month: int,
     end_year: int,
@@ -1166,6 +1186,7 @@ async def get_census_import_series_async(
 @names_codes(partner_code=COUNTRIES)
 async def get_census_reexport_series_async(
     partner_code: str,
+    *,
     start_year: int,
     start_month: int,
     end_year: int,
@@ -1223,7 +1244,7 @@ async def get_census_reexport_series_async(
 
 
 async def get_census_release_dates_async(
-    product_type: ProductType, statistical_year: int | None = None
+    product_type: ProductType, *, statistical_year_month: str | None = None
 ) -> Result[list[DataReleaseInfo]]:
     """When GATS last released each month of US Census exports or imports: poll for releases.
 
@@ -1242,16 +1263,18 @@ async def get_census_release_dates_async(
         product_type: Which list, by upstream's ``productType`` code: ``"X"`` exports
             (``GATSData_GetCensusExportDataReleaseInfo``), ``"M"`` imports
             (``GATSData_GetCensusImportDataReleaseInfo``).
-        statistical_year: Keep only the months of this statistical year, four digits, e.g.
-            ``2026`` (202608 back to 202601, eight months as recorded), ``2025`` (twelve, all
-            re-released at ``2026-06-24T08:00:00``), ``1987`` (twelve, all at
-            ``2008-01-01T08:00:00``). A year the list lacks, before 1967 or not released yet,
-            gives an empty list. ``None`` (the default) keeps every month. Its months come
+        statistical_year_month: Keep only the records whose ``statisticalYearMonth`` starts
+            with this, a year as four digits or a month as six, as text: ``"2026"`` (202608
+            back to 202601, eight months as recorded), ``"2025"`` (twelve, all re-released
+            at ``2026-06-24T08:00:00``), ``"1987"`` (twelve, all at
+            ``2008-01-01T08:00:00``), ``"202608"`` (that month alone). A year or a month the
+            list lacks, before 1967 or not released yet, gives an empty list. ``None`` (the
+            default) keeps every month. Applied after the one request; the months come
             newest first.
     """
     code = _product_type(product_type)
-    if statistical_year is not None:
-        validate_year(statistical_year, "statistical_year")
+    if statistical_year_month is not None:
+        validate_statistical_year_month(statistical_year_month)
     if code is ProductType.X:
         endpoint = "GATSData_GetCensusExportDataReleaseInfo"
         listed = await api.get_census_export_data_release_info()
@@ -1259,13 +1282,17 @@ async def get_census_release_dates_async(
         endpoint = "GATSData_GetCensusImportDataReleaseInfo"
         listed = await api.get_census_import_data_release_info()
     releases, retrieved_at = listed.payload, listed.retrieved_at
-    year = None if statistical_year is None else f"{statistical_year:04d}"
-    selected = [r for r in releases if year is None or r.statistical_year_month.startswith(year)]
+    selected = [
+        r
+        for r in releases
+        if statistical_year_month is None
+        or r.statistical_year_month.startswith(statistical_year_month)
+    ]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=endpoint,
         retrieved_at=retrieved_at,
-        request={"product_type": code.value, "statistical_year": statistical_year},
+        request={"product_type": code.value, "statistical_year_month": statistical_year_month},
     )
     return Result(data=selected, meta=meta)
 
@@ -1273,7 +1300,7 @@ async def get_census_release_dates_async(
 def _un_check(
     reporter_code: str,
     year: int,
-    partner_code: str | None,
+    partner_country_code: str | None,
     hs6_code: str | None,
     reporters: frozenset[str] | None = None,
 ) -> None:
@@ -1287,9 +1314,12 @@ def _un_check(
     """
     validate_reporter_code(reporter_code, reporters=reporters)
     validate_year(year)
-    if partner_code is not None:
+    if partner_country_code is not None:
         validate_country_code(
-            partner_code, "partner_code", reason=UN_PARTNER_REASON, reporters=reporters
+            partner_country_code,
+            "partner_country_code",
+            reason=UN_PARTNER_REASON,
+            reporters=reporters,
         )
     if hs6_code is not None:
         validate_hs6_code(hs6_code)
@@ -1344,7 +1374,7 @@ async def _un_ranked(
         check(None)
     except UnknownCode as unknown:
         shared = shared_three_letter_code(unknown.value)
-        if unknown.param not in {"reporter_code", "partner_code"} or not shared:
+        if unknown.param not in {"reporter_code", "partner_country_code"} or not shared:
             raise
         refused = unknown
     if refused is None:
@@ -1493,13 +1523,13 @@ async def _un_release(
 
 
 def _un_selected(
-    records: list[UNTradeRecord], partner_code: str | None, hs6_code: str | None
+    records: list[UNTradeRecord], partner_country_code: str | None, hs6_code: str | None
 ) -> list[UNTradeRecord]:
-    """The records of ``partner_code`` whose HS6 code starts with ``hs6_code``, in order."""
+    """The records of ``partner_country_code`` whose HS6 code starts with ``hs6_code``, in order."""
     return [
         record
         for record in records
-        if (partner_code is None or record.partner_country_code == partner_code)
+        if (partner_country_code is None or record.partner_country_code == partner_country_code)
         and (hs6_code is None or record.hs6_code.startswith(hs6_code))
     ]
 
@@ -1510,7 +1540,7 @@ def _un_meta(
     retrieved_at: datetime,
     reporter_code: str,
     year: int,
-    partner_code: str | None,
+    partner_country_code: str | None,
     hs6_code: str | None,
 ) -> ResultMeta:
     """``ResultMeta`` of a UN Trade data task: ``vintage`` the reporter-year's release time.
@@ -1536,15 +1566,19 @@ def _un_meta(
         request={
             "reporter_code": reporter_code,
             "year": year,
-            "partner_code": partner_code,
+            "partner_country_code": partner_country_code,
             "hs6_code": hs6_code,
         },
     )
 
 
-@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
+@names_codes(reporter_code=COUNTRIES, partner_country_code=COUNTRIES)
 async def get_un_exports_async(
-    reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
+    reporter_code: str,
+    year: int,
+    *,
+    partner_country_code: str | None = None,
+    hs6_code: str | None = None,
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's exports in one year by partner and HS6 code, as UN Comtrade reported them.
 
@@ -1571,11 +1605,11 @@ async def get_un_exports_async(
             before ``"FR"``; unranked when the list cannot be read.
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
-            e.g. ``"US"`` (United States, 298 of Iceland's 2019 records), ``"NO"`` (Norway),
-            ``"15"`` (Areas, not elsewhere specified). ``None`` (the default) keeps every
-            partner. Checked for membership in the packaged list before either request, as
-            ``reporter_code`` is.
+        partner_country_code: Keep only the records whose ``partnerCountryCode`` is this
+            code, one ``list_countries`` lists, e.g. ``"US"`` (United States, 298 of
+            Iceland's 2019 records), ``"NO"`` (Norway), ``"15"`` (Areas, not elsewhere
+            specified). ``None`` (the default) keeps every partner. Checked for membership in
+            the packaged list before either request, as ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"030444"``
             (Codlet Fillets Frh/Ch), or a prefix such as ``"03"`` for chapter 03 or
@@ -1584,7 +1618,7 @@ async def get_un_exports_async(
     """
     await _un_ranked(
         ProductType.X,
-        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+        lambda reporters: _un_check(reporter_code, year, partner_country_code, hs6_code, reporters),
     )
     release, listed_at = await _un_release(ProductType.X, reporter_code, year)
     answer = await api.get_un_trade_exports(reporter_code, f"{year:04d}")
@@ -1594,15 +1628,19 @@ async def get_un_exports_async(
         min(listed_at, answer.retrieved_at),
         reporter_code,
         year,
-        partner_code,
+        partner_country_code,
         hs6_code,
     )
-    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_country_code, hs6_code), meta=meta)
 
 
-@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
+@names_codes(reporter_code=COUNTRIES, partner_country_code=COUNTRIES)
 async def get_un_imports_async(
-    reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
+    reporter_code: str,
+    year: int,
+    *,
+    partner_country_code: str | None = None,
+    hs6_code: str | None = None,
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's imports in one year by partner and HS6 code, as UN Comtrade reported them.
 
@@ -1626,10 +1664,10 @@ async def get_un_imports_async(
             names ``"NO"`` before ``"N3"``).
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
-            e.g. ``"PO"`` (Portugal), ``"CH"`` (China), ``"F1"`` (France). ``None`` (the
-            default) keeps every partner. Checked for membership in the packaged list before
-            either request, as ``reporter_code`` is.
+        partner_country_code: Keep only the records whose ``partnerCountryCode`` is this
+            code, one ``list_countries`` lists, e.g. ``"PO"`` (Portugal), ``"CH"`` (China),
+            ``"F1"`` (France). ``None`` (the default) keeps every partner. Checked for
+            membership in the packaged list before either request, as ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"100630"``
             (Rice, Semi-Milled), or a prefix such as ``"10"`` for chapter 10 or ``"1006"``
@@ -1638,7 +1676,7 @@ async def get_un_imports_async(
     """
     await _un_ranked(
         ProductType.M,
-        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+        lambda reporters: _un_check(reporter_code, year, partner_country_code, hs6_code, reporters),
     )
     release, listed_at = await _un_release(ProductType.M, reporter_code, year)
     answer = await api.get_un_trade_imports(reporter_code, f"{year:04d}")
@@ -1648,15 +1686,19 @@ async def get_un_imports_async(
         min(listed_at, answer.retrieved_at),
         reporter_code,
         year,
-        partner_code,
+        partner_country_code,
         hs6_code,
     )
-    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_country_code, hs6_code), meta=meta)
 
 
-@names_codes(reporter_code=COUNTRIES, partner_code=COUNTRIES)
+@names_codes(reporter_code=COUNTRIES, partner_country_code=COUNTRIES)
 async def get_un_reexports_async(
-    reporter_code: str, year: int, partner_code: str | None = None, hs6_code: str | None = None
+    reporter_code: str,
+    year: int,
+    *,
+    partner_country_code: str | None = None,
+    hs6_code: str | None = None,
 ) -> Result[list[UNTradeRecord]]:
     """One reporter's re-exports in one year by partner and HS6 code, as UN Comtrade reported them.
 
@@ -1679,10 +1721,10 @@ async def get_un_reexports_async(
             refused once the exports list is read, its reporters named first.
         year: The statistical year, four digits, e.g. ``2019``; the release lists run
             from 1989 to 2019.
-        partner_code: Keep only the records of this partner, a code ``list_countries`` lists,
-            e.g. ``"HK"`` (Hong Kong), ``"CH"`` (China), ``"AS"`` (Australia). ``None`` (the
-            default) keeps every partner. Checked for membership in the packaged list before
-            either request, as ``reporter_code`` is.
+        partner_country_code: Keep only the records whose ``partnerCountryCode`` is this
+            code, one ``list_countries`` lists, e.g. ``"HK"`` (Hong Kong), ``"CH"`` (China),
+            ``"AS"`` (Australia). ``None`` (the default) keeps every partner. Checked for
+            membership in the packaged list before either request, as ``reporter_code`` is.
         hs6_code: Keep only the products whose HS6 code starts with this, 1 to 6 digits
             as text: a full code ``list_hs6_commodities`` lists, such as ``"220421"``
             (Grape Wines , < 2L), or a prefix such as ``"22"`` for chapter 22 or ``"2204"``
@@ -1691,7 +1733,7 @@ async def get_un_reexports_async(
     """
     await _un_ranked(
         ProductType.X,
-        lambda reporters: _un_check(reporter_code, year, partner_code, hs6_code, reporters),
+        lambda reporters: _un_check(reporter_code, year, partner_country_code, hs6_code, reporters),
     )
     release, listed_at = await _un_release(ProductType.X, reporter_code, year, "re-exports")
     answer = await api.get_un_trade_re_exports(reporter_code, f"{year:04d}")
@@ -1701,25 +1743,30 @@ async def get_un_reexports_async(
         min(listed_at, answer.retrieved_at),
         reporter_code,
         year,
-        partner_code,
+        partner_country_code,
         hs6_code,
     )
-    return Result(data=_un_selected(answer.payload, partner_code, hs6_code), meta=meta)
+    return Result(data=_un_selected(answer.payload, partner_country_code, hs6_code), meta=meta)
 
 
 def _un_release_dates_check(
-    reporter_code: str | None, year: int | None, reporters: frozenset[str] | None = None
+    reporter_code: str | None,
+    statistical_year: int | None,
+    reporters: frozenset[str] | None = None,
 ) -> None:
     """The filters of ``get_un_release_dates``, those given; ``reporters`` as for ``_un_check``."""
     if reporter_code is not None:
         validate_reporter_code(reporter_code, reporters=reporters)
-    if year is not None:
-        validate_year(year)
+    if statistical_year is not None:
+        validate_year(statistical_year, "statistical_year")
 
 
 @names_codes(reporter_code=COUNTRIES)
 async def get_un_release_dates_async(
-    product_type: ProductType, reporter_code: str | None = None, year: int | None = None
+    product_type: ProductType,
+    *,
+    reporter_code: str | None = None,
+    statistical_year: int | None = None,
 ) -> Result[list[UNTradeDataReleaseInfo]]:
     """When GATS last released each reporter-year of UN Trade exports or imports: the coverage.
 
@@ -1744,27 +1791,33 @@ async def get_un_release_dates_async(
             against the packaged list, membership only; an ISO code several listed
             codes share is refused naming first the code the list holds (``"AUS"``
             names ``"AS"``). ``None`` (the default) keeps every reporter.
-        year: Keep only this statistical year, four digits, e.g. ``2019`` (32
-            reporters), ``2016``. ``None`` (the default) keeps every year.
+        statistical_year: Keep only the records whose ``statisticalYear`` is this year, four
+            digits, e.g. ``2019`` (32 reporters), ``2016``. ``None`` (the default) keeps
+            every year. Both filters apply after the one request.
     """
     code = _product_type(product_type)
     await _un_ranked(
-        code, lambda reporters: _un_release_dates_check(reporter_code, year, reporters)
+        code,
+        lambda reporters: _un_release_dates_check(reporter_code, statistical_year, reporters),
     )
     listed = await _un_releases(code)
     releases, retrieved_at = listed.payload, listed.retrieved_at
-    statistical_year = None if year is None else f"{year:04d}"
+    year = None if statistical_year is None else f"{statistical_year:04d}"
     selected = [
         r
         for r in releases
         if (reporter_code is None or r.reporter_code == reporter_code)
-        and (statistical_year is None or r.statistical_year == statistical_year)
+        and (year is None or r.statistical_year == year)
     ]
     meta = ResultMeta(
         source=SOURCE,
         endpoint=UN_RELEASE_LISTS[code][1],
         retrieved_at=retrieved_at,
-        request={"product_type": code.value, "reporter_code": reporter_code, "year": year},
+        request={
+            "product_type": code.value,
+            "reporter_code": reporter_code,
+            "statistical_year": statistical_year,
+        },
     )
     return Result(data=selected, meta=meta)
 
@@ -1795,7 +1848,7 @@ async def list_regions_async() -> Result[list[Region]]:
 
 
 async def list_countries_async(
-    region_code: str | None = None, search: str | None = None
+    *, region_code: str | None = None, search: str | None = None
 ) -> Result[list[Country]]:
     """List GATS's countries with their codes and regions, the values partner_code takes.
 
@@ -1837,7 +1890,7 @@ async def list_countries_async(
 
 
 async def list_hs6_commodities_async(
-    search: str | None = None, hs6_code: str | None = None
+    *, search: str | None = None, hs6_code: str | None = None
 ) -> Result[list[HS6Commodity]]:
     """List GATS's HS6 commodities with their codes, names and units of measure.
 
@@ -1915,6 +1968,7 @@ async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
 
 
 async def list_commodities_async(
+    *,
     search: str | None = None,
     hs10_code: str | None = None,
     product_type: str | None = None,

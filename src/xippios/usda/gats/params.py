@@ -21,8 +21,9 @@ a full HS6 code against ``HS6Commodities`` (``validate_hs6_code``). The UN Trade
 check membership only: their data keeps codes the countries list marks discontinued in
 1987, such as ``DA`` (Denmark), for 2019. The other checks need no list: a four-digit
 year, a month from 1 to 12, an HS10 code or prefix of 1 to 10 digits, an HS6 prefix of 1
-to 5 and, for the ``list_hs6_commodities`` filter, an HS6 code or prefix of 1 to 6
-(``validate_hs6_prefix``). All of them run before any call.
+to 5, for the ``list_hs6_commodities`` filter an HS6 code or prefix of 1 to 6
+(``validate_hs6_prefix``) and for the Census release lists' filter one year or one month
+as text (``validate_statistical_year_month``). All of them run before any call.
 
 Refresh policy: ``/refresh-reference-data`` runs as a PR of its own before the release
 PR, never inside it (conventions §12), and whenever a validation failure names a code the
@@ -63,6 +64,7 @@ __all__ = [
     "validate_partner_code",
     "validate_partner_month",
     "validate_reporter_code",
+    "validate_statistical_year_month",
     "validate_year",
 ]
 
@@ -116,6 +118,7 @@ PARTNER_EXAMPLES = '"CH" (China), "MX" (Mexico)'
 _HS10 = re.compile(r"[0-9]{1,10}")
 _HS6 = re.compile(r"[0-9]{1,6}")
 _THREE = re.compile(r"[A-Z0-9]{3}")
+_YEAR_MONTH = re.compile(r"[1-9][0-9]{3}(?:0[1-9]|1[0-2])?")
 
 
 @functools.cache
@@ -227,7 +230,7 @@ def validate_country_code(
 
     The membership check of every code a task takes from that list: the Census
     ``partner_code`` (``validate_partner_code``), the UN Trade ``reporter_code``
-    (``validate_reporter_code``) and the UN Trade ``partner_code`` filter. Every listed
+    (``validate_reporter_code``) and the UN Trade ``partner_country_code`` filter. Every listed
     code passes, the 26 with a ``discontinuedOn`` month included; only the Census tasks
     check that month too, for the 7 of them that are no other code's parent
     (``validate_partner_month``).
@@ -237,7 +240,7 @@ def validate_country_code(
             (China), ``"IC"`` (Iceland), ``"01"`` (Caribbean,nes), ``"AS"`` (Australia,
             discontinued 198712).
         param: The parameter the code was given as, for the messages, e.g.
-            ``"partner_code"``, ``"reporter_code"``.
+            ``"partner_code"``, ``"reporter_code"``, ``"partner_country_code"``.
         reason: Why an unknown code is refused, the end of ``UnknownCode``'s message,
             e.g. ``errors.PARTNER_REASON``, ``errors.REPORTER_REASON``.
         reporters: The codes a UN Trade release list holds as reporters, e.g.
@@ -491,6 +494,39 @@ def validate_year(year: int, param: str = "year") -> int:
             source=SOURCE,
         )
     return year
+
+
+def validate_statistical_year_month(statistical_year_month: str) -> str:
+    """Check a filter of the Census release lists: one year or one month, as text.
+
+    ``get_census_release_dates`` keeps the records whose ``statisticalYearMonth``, six digits
+    as upstream writes them (``"202608"``), starts with the filter, so the filter is the
+    field's year, four digits from 1000 on, or the field itself, a month from ``01`` to
+    ``12`` after the year: one year's months or one month (sdk-core ADR-0061, decision 2).
+    Any other prefix would select a part of a year, and the package takes none.
+
+    Args:
+        statistical_year_month: E.g. ``"2026"`` (the year's months), ``"202608"`` (August
+            2026), ``"1967"`` (the first year of both lists).
+
+    Returns:
+        The filter, unchanged.
+
+    Raises:
+        InvalidRequestError: When it is not text of four ASCII digits, a year from 1000,
+            or of six, a year and a month from 01 to 12.
+    """
+    if (
+        not isinstance(statistical_year_month, str)
+        or _YEAR_MONTH.fullmatch(statistical_year_month) is None
+    ):
+        raise InvalidRequestError(
+            'statistical_year_month must be a year as four digits, such as "2026", or a month '
+            f'as six, such as "202608", as text, got {statistical_year_month!r}. Nothing was '
+            "sent.",
+            source=SOURCE,
+        )
+    return statistical_year_month
 
 
 def validate_month(month: int) -> int:

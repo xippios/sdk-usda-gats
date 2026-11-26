@@ -39,7 +39,7 @@ from xippios.usda.gats.models import Commodity
 __all__ = ["get_commodities"]
 
 _KEY = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
-"""The client's cache key of the commodities answer (``_client.PathCaches``)."""
+"""The client's cache key of the commodities answer in ``_client.cache``."""
 
 
 class _Parsed(NamedTuple):

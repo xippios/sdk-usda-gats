@@ -1,625 +1,121 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = []
-#
-# [tool.uv]
-# exclude-newer = "2026-10-25T00:00:00Z"
-# ///
 """Refresh the upstream documentation snapshot in ``docs/upstream/`` (``/refresh-upstream``).
 
-The FAS Open Data Services portal (https://apps.fas.usda.gov/opendatawebV2/) is an
-Angular app whose page holds no documentation text; its Swagger window loads the
-Swagger 2.0 document ``assets/swagger/swagger.json``. On 2026-10-23, when sdk-usda-psd's
-snapshot was set up, the portal page and its bundle ``main.<hash>.js`` were fetched into
-a temporary directory and that URL was found in the bundle's Swagger UI configuration;
-those copies have since been deleted. This script never downloads the bundle, because it
-embeds the portal's own api.data.gov signup-widget key; FETCHED.md records only the
-bundle's file name. The API also serves its own Swashbuckle document, whose URL the
-script reads from the classic Swagger UI page. Both documents describe ESR, GATS and PSD;
-this package wraps GATS only. It writes:
+The script declares the snapshot, a ``Snapshot`` of ``xippios.core.refresh``, and runs it on
+core's frame (conventions §3): the fetch through core's client, which the frame builds without
+credentials and names after the package, the attribution check, ``FETCHED.md``, the write and
+``--check`` are the frame's, the same in every source. The FAS Open Data Services portal
+(https://apps.fas.usda.gov/opendatawebV2/) documents ESR, GATS and PSD alike, and what the three
+FAS sources read of it is the kit of the shared package, ``xippios.usda.fas.portal``'s
+``Portal``: the portal's pages, the cut of its two Swagger documents to one service's paths, the
+backend document that the classic Swagger UI names, the comparison of the two, and the
+paragraphs that say how. This script keeps what is GATS's own: the prefix ``/api/gats/``, the
+check that the paths the cut leaves out fall under exactly ``/api/esr/`` and ``/api/psd/``, the
+GATS application page, which redirects to a screen-detection page, the FAS data page that the
+CDN refuses, their notes and the paragraph on them. It writes:
 
 - ``openapi/portal-document.json``: the GATS part of the portal's document;
 - ``openapi/backend-docs-v1.json``: the GATS part of the API's own document;
-- ``FETCHED.md``: regenerated entirely, one row per file and per page recorded without
-  a file (pages without documentation text, one of them the FAS data page, which the
-  CDN refuses to this script).
+- ``FETCHED.md``: written whole by the frame, one row per file and per page recorded without
+  a file (the two shells and the GATS application's screen-detection page), and the FAS data
+  page the CDN refuses to headless clients under ``Not fetched``.
 
-The GATS part of a document is every top-level field verbatim and in upstream order,
-with ``paths`` reduced to the keys starting with ``/api/gats/`` and ``definitions``
-reduced to those the kept paths reference, written with
-``json.dumps(indent=2, ensure_ascii=False)``.
+No key is needed or read. Run from the repository root::
 
-Everything is fetched before anything is written, one request at a time, each URL retried
-at most once. Files under ``openapi/`` that the run does not produce are removed;
-``FETCHED.md`` is rewritten; nothing else under ``docs/upstream/`` is touched, and
-``OBSERVED.md``, the notes written by hand, gets a row of ``FETCHED.md`` where it exists.
-Against the same upstream, two runs write byte-identical files under ``openapi/``, and
-``FETCHED.md`` differs only in its ``Fetched`` column, the UTC time the run started: the
-refused page's body carries a per-request reference, so its row records neither size nor
-sha256. No key is needed or read. Run from the repository root::
-
-    uv run scripts/refresh_upstream.py
+    uv run scripts/refresh_upstream.py            # fetch and write
+    uv run scripts/refresh_upstream.py --check    # fetch and compare, write nothing
 """
 
-import argparse
-import hashlib
-import http.client
-import json
 import re
-import textwrap
-import time
-import urllib.error
-import urllib.request
-from collections import Counter
-from dataclasses import dataclass
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
-from pathlib import Path
-from typing import IO, Any
-from urllib.parse import unquote, urlsplit
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUT = ROOT / "docs/upstream"
-COMMAND = "uv run scripts/refresh_upstream.py"
+from xippios.core.refresh import Page, Response, Row, Snapshot, changed, parse_json, run
+from xippios.usda.fas.portal import Portal, shell_text
 
-PORTAL_URL = "https://apps.fas.usda.gov/opendatawebV2/"
-PORTAL_SWAGGER_URL = "https://apps.fas.usda.gov/opendatawebV2/assets/swagger/swagger.json"
-"""Named by the Swagger UI configuration in the portal's ``main.<hash>.js`` bundle."""
-PORTAL_SWAGGER_FOUND_ON = "2026-10-23"
-"""The day ``PORTAL_SWAGGER_URL`` was found in a temporary copy of the bundle, since deleted."""
-CLASSIC_UI_URL = "https://apps.fas.usda.gov/opendata/swagger/ui/index"
-GATS_APP_URL = "https://apps.fas.usda.gov/gats/default.aspx"
-FAS_DATA_URL = "https://www.fas.usda.gov/data"
-API_HOST = "apps.fas.usda.gov"
-"""The host the backend document URL read from the classic UI page must have."""
+PORTAL = Portal("/api/gats/")
+"""The portal as GATS's snapshot reads it: its pages first, and its hooks."""
 
-PORTAL_FILE = "openapi/portal-document.json"
-BACKEND_FILE = "openapi/backend-docs-v1.json"
-"""The names the three FAS packages share; without ``swagger`` in them, detect-secrets
-scans them even under a baseline that still lists its ``is_swagger_file`` filter."""
-SUBDIRS = ("openapi",)
-OBSERVED = "OBSERVED.md"
-"""The one file under ``docs/upstream/`` written by hand: what upstream does but never
-documents (conventions §3). The script neither writes nor checks it, and ``FETCHED.md``
-lists it in a row of its own where it exists."""
-KEEP_PREFIX = "/api/gats/"
 DROP_PREFIXES = ("/api/esr/", "/api/psd/")
-"""The other APIs both documents describe; any other path stops the run."""
-SHELL_NOTE = "client-rendered shell, no documentation text"
+"""The other services both documents describe; a path the cut leaves out under any other
+prefix stops the run."""
+GATS_APP_URL = "https://apps.fas.usda.gov/gats/default.aspx"
+"""The GATS application, this package's ``Upstream`` URL, which redirects on its host to a
+screen-detection page."""
+GATS_APP_MARKER = 'top.location.href="detectscreen.aspx?action=set"'
+"""The one script of the screen-detection page, which sends the browser on."""
 GATS_APP_NOTE = (
     "screen-detection page, no documentation text: its one script sends the browser on to "
     "`detectscreen.aspx?action=set` with the screen's size"
 )
-REFUSED_NOTE = "403 Access Denied at the CDN edge"
-MAX_SHELL_BYTES = 16_384
-"""A page recorded as a shell must stay this small; a larger one needs a look by hand."""
+"""The note of the GATS application's row, after the redirect that the frame names."""
+FAS_DATA_URL = "https://www.fas.usda.gov/data"
+"""The FAS data page, which the CDN edge refuses to headless clients."""
 
-USER_AGENT = "xippios-usda-gats refresh_upstream (+https://github.com/xippios)"
-TIMEOUT = 60.0
-PAUSE = 2.0
-"""Seconds before every request; requests never run in parallel."""
-RETRY_PAUSE = 10.0
-"""Seconds before the one retry after a network error or a 5xx."""
-
-_BUNDLE = re.compile(r"""<script\s+src=["'](main\.[0-9a-f]+\.js)["']""")
-_ROOT_URL = re.compile(r"rootUrl:\s*'([^']+)'")
-_DISCOVERY = re.compile(r"discoveryPaths:\s*arrayFrom\('([^']*)'\)")
 _PREFIX = re.compile(r"/api/[^/]+/")
-_COPYRIGHT = re.compile(r"\N{COPYRIGHT SIGN}|copyright|\(c\) \d{4}", re.IGNORECASE)
-_LICENCE_FIELDS = ("license", "termsOfService", "contact")
 
 
-@dataclass(frozen=True)
-class Response:
-    """One GET as served: status, body and validators, and any redirects on the way."""
+def reduce(page: Page, response: Response) -> bytes:
+    """A document's GATS part, once the paths the cut leaves out are the other two services'.
 
-    url: str
-    status: int
-    body: bytes
-    etag: str | None
-    last_modified: str | None
-    redirects: tuple[tuple[int, str], ...]
-
-
-@dataclass(frozen=True)
-class Row:
-    """One row of the ``FETCHED.md`` table, with the snapshot file it produced, if any."""
-
-    response: Response
-    note: str
-    path: str | None = None
-    content: bytes | None = None
-    stable: bool = True
-    """False for a body that differs on every request: no size or sha256 is recorded."""
-
-
-@dataclass(frozen=True)
-class GatsPart:
-    """The GATS part of one Swagger document and what was left out of it."""
-
-    part: dict[str, Any]
-    kept: int
-    dropped: dict[str, int]
-    definitions_kept: int
-    definitions_total: int
-
-
-class _RetryableError(Exception):
-    """A network error or a 5xx: worth one more attempt."""
-
-
-class _RecordRedirects(urllib.request.HTTPRedirectHandler):
-    """Follow redirects as urllib does, remembering each status and target."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.hops: list[tuple[int, str]] = []
-
-    def redirect_request(
-        self,
-        req: urllib.request.Request,
-        fp: IO[bytes],
-        code: int,
-        msg: str,
-        headers: http.client.HTTPMessage,
-        newurl: str,
-    ) -> urllib.request.Request | None:
-        """Record the hop, then let urllib build the follow-up request."""
-        self.hops.append((code, newurl))
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
-def _log(message: str) -> None:
-    print(message, flush=True)  # noqa: T201
-
-
-def _get(url: str, expect: int) -> Response:
-    redirects = _RecordRedirects()
-    opener = urllib.request.build_opener(redirects)
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with opener.open(request, timeout=TIMEOUT) as response:
-            body: bytes = response.read()
-            status: int = response.status
-            headers = response.headers
-    except urllib.error.HTTPError as error:
-        if error.code >= 500:
-            raise _RetryableError(f"HTTP {error.code} {error.reason}") from None
-        if error.code != expect:
-            raise SystemExit(f"GET {url}: HTTP {error.code} {error.reason}") from None
-        body, status, headers = error.read(), error.code, error.headers
-    except (http.client.HTTPException, OSError) as error:  # URLError is an OSError
-        raise _RetryableError(str(error)) from None
-    if status != expect:
-        raise SystemExit(f"GET {url}: expected HTTP {expect}, got {status}")
-    encoding = headers.get("Content-Encoding", "identity").strip().lower()
-    if encoding != "identity":
-        raise SystemExit(f"GET {url}: unexpected Content-Encoding {encoding!r}")
-    return Response(
-        url,
-        status,
-        body,
-        headers.get("ETag"),
-        headers.get("Last-Modified"),
-        tuple(redirects.hops),
-    )
-
-
-def fetch(url: str, expect: int = 200) -> Response:
-    """GET ``url`` after a polite pause; retry once on a network error or a 5xx."""
-    time.sleep(PAUSE)
-    try:
-        response = _get(url, expect)
-    except _RetryableError as error:
-        _log(f"  {url}: {error}; retrying once in {RETRY_PAUSE:.0f} s")
-        time.sleep(RETRY_PAUSE)
-        try:
-            response = _get(url, expect)
-        except _RetryableError as error:
-            raise SystemExit(f"GET {url}: {error} (after one retry)") from None
-    digest = hashlib.sha256(response.body).hexdigest()
-    hops = "".join(f", {code} to {target}" for code, target in response.redirects)
-    _log(
-        f"  {url}: HTTP {response.status}{hops}, {len(response.body)} bytes, sha256 {digest}, "
-        f"Last-Modified {response.last_modified or '-'}, ETag {response.etag or '-'}"
-    )
-    return response
-
-
-def _page_changed(url: str, what: str) -> SystemExit:
-    return SystemExit(
-        f"{url} changed: {what}.\nLook at the page by hand and update "
-        "scripts/refresh_upstream.py; it may now need a file of its own. Nothing was written."
-    )
-
-
-def _text(response: Response) -> str:
-    try:
-        return response.body.decode("utf-8-sig")
-    except UnicodeDecodeError as error:
-        raise _page_changed(response.url, f"body is not UTF-8 ({error})") from None
-
-
-def _redirect_note(response: Response) -> str:
-    return "".join(f"redirected ({code}) to {target}; " for code, target in response.redirects)
-
-
-def shell(url: str, marker: str) -> tuple[Response, str]:
-    """Fetch a page that must still be a small shell carrying ``marker``."""
-    response = fetch(url)
-    text = _text(response)
-    if marker not in text:
-        raise _page_changed(url, f"the shell's marker {marker!r} is gone")
-    if len(response.body) > MAX_SHELL_BYTES:
-        raise _page_changed(url, f"{len(response.body)} bytes, more than a shell's")
-    return response, text
-
-
-def portal_shell() -> tuple[Row, str]:
-    """Record the portal page and read the name of the bundle it loads."""
-    response, text = shell(PORTAL_URL, "<app-root>")
-    bundles = sorted(set(_BUNDLE.findall(text)))
-    if len(bundles) != 1:
-        raise _page_changed(PORTAL_URL, f"expected one main.<hash>.js, found {bundles}")
-    note = f"{_redirect_note(response)}{SHELL_NOTE}; loads the bundle `{bundles[0]}`"
-    return Row(response, note), bundles[0]
-
-
-def classic_ui() -> tuple[Row, str]:
-    """Record the classic Swagger UI page and read the backend document's URL from it."""
-    response, text = shell(CLASSIC_UI_URL, 'id="swagger-ui-container"')
-    roots, discovery = _ROOT_URL.findall(text), _DISCOVERY.findall(text)
-    if len(roots) != 1 or len(discovery) != 1:
-        raise _page_changed(CLASSIC_UI_URL, f"rootUrl {roots}, discoveryPaths {discovery}")
-    paths = [path for path in discovery[0].split("|") if path]
-    if len(paths) != 1:
-        raise _page_changed(CLASSIC_UI_URL, f"expected one discovery path, found {paths}")
-    url = f"{roots[0].rstrip('/')}/{paths[0].lstrip('/')}"
-    parts = urlsplit(url)
-    if parts.scheme != "https" or parts.netloc != API_HOST:
-        raise _page_changed(CLASSIC_UI_URL, f"the document URL {url!r} left https://{API_HOST}")
-    note = f"{_redirect_note(response)}{SHELL_NOTE}; Swagger UI that loads `{url}`"
-    return Row(response, note), url
-
-
-def gats_app() -> Row:
-    """Record the GATS application page, which answers with a screen-detection page."""
-    response, _ = shell(GATS_APP_URL, 'top.location.href="detectscreen.aspx?action=set"')
-    return Row(response, f"{_redirect_note(response)}{GATS_APP_NOTE}")
-
-
-def fas_data() -> Row:
-    """Record the FAS data page, which the CDN answers with 403 Access Denied."""
-    response = fetch(FAS_DATA_URL, expect=403)
-    if b"Access Denied" not in response.body:
-        raise _page_changed(FAS_DATA_URL, "HTTP 403 without 'Access Denied' in the body")
-    note = (
-        f"{_redirect_note(response)}{REFUSED_NOTE}; the body is not stable (it carries a "
-        "per-request reference), so neither its size nor its sha256 is recorded"
-    )
-    return Row(response, note, stable=False)
-
-
-def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    keys = [key for key, _ in pairs]
-    duplicates = sorted(key for key, count in Counter(keys).items() if count > 1)
-    if duplicates:
-        raise ValueError(f"duplicate keys {duplicates}")
-    return dict(pairs)
-
-
-def _document(response: Response) -> dict[str, Any]:
-    try:
-        document = json.loads(response.body, object_pairs_hook=_no_duplicates)
-    except ValueError as error:
-        raise SystemExit(f"GET {response.url}: not usable JSON ({error})") from None
-    if not isinstance(document, dict) or document.get("swagger") != "2.0":
-        raise SystemExit(f"GET {response.url}: expected a Swagger 2.0 document")
-    if not isinstance(document.get("paths"), dict):
-        raise SystemExit(f"GET {response.url}: no paths object")
-    if not isinstance(document.get("definitions", {}), dict):
-        raise SystemExit(f"GET {response.url}: definitions is not an object")
-    info = document.get("info", {})
-    stated = [name for name in _LICENCE_FIELDS if isinstance(info, dict) and name in info]
-    if stated or _COPYRIGHT.search(response.body.decode("utf-8", "replace")):
-        raise SystemExit(
-            f"GET {response.url}: the document now states a copyright, licence, terms or "
-            f"contact ({stated or 'in its text'}), which FETCHED.md's Attribution says it "
-            "does not.\nLook at the document by hand and update scripts/refresh_upstream.py. "
-            "Nothing was written."
-        )
-    return document
-
-
-def _refs(value: Any) -> set[str]:
-    """Every definition name a ``#/definitions/...`` reference in ``value`` points at."""
-    found: set[str] = set()
-    if isinstance(value, dict):
-        for key, item in value.items():
-            if key == "$ref" and isinstance(item, str) and item.startswith("#/definitions/"):
-                name = unquote(item.removeprefix("#/definitions/"))
-                found.add(name.replace("~1", "/").replace("~0", "~"))
-            else:
-                found |= _refs(item)
-    elif isinstance(value, list):
-        for item in value:
-            found |= _refs(item)
-    return found
-
-
-def gats_part(response: Response) -> GatsPart:
-    """The GATS part of a Swagger document: kept paths and the definitions they reference."""
-    document = _document(response)
-    paths: dict[str, Any] = document["paths"]
-    definitions: dict[str, Any] = document.get("definitions", {})
-    kept = {key: value for key, value in paths.items() if key.startswith(KEEP_PREFIX)}
-    if not kept:
-        raise SystemExit(f"GET {response.url}: no path starts with {KEEP_PREFIX}")
-    dropped: Counter[str] = Counter()
-    for key in paths:
-        if not key.startswith(KEEP_PREFIX):
-            match = _PREFIX.match(key)
-            dropped[match.group(0) if match else key] += 1
-    if sorted(dropped) != sorted(DROP_PREFIXES):
-        raise SystemExit(
-            f"GET {response.url}: the paths left out are {sorted(dropped)}, not "
-            f"{list(DROP_PREFIXES)}, so FETCHED.md would misstate what the document "
-            "covers.\nLook at the document by hand and update scripts/refresh_upstream.py. "
-            "Nothing was written."
-        )
-
-    wanted: set[str] = set()
-    pending = _refs(kept)
-    while pending:
-        name = pending.pop()
-        if name in wanted:
-            continue
-        if name not in definitions:
-            raise SystemExit(f"GET {response.url}: #/definitions/{name} is referenced, absent")
-        wanted.add(name)
-        pending |= _refs(definitions[name])
-
-    part: dict[str, Any] = {}
-    for key, value in document.items():
-        if key == "paths":
-            part[key] = kept
-        elif key == "definitions":
-            part[key] = {name: item for name, item in value.items() if name in wanted}
-        else:
-            part[key] = value
-    full = json.dumps(document, indent=2, ensure_ascii=False).encode("utf-8")
-    if full != response.body.replace(b"\r\n", b"\n"):
-        raise SystemExit(
-            f"GET {response.url}: re-serialised with json.dumps(indent=2, ensure_ascii=False), "
-            "the document no longer reproduces the fetched text up to line endings, so its "
-            "GATS part would not be an excerpt of the upstream text.\nLook at the document "
-            "by hand and update scripts/refresh_upstream.py. Nothing was written."
-        )
-    return GatsPart(
-        part=part,
-        kept=len(kept),
-        dropped=dict(dropped),
-        definitions_kept=len(wanted),
-        definitions_total=len(definitions),
-    )
-
-
-def document_row(path: str, response: Response) -> tuple[Row, GatsPart]:
-    """Fetch-side work for one document: its GATS part, the file content and the row."""
-    gats = gats_part(response)
-    content = (json.dumps(gats.part, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    dropped = ", ".join(f"{count} `{prefix}`" for prefix, count in sorted(gats.dropped.items()))
-    note = (
-        f"{_redirect_note(response)}GATS part; Bytes and sha256 are the full document's. "
-        f"Kept {gats.kept} `{KEEP_PREFIX}` paths; dropped {dropped} (out of scope here); "
-        f"kept {gats.definitions_kept} of {gats.definitions_total} definitions"
-    )
-    _log(f"  {path}: {len(content)} bytes to write from {len(response.body)} fetched")
-    return Row(response, note, path, content), gats
-
-
-def _iso_http_date(value: str | None) -> str:
-    if value is None:
-        return "-"
-    return parsedate_to_datetime(value).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _cell(value: str) -> str:
-    return value.replace("|", r"\|")
-
-
-def _fields(names: list[str]) -> str:
-    quoted = [f"`{name}`" for name in names]
-    if len(quoted) < 2:
-        return "".join(quoted) or "nothing"
-    return f"{', '.join(quoted[:-1])} and {quoted[-1]}"
-
-
-def _paragraph(*sentences: str) -> list[str]:
-    text = " ".join(sentences)
-    wrapped = textwrap.fill(text, width=88, break_long_words=False, break_on_hyphens=False)
-    return [*wrapped.splitlines(), ""]
-
-
-def _comparison(portal: GatsPart, backend: GatsPart) -> str:
-    """How the two GATS parts compare, top-level field by top-level field."""
-    keys = list(dict.fromkeys([*portal.part, *backend.part]))
-    both = [key for key in keys if key in portal.part and key in backend.part]
-    differ = [key for key in both if portal.part[key] != backend.part[key]]
-    agree = [key for key in both if key not in differ]
-    clauses = [f"differ in {_fields(differ)}"] if differ else []
-    for name, mine, other in (("portal", portal, backend), ("backend", backend, portal)):
-        only = [key for key in keys if key in mine.part and key not in other.part]
-        if only:
-            clauses.append(f"only the {name} document has {_fields(only)}")
-    clauses.append(f"they agree in {_fields(agree)}")
-    return "; ".join(clauses)
-
-
-def render_fetched(
-    rows: list[Row],
-    portal: GatsPart,
-    backend: GatsPart,
-    bundle: str,
-    backend_url: str,
-    fetched: str,
-    observed: bool = False,
-) -> str:
-    """The whole of ``FETCHED.md``.
-
-    ``observed`` is whether ``docs/upstream/`` holds ``OBSERVED.md``, which then has a row.
+    The kit cuts the document and holds it to upstream's text; the check reads the document
+    as served, since it writes nothing of it.
     """
-    hand = (
-        (
-            f"Nothing here was edited by hand but `{OBSERVED}`, the notes on what upstream",
-            "does but never documents, which the script neither writes nor checks.",
-        )
-        if observed
-        else ("Nothing here was edited by hand.",)
+    content = PORTAL.reduce(page, response)
+    paths = parse_json(response)["paths"]
+    left = sorted(
+        {
+            match.group(0) if (match := _PREFIX.match(path)) else path
+            for path in paths
+            if not path.startswith(PORTAL.prefix)
+        }
     )
-    lines = [
-        "# Upstream documentation snapshot \N{EM DASH} USDA FAS Global Agricultural Trade System",
-        "",
-        *_paragraph(
-            "Source of truth for every endpoint wrapper (sdk-core ADR-0028). The files in",
-            "this directory are written by `scripts/refresh_upstream.py`",
-            "(`/refresh-upstream`) from the documents in the table below and refreshed",
-            "deliberately by PR, so that changes show up as diffs. This file is generated by",
-            "the same script.",
-            *hand,
-        ),
-        "## Attribution",
-        "",
-        *_paragraph(
-            "None stated: neither document's `info` names a licence, terms of service or a",
-            "contact, and neither document carries a copyright line. The documents' text is",
-            "reproduced here as this package's reference (sdk-core ADR-0028); an objection",
-            "from the publisher is met by replacing it with a summary that keeps the names",
-            "and semantics the wrappers rely on.",
-        ),
-        "## How this is captured",
-        "",
-        *_paragraph(
-            f"The FAS Open Data Services portal, {PORTAL_URL}, documents three APIs of",
-            "USDA's Foreign Agricultural Service: ESR, GATS and PSD. It is an Angular app",
-            "whose page is a shell without documentation text. Its Swagger window loads the",
-            f"Swagger 2.0 document {PORTAL_SWAGGER_URL}. On {PORTAL_SWAGGER_FOUND_ON}, when",
-            "sdk-usda-psd's snapshot was set up, the portal page and its bundle were",
-            "fetched into a temporary directory and that URL was found in the bundle's",
-            "Swagger UI configuration; those copies have since been deleted. The script",
-            "never downloads the bundle, since it embeds the portal's own api.data.gov",
-            "signup-widget key, and this file records only its file name: as of this run",
-            f"the portal page loads `{bundle}`.",
-        ),
-        *_paragraph(
-            f"The API also serves its own Swashbuckle document, {backend_url}, which the",
-            f"classic Swagger UI at {CLASSIC_UI_URL} loads; the script reads that URL from",
-            "the UI page's `rootUrl` and `discoveryPaths`. Both documents are kept because",
-            "they are two upstream statements of the same API that need not agree on how it",
-            f"is reached. As fetched, their GATS parts {_comparison(portal, backend)}.",
-        ),
-        *_paragraph(
-            "Both documents cover ESR, GATS and PSD, and ESR and PSD get their own packages",
-            "in this family (sdk-usda-esr, sdk-usda-psd), so each file here holds the GATS",
-            "part only: every top-level field verbatim and in upstream order, `paths` reduced",
-            f"to the keys starting with `{KEEP_PREFIX}` and `definitions` reduced to those the",
-            "kept paths reference, directly or through other definitions; each document's",
-            "row counts the paths kept and dropped, per prefix, and the script stops unless",
-            f"the paths it leaves out fall under exactly {_fields(list(DROP_PREFIXES))}.",
-            "It writes the part with `json.dumps(indent=2, ensure_ascii=False)` in upstream",
-            "key order, with LF line endings and a final newline, and stops unless the full",
-            "document re-serialised the same way reproduces the fetched text up to line",
-            "endings, so each file is the upstream text with the other APIs cut out. Bytes",
-            "and sha256 in a document's row are those of the full document as fetched, so a",
-            "change anywhere in it shows here. Both files are JSON, so no table is kept as",
-            "HTML.",
-        ),
-        *_paragraph(
-            "Pages without documentation text get no file, only a row with their HTTP",
-            "status and the size and sha256 of the body: the portal page and the classic",
-            "Swagger UI, both client-rendered shells; the GATS application, which redirects",
-            "to a screen-detection page whose one script sends the browser on; and the FAS",
-            "data page, which the CDN edge answers, for this script, with 403 Access Denied",
-            "and a body that carries a per-request reference number, so that row records",
-            "neither size nor sha256. Against the same upstream, two runs write",
-            "byte-identical files under",
-            "`openapi/`, and this file differs only in its Fetched column.",
-        ),
-        *_paragraph(
-            "Fetched is the UTC time the run started, in ISO 8601 with an explicit Z, the",
-            "same for every row; Last-Modified is the HTTP header in UTC, ETag as sent.",
-            f"Requests go one at a time, identified as `{USER_AGENT}`; no API key is sent",
-            "or read.",
-        ),
-        "## Files and pages",
-        "",
-        "| File | URL | Fetched | HTTP | Bytes | sha256 | ETag | Last-Modified | Note |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
-    ]
-    for row in rows:
-        response = row.response
-        cells = [
-            row.path or "(no file)",
-            response.url,
-            fetched,
-            str(response.status),
-            str(len(response.body)) if row.stable else "-",
-            hashlib.sha256(response.body).hexdigest() if row.stable else "-",
-            response.etag or "-",
-            _iso_http_date(response.last_modified),
-            row.note,
-        ]
-        lines.append("| " + " | ".join(_cell(cell) for cell in cells) + " |")
-    if observed:
-        note = "written by hand: what upstream does but never documents; not fetched or checked"
-        lines.append("| " + " | ".join([OBSERVED, *["-"] * 7, note]) + " |")
-    lines += ["", f"Regenerate: `{COMMAND}`"]
-    return "\n".join(lines) + "\n"
+    if left != sorted(DROP_PREFIXES):
+        raise changed(response.url, f"the paths left out are {left}, not {list(DROP_PREFIXES)}")
+    return content
 
 
-def write_snapshot(out: Path, rows: list[Row], fetched_md: str) -> None:
-    """Write the files and ``FETCHED.md`` with LF line endings; prune stale ``openapi/`` files.
-
-    Only files under ``openapi/`` that this run does not produce are removed.
-    """
-    if out.exists() and any(out.iterdir()) and not (out / "FETCHED.md").is_file():
-        raise SystemExit(f"{out} is neither empty nor a snapshot (no FETCHED.md); not writing")
-    files = {row.path: row.content for row in rows if row.path and row.content is not None}
-    for subdir in SUBDIRS:
-        directory = out / subdir
-        directory.mkdir(parents=True, exist_ok=True)
-        for path in sorted(directory.iterdir()):
-            if path.is_file() and f"{subdir}/{path.name}" not in files:
-                path.unlink()
-                _log(f"  removed {subdir}/{path.name}: no longer produced")
-    for name, content in files.items():
-        (out / name).write_bytes(content)
-    (out / "FETCHED.md").write_bytes(fetched_md.encode("utf-8"))
+def note(row: Row) -> str:
+    """The row's note: the GATS application's, once it is still the shell, else the kit's."""
+    if row.page.url == GATS_APP_URL:
+        shell_text(row.response, GATS_APP_MARKER)
+        return GATS_APP_NOTE
+    return PORTAL.note(row)
 
 
-def main() -> None:
-    """Fetch every document and page, then write the snapshot."""
-    parser = argparse.ArgumentParser(description="Refresh docs/upstream/ from USDA FAS.")
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="snapshot directory")
-    out: Path = parser.parse_args().out
-    fetched = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+OWN = (
+    "The script stops unless the paths that its cut leaves out fall under exactly `/api/esr/` "
+    f"and `/api/psd/`. The GATS application page, {GATS_APP_URL}, redirects to a "
+    "screen-detection page whose one script sends the browser on, and gets no file, only a row "
+    "with its HTTP status and the size and sha256 of its body. The FAS data page, "
+    f"{FAS_DATA_URL}, answers 403 Access Denied at the CDN edge to headless clients, a body "
+    "that carries a per-request reference number."
+)
+"""GATS's own paragraph of "How this is captured", after the kit's four."""
 
-    _log(f"Portal: {PORTAL_URL}")
-    portal_page, bundle = portal_shell()
-    portal_row, portal = document_row(PORTAL_FILE, fetch(PORTAL_SWAGGER_URL))
-    _log(f"Classic Swagger UI: {CLASSIC_UI_URL}")
-    ui_page, backend_url = classic_ui()
-    backend_row, backend = document_row(BACKEND_FILE, fetch(backend_url))
-    _log("Pages recorded without a file")
-    pages = [gats_app(), fas_data()]
 
-    rows = [portal_row, backend_row, portal_page, ui_page, *pages]
-    observed = (out / OBSERVED).is_file()
-    fetched_md = render_fetched(rows, portal, backend, bundle, backend_url, fetched, observed)
-    write_snapshot(out, rows, fetched_md)
-    written = sum(1 for row in rows if row.path)
-    _log(f"Wrote {written} files and FETCHED.md under {out} (Fetched {fetched})")
+SNAPSHOT = Snapshot(
+    name="USDA FAS Global Agricultural Trade System",
+    slug="usda-gats",
+    pages=(
+        *PORTAL.pages,
+        Page(GATS_APP_URL),
+        Page(
+            FAS_DATA_URL,
+            status=403,
+            stable=False,
+            names="Access Denied",
+            note="the FAS data page; 403 Access Denied at the CDN edge",
+        ),
+    ),
+    capture=f"{PORTAL.capture}\n\n{OWN}",
+    reduce=reduce,
+    linked=PORTAL.linked,
+    note=note,
+    sections=PORTAL.sections,
+)
+"""The snapshot: the portal's shell and its document, the classic Swagger UI and the backend
+document it names, the GATS application's screen-detection page, and the FAS data page the CDN
+refuses. Neither document states a copyright line, a licence or terms, so the attribution is
+empty, and the frame stops a run on a page that comes to state one."""
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run(SNAPSHOT))

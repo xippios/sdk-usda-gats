@@ -130,7 +130,9 @@ async def test_get_census_release_dates_live(
     assert {r.product_type for r in result.data} == {ProductType.X}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     # The filter answers from the client's cache: no keyed call of its own.
-    one_year = await tasks.get_census_release_dates_async(ProductType.X, statistical_year=YEAR)
+    one_year = await tasks.get_census_release_dates_async(
+        ProductType.X, statistical_year_month=f"{YEAR}"
+    )
     year_months = [r.statistical_year_month for r in one_year.data]
     assert year_months == [month for month in months if month[:4] == f"{YEAR}"]
     assert 8 <= len(year_months) <= 12
@@ -152,7 +154,9 @@ async def test_get_census_export_series_live(
     record_property: Callable[[str, object], None],
 ) -> None:
     """June to August 2026: three data calls, the exports list from the cache."""
-    result = await tasks.get_census_export_series_async(PARTNER, YEAR, 6, YEAR, MONTH)
+    result = await tasks.get_census_export_series_async(
+        PARTNER, start_year=YEAR, start_month=6, end_year=YEAR, end_month=MONTH
+    )
     assert result.data
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
@@ -170,7 +174,9 @@ async def test_get_census_import_series_live(
     record_property: Callable[[str, object], None],
 ) -> None:
     """July and August 2026: two data calls, the imports list from the cache."""
-    result = await tasks.get_census_import_series_async(PARTNER, YEAR, 7, YEAR, MONTH)
+    result = await tasks.get_census_import_series_async(
+        PARTNER, start_year=YEAR, start_month=7, end_year=YEAR, end_month=MONTH
+    )
     assert result.data
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
@@ -189,7 +195,9 @@ async def test_get_census_reexport_series_live(
 ) -> None:
     """July and August 2026: two data calls, the exports list from the cache. A month
     may hold no re-exports, so the records may be none."""
-    result = await tasks.get_census_reexport_series_async(PARTNER, YEAR, 7, YEAR, MONTH)
+    result = await tasks.get_census_reexport_series_async(
+        PARTNER, start_year=YEAR, start_month=7, end_year=YEAR, end_month=MONTH
+    )
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
     assert {(r.country_code, r.date) for r in result.data} <= {

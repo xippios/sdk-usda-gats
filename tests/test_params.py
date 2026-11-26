@@ -27,6 +27,7 @@ from xippios.usda.gats.params import (
     validate_partner_code,
     validate_partner_month,
     validate_reporter_code,
+    validate_statistical_year_month,
     validate_year,
 )
 
@@ -478,6 +479,27 @@ def test_other_years_are_refused(year: object) -> None:
         validate_year(year)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("value", ["2026", "1967", "1000", "9999", "202608", "196701", "202512"])
+def test_a_year_or_a_month_of_statistical_year_month_passes(value: str) -> None:
+    """``statistical_year_month`` is a prefix of ``statisticalYearMonth``'s six digits that
+    names one year or one month."""
+    assert validate_statistical_year_month(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [2026, 202608, "26", "202", "20260", "2026081", "0999", "202600", "202613", "2026-08", " 2026"],
+)
+def test_another_statistical_year_month_is_refused(value: object) -> None:
+    with pytest.raises(InvalidRequestError) as info:
+        validate_statistical_year_month(value)  # type: ignore[arg-type]
+    assert not isinstance(info.value, UnknownCode)
+    assert info.value.message == (
+        'statistical_year_month must be a year as four digits, such as "2026", or a month as '
+        f'six, such as "202608", as text, got {value!r}. Nothing was sent.'
+    )
+
+
 @pytest.mark.parametrize("month", range(1, 13))
 def test_months_1_to_12_pass(month: int) -> None:
     assert validate_month(month) == month
@@ -565,10 +587,13 @@ def test_an_unknown_reporter_names_the_parameter_and_its_own_reason() -> None:
 def test_the_membership_check_names_the_parameter_it_was_given_as() -> None:
     """One check, three uses: the Census partner, the UN Trade reporter and the UN Trade
     partner filter, each refusal naming its parameter and its reason."""
-    assert validate_country_code("US", "partner_code", reason=UN_PARTNER_REASON) == "US"
+    filter_ = "partner_country_code"
+    assert validate_country_code("US", filter_, reason=UN_PARTNER_REASON) == "US"
     with pytest.raises(UnknownCode) as info:
-        validate_country_code("ZZ", "partner_code", reason=UN_PARTNER_REASON)
-    assert info.value.message.startswith("'ZZ' is not a partner_code in the packaged countries")
+        validate_country_code("ZZ", filter_, reason=UN_PARTNER_REASON)
+    assert info.value.message.startswith(
+        "'ZZ' is not a partner_country_code in the packaged countries"
+    )
     assert info.value.message.endswith(f"{UN_PARTNER_REASON} {OUT_OF_DATE}")
     with pytest.raises(UnknownCode) as census:
         validate_partner_code("ZZ")

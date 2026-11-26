@@ -4,6 +4,7 @@
 """
 
 import argparse
+import inspect
 import json
 import sys
 from collections import Counter
@@ -72,8 +73,8 @@ DISTRICT_NOTE = (
 HS10_NOTE = "filter by hs10_code, a full code or a prefix such as the chapter '02', to see the rest"
 RELEASE_DATES_NOTE = (
     "the list runs newest first, so the rows shown are the latest released months; "
-    "200 months reach back more than sixteen years; filter by statistical_year, e.g. "
-    "1987, to see the rest"
+    "200 months reach back more than sixteen years; filter by statistical_year_month, a "
+    "year such as '1987' or a month such as '198706', to see the rest"
 )
 RELEASED_2026_08 = "2026-10-06T08:00:00"
 """``releaseTimeStamp`` of ``"202608"`` in both recorded release lists, as upstream wrote it."""
@@ -410,6 +411,103 @@ DATA_TASKS: list[Callable[..., Any]] = [
     tasks.get_customs_district_reexports,
 ]
 DISTRICT_TASKS = DATA_TASKS[3:]
+
+_MONTH = "partner_code: str, year: int, month: int, *, hs10_code: str | None = None"
+_RANGE = (
+    "partner_code: str, *, start_year: int, start_month: int, end_year: int, end_month: int, "
+    "hs10_code: str | None = None"
+)
+_UN = (
+    "reporter_code: str, year: int, *, partner_country_code: str | None = None, "
+    "hs6_code: str | None = None"
+)
+_PRODUCT_TYPE = "product_type: xippios.usda.gats.models.ProductType"
+CALL_FORMS = {
+    "get_census_exports": f"({_MONTH})",
+    "get_census_imports": f"({_MONTH})",
+    "get_census_reexports": f"({_MONTH})",
+    "get_customs_district_exports": f"({_MONTH}, customs_district_id: int | None = None)",
+    "get_customs_district_imports": f"({_MONTH}, customs_district_id: int | None = None)",
+    "get_customs_district_reexports": f"({_MONTH}, customs_district_id: int | None = None)",
+    "get_census_export_series": f"({_RANGE})",
+    "get_census_import_series": f"({_RANGE})",
+    "get_census_reexport_series": f"({_RANGE})",
+    "get_census_release_dates": f"({_PRODUCT_TYPE}, *, statistical_year_month: str | None = None)",
+    "get_un_exports": f"({_UN})",
+    "get_un_imports": f"({_UN})",
+    "get_un_reexports": f"({_UN})",
+    "get_un_release_dates": (
+        f"({_PRODUCT_TYPE}, *, reporter_code: str | None = None, "
+        "statistical_year: int | None = None)"
+    ),
+    "list_commodities": (
+        "(*, search: str | None = None, hs10_code: str | None = None, "
+        "product_type: str | None = None)"
+    ),
+    "list_countries": "(*, region_code: str | None = None, search: str | None = None)",
+    "list_customs_districts": "()",
+    "list_hs6_commodities": "(*, search: str | None = None, hs6_code: str | None = None)",
+    "list_regions": "()",
+    "list_units_of_measure": "()",
+}
+"""The arguments of each task, its return left out: those that identify a record positional
+in the order of upstream's path, every filter and every argument of the package's own
+keyword-only, and the three filters that read a field named after it (sdk-core ADR-0061,
+decisions 2 and 5; https://github.com/xippios/sdk-usda-esr/issues/60, part 1)."""
+
+
+@pytest.mark.parametrize("name", sorted(CALL_FORMS))
+def test_a_task_takes_its_identifying_arguments_by_position_and_its_filters_by_keyword(
+    name: str,
+) -> None:
+    """``inspect.signature`` prints the call form of each of the twenty tasks, the sync
+    facade's and its async twin's alike."""
+    for fn in (getattr(tasks, name), getattr(tasks, f"{name}_async")):
+        printed = inspect.signature(fn).replace(return_annotation=inspect.Signature.empty)
+        assert str(printed) == CALL_FORMS[name], fn.__name__
+    assert sorted(CALL_FORMS) == sorted(tasks.__all__)
+
+
+def test_a_filter_by_position_or_by_its_former_name_is_refused_before_any_request(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A Python call that passes a filter, or a series' month, by position fails at the call,
+    and so does one that names ``partner_code``, ``year`` or ``statistical_year`` where the
+    filter took the name of upstream's field; respx is active with no route mounted."""
+    with pytest.raises(TypeError):
+        tasks.get_census_exports("CH", 2026, 8, "02")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        tasks.get_customs_district_imports("IC", 2026, 8, None, 10)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        tasks.get_census_export_series("IC", 2026, 7, 2026, 8)  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        tasks.get_un_exports("IC", 2019, "US")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        tasks.list_countries("R05")  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="partner_code"):
+        tasks.get_un_exports("IC", 2019, partner_code="US")  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="'year'"):
+        tasks.get_un_release_dates(ProductType.X, year=2019)  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match="statistical_year"):
+        tasks.get_census_release_dates(ProductType.X, statistical_year=2026)  # type: ignore[call-arg]
+    assert respx_mock.calls.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_a_tool_takes_the_three_filters_under_upstreams_names(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Over MCP the arguments are named as before but for the three filters, and a tool
+    refuses the former name as an argument it does not declare, before any request."""
+    arguments: list[tuple[str, dict[str, object]]] = [
+        ("usda_gats_get_un_exports", {"reporter_code": "IC", "year": 2019, "partner_code": "US"}),
+        ("usda_gats_get_un_release_dates", {"product_type": "X", "year": 2019}),
+        ("usda_gats_get_census_release_dates", {"product_type": "X", "statistical_year": 2026}),
+    ]
+    for tool, given in arguments:
+        with pytest.raises(AssertionError, match="error: "):
+            await mcp_call(server, tool, given)
+    assert respx_mock.calls.call_count == 0
 
 
 @pytest.mark.parametrize("task", DATA_TASKS, ids=[t.__name__ for t in DATA_TASKS])
@@ -877,30 +975,49 @@ def test_a_plain_code_is_a_product_type(replay_fixture: ReplayFixture) -> None:
 
 
 @pytest.mark.parametrize(
-    ("statistical_year", "months"),
+    ("statistical_year_month", "months"),
     [
-        (2026, [f"2026{month:02d}" for month in range(8, 0, -1)]),
-        (2025, [f"2025{month:02d}" for month in range(12, 0, -1)]),
-        (1987, [f"1987{month:02d}" for month in range(12, 0, -1)]),
-        (1967, [f"1967{month:02d}" for month in range(12, 0, -1)]),
-        (1966, []),
-        (2027, []),
+        ("2026", [f"2026{month:02d}" for month in range(8, 0, -1)]),
+        ("2025", [f"2025{month:02d}" for month in range(12, 0, -1)]),
+        ("1987", [f"1987{month:02d}" for month in range(12, 0, -1)]),
+        ("1967", [f"1967{month:02d}" for month in range(12, 0, -1)]),
+        ("202608", ["202608"]),
+        ("198706", ["198706"]),
+        ("1966", []),
+        ("2027", []),
+        ("202609", []),
     ],
-    ids=["2026_eight_months", "2025", "1987", "1967_the_first", "1966_before", "2027_after"],
+    ids=[
+        "2026_eight_months",
+        "2025",
+        "1987",
+        "1967_the_first",
+        "one_month",
+        "one_month_of_1987",
+        "1966_before",
+        "2027_after",
+        "202609_not_released",
+    ],
 )
-def test_statistical_year_keeps_one_years_months_after_the_one_request(
-    replay_fixture: ReplayFixture, statistical_year: int, months: list[str]
+def test_statistical_year_month_keeps_the_months_it_starts_after_the_one_request(
+    replay_fixture: ReplayFixture, statistical_year_month: str, months: list[str]
 ) -> None:
-    """The recorded exports list, 716 months: ``statistical_year`` keeps the records whose
-    ``statisticalYearMonth`` starts with the year, newest first as upstream sends them,
-    record for record the whole list's; a year the list lacks gives an empty list, not an
-    error. The filter is not sent upstream and is recorded in ``meta.request``."""
+    """The recorded exports list, 716 months: ``statistical_year_month``, named after the
+    field it reads, keeps the records whose ``statisticalYearMonth`` starts with it, a year
+    or one month, newest first as upstream sends them, record for record the whole list's;
+    a prefix no record starts with gives an empty list, not an error. The filter is not sent
+    upstream and is recorded in ``meta.request`` (sdk-core ADR-0061, decision 2)."""
     route = replay_fixture(EXPORT_RELEASES, "all")
     whole = tasks.get_census_release_dates(ProductType.X).data
-    result = tasks.get_census_release_dates(ProductType.X, statistical_year=statistical_year)
+    result = tasks.get_census_release_dates(
+        ProductType.X, statistical_year_month=statistical_year_month
+    )
     assert [r.statistical_year_month for r in result.data] == months
     assert result.data == [r for r in whole if r.statistical_year_month in months]
-    assert result.meta.request == {"product_type": "X", "statistical_year": statistical_year}
+    assert result.meta.request == {
+        "product_type": "X",
+        "statistical_year_month": statistical_year_month,
+    }
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
     assert entry is not None
@@ -912,41 +1029,56 @@ def test_the_release_times_of_a_statistical_year(replay_fixture: ReplayFixture) 
     """2025's twelve months carry the annual revision's time, 1987's the time of the
     release that last revised them, as upstream states it."""
     replay_fixture(IMPORT_RELEASES, "all")
-    revised = tasks.get_census_release_dates(ProductType.M, statistical_year=2025).data
+    revised = tasks.get_census_release_dates(ProductType.M, statistical_year_month="2025").data
     assert {r.release_time_stamp.isoformat() for r in revised} == {"2026-06-24T08:00:00"}
-    old = tasks.get_census_release_dates(ProductType.M, statistical_year=1987).data
+    old = tasks.get_census_release_dates(ProductType.M, statistical_year_month="1987").data
     assert {r.release_time_stamp.isoformat() for r in old} == {"2008-01-01T08:00:00"}
 
 
-@pytest.mark.parametrize("statistical_year", [26, 10000, "2026", True, 2026.0])
-def test_a_statistical_year_that_is_not_four_digits_is_refused_before_the_request(
-    respx_mock: respx.MockRouter, statistical_year: object
+@pytest.mark.parametrize(
+    "statistical_year_month",
+    [2026, 202608, "26", "20260", "2026-08", "202600", "202613", "0999", True, " 2026"],
+)
+def test_a_statistical_year_month_that_is_no_year_or_month_is_refused_before_the_request(
+    respx_mock: respx.MockRouter, statistical_year_month: object
 ) -> None:
-    with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit"):
-        tasks.get_census_release_dates(ProductType.X, statistical_year=statistical_year)  # type: ignore[arg-type]
+    """A prefix of the field's six digits is one year, four digits as text, or one month,
+    six: an integer, a part of a year, a separator or a month outside 01 to 12 is refused
+    before the request."""
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.get_census_release_dates(
+            ProductType.X,
+            statistical_year_month=statistical_year_month,  # type: ignore[arg-type]
+        )
+    assert info.value.message == (
+        'statistical_year_month must be a year as four digits, such as "2026", or a month as '
+        f'six, such as "202608", as text, got {statistical_year_month!r}. Nothing was sent.'
+    )
     assert respx_mock.calls.call_count == 0
 
 
 @pytest.mark.anyio
-async def test_the_release_dates_tool_with_statistical_year_end_to_end(
+async def test_the_release_dates_tool_with_statistical_year_month_end_to_end(
     replay_fixture: ReplayFixture,
 ) -> None:
     """Over MCP one year's months come back whole, without a note, the filter in
     ``meta.request``; a year the list lacks is an empty result, not an error."""
     route = replay_fixture(IMPORT_RELEASES, "all")
     tool = "usda_gats_get_census_release_dates"
-    payload = await mcp_call(server, tool, {"product_type": "M", "statistical_year": 2026})
+    payload = await mcp_call(server, tool, {"product_type": "M", "statistical_year_month": "2026"})
     assert [row["statistical_year_month"] for row in payload["data"]] == [
         f"2026{month:02d}" for month in range(8, 0, -1)
     ]
     assert payload["data"][0]["release_time_stamp"] == RELEASED_2026_08
     assert "note" not in payload
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusImportDataReleaseInfo"
-    assert payload["meta"]["request"] == {"product_type": "M", "statistical_year": 2026}
-    before = await mcp_call(server, tool, {"product_type": "M", "statistical_year": 1966})
+    assert payload["meta"]["request"] == {"product_type": "M", "statistical_year_month": "2026"}
+    before = await mcp_call(server, tool, {"product_type": "M", "statistical_year_month": "1966"})
     assert before["data"] == []
-    assert before["meta"]["request"] == {"product_type": "M", "statistical_year": 1966}
-    assert sent_urls(route) == [IMPORT_RELEASES_URL], "the second call from the cache"
+    assert before["meta"]["request"] == {"product_type": "M", "statistical_year_month": "1966"}
+    month = await mcp_call(server, tool, {"product_type": "M", "statistical_year_month": "202608"})
+    assert [row["statistical_year_month"] for row in month["data"]] == ["202608"]
+    assert sent_urls(route) == [IMPORT_RELEASES_URL], "the later calls from the cache"
 
 
 @pytest.mark.anyio
@@ -1012,7 +1144,7 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
 ) -> None:
     """The exports release list, 716 months, over MCP: cut at the default 200 rows, with a
     note of its own that says the rows shown are the newest months and names the tool's
-    one filter, ``statistical_year``, and a paged cap: the client's cache keeps the list
+    one filter, ``statistical_year_month``, and a paged cap: the client's cache keeps the list
     for an hour, so ``offset`` answers the next months without a request (sdk-core
     ADR-0047, ADR-0061, decision 9)."""
     route = replay_fixture(EXPORT_RELEASES, "all")
@@ -1029,7 +1161,7 @@ async def test_the_release_dates_tool_says_its_rows_are_the_newest_months(
         f"showing 200 of 716 rows (cap: 200 rows or 65536 bytes); {RELEASE_DATES_NOTE}; "
         "continue with offset=200"
     )
-    assert "statistical_year" in payload["note"], "the note names the tool's one filter"
+    assert "statistical_year_month" in payload["note"], "the note names the tool's one filter"
     after = await mcp_call(
         server, "usda_gats_get_census_release_dates", {"product_type": "X", "offset": 200}
     )
@@ -1066,11 +1198,14 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     assert releases.json()["meta"]["request"] == {"product_type": "X"}
     year = http.get(
         "/usda-gats/get_census_release_dates",
-        params={"product_type": "X", "statistical_year": 2025},
+        params={"product_type": "X", "statistical_year_month": "2025"},
     )
     assert year.status_code == 200, year.text
     assert len(year.json()["data"]) == 12
-    assert year.json()["meta"]["request"] == {"product_type": "X", "statistical_year": 2025}
+    assert year.json()["meta"]["request"] == {
+        "product_type": "X",
+        "statistical_year_month": "2025",
+    }
     replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
     district: dict[str, str | int] = {
         "partner_code": "IC",
@@ -1218,7 +1353,7 @@ def test_census_series_tasks(
     list for imports, the exports list for exports and, by assumption, re-exports."""
     releases = replay_fixture(release_list, "all")
     data = _replay_months(respx_mock, fixture, *IC_MONTHS)
-    result = task("IC", 2026, 7, 2026, 8)
+    result = task("IC", start_year=2026, start_month=7, end_year=2026, end_month=8)
     july, august = counts
     assert len(result.data) == july + august == len(_months_recorded(fixture, *IC_MONTHS))
     assert [(r.date, r.hs10_code) for r in result.data] == _months_recorded(fixture, *IC_MONTHS)
@@ -1256,7 +1391,9 @@ def test_hs10_code_filters_every_month_of_a_series(
         ("03", {"202607": 42, "202608": 43}),
         ("0304", {"202607": 25, "202608": 23}),
     ]:
-        result = tasks.get_census_import_series("IC", 2026, 7, 2026, 8, hs10_code=hs10_code)
+        result = tasks.get_census_import_series(
+            "IC", start_year=2026, start_month=7, end_year=2026, end_month=8, hs10_code=hs10_code
+        )
         assert [(r.date, r.hs10_code) for r in result.data] == [
             pair
             for pair in _months_recorded(IMPORTS, *IC_MONTHS)
@@ -1265,7 +1402,9 @@ def test_hs10_code_filters_every_month_of_a_series(
         assert Counter(r.date for r in result.data) == expected
         assert result.meta.request["hs10_code"] == hs10_code
         assert result.meta.vintage == RELEASED_2026_08
-    none = tasks.get_census_import_series("IC", 2026, 7, 2026, 8, hs10_code="99")
+    none = tasks.get_census_import_series(
+        "IC", start_year=2026, start_month=7, end_year=2026, end_month=8, hs10_code="99"
+    )
     assert none.data == []
     assert none.meta.vintage == RELEASED_2026_08, "the months' releases, data or none"
     sent = [_ic_url("censusImports", 7), _ic_url("censusImports", 8)]
@@ -1307,7 +1446,7 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
     replay_fixture(IMPORT_RELEASES, "all")
     for series_task, month_task, endpoint, fixture, release_list, partner in cases:
         data = replay_fixture(fixture, f"{partner}_2026_8")
-        series = series_task(partner, 2026, 8, 2026, 8)
+        series = series_task(partner, start_year=2026, start_month=8, end_year=2026, end_month=8)
         month = month_task(partner, 2026, 8)
         assert series.data == month.data
         assert len(series.data) == len(_recorded(fixture, f"{partner}_2026_8"))
@@ -1340,7 +1479,9 @@ def test_a_series_vintage_is_the_newest_release_among_its_months(
         f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2026/month/2",
     ]
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
-    result = tasks.get_census_export_series("IC", 2025, 12, 2026, 2)
+    result = tasks.get_census_export_series(
+        "IC", start_year=2025, start_month=12, end_year=2026, end_month=2
+    )
     assert result.data == []
     december = _release_time(EXPORT_RELEASES, "202512")
     assert december == "2026-06-24T08:00:00"
@@ -1356,26 +1497,26 @@ def test_series_arguments_are_checked_before_any_request(
 ) -> None:
     """respx is active with no routes mounted, so any upstream call would fail loudly."""
     with pytest.raises(InvalidRequestError) as after:
-        task("IC", 2026, 8, 2026, 7)
+        task("IC", start_year=2026, start_month=8, end_year=2026, end_month=7)
     assert after.value.message == (
         "the range starts at 2026-08, after its end 2026-07. Nothing was sent. Pass the "
         "earlier month as start_year and start_month, e.g. start_year=2026, start_month=6, "
         "end_year=2026, end_month=8."
     )
     with pytest.raises(InvalidRequestError) as span:
-        task("IC", 2021, 8, 2026, 8)
+        task("IC", start_year=2021, start_month=8, end_year=2026, end_month=8)
     assert span.value.message.startswith(
         "2021-08 to 2026-08 is 61 months; one call fetches at most 60 months. Nothing was sent."
     )
     for start_month, end_month in [(0, 8), (6, 13)]:
         with pytest.raises(InvalidRequestError, match="month must be a whole number from 1"):
-            task("IC", 2026, start_month, 2026, end_month)
+            task("IC", start_year=2026, start_month=start_month, end_year=2026, end_month=end_month)
     with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 26"):
-        task("IC", 26, 6, 2026, 8)
+        task("IC", start_year=26, start_month=6, end_year=2026, end_month=8)
     with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 20260"):
-        task("IC", 2026, 6, 20260, 8)
+        task("IC", start_year=2026, start_month=6, end_year=20260, end_month=8)
     with pytest.raises(InvalidRequestError) as inside:
-        task("D1", 1987, 6, 1988, 1)
+        task("D1", start_year=1987, start_month=6, end_year=1988, end_month=1)
     assert not isinstance(inside.value, UnknownCode)
     assert inside.value.message.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
     assert "so 1988-01 (198801) is refused" in inside.value.message
@@ -1383,14 +1524,14 @@ def test_series_arguments_are_checked_before_any_request(
         "Listed under the same name: 9U, DA (discontinued 198712)."
     )
     with pytest.raises(InvalidRequestError, match="so 2026-06 \\(202606\\) is refused"):
-        task("D1", 2026, 6, 2026, 8)
+        task("D1", start_year=2026, start_month=6, end_year=2026, end_month=8)
     with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as unknown:
-        task("ZZ", 2026, 6, 2026, 8)
+        task("ZZ", start_year=2026, start_month=6, end_year=2026, end_month=8)
     assert unknown.value.closest == ()
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
-        task("ISL", 2026, 6, 2026, 8)
+        task("ISL", start_year=2026, start_month=6, end_year=2026, end_month=8)
     with pytest.raises(InvalidRequestError, match="hs10_code must be 1 to 10 digits"):
-        task("IC", 2026, 6, 2026, 8, hs10_code="03.04")
+        task("IC", start_year=2026, start_month=6, end_year=2026, end_month=8, hs10_code="03.04")
     assert respx_mock.calls.call_count == 0
 
 
@@ -1421,7 +1562,7 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
     releases = replay_fixture(release_list, "all")
     data = _replay_months(respx_mock, endpoint, *IC_MONTHS)
     with pytest.raises(NotFoundError) as info:
-        task("IC", 2026, 7, 2026, 9)
+        task("IC", start_year=2026, start_month=7, end_year=2026, end_month=9)
     message = info.value.message
     assert message.startswith(
         f"GATS has no Census {asked} for 202609, in the requested range 202607 to 202609: it "
@@ -1431,17 +1572,17 @@ def test_a_series_with_a_month_not_released_is_refused_whole(
     assert ("GATS publishes no release list for re-exports" in message) is (asked != flow)
     assert "api.fas.usda.gov" not in message
     with pytest.raises(NotFoundError) as longest:
-        task("IC", 2021, 10, 2026, 9)
+        task("IC", start_year=2021, start_month=10, end_year=2026, end_month=9)
     assert "for 202609, in the requested range 202110 to 202609" in longest.value.message
     assert "The release list was fetched at " in longest.value.message, "from the cache"
     with pytest.raises(NotFoundError) as beyond:
-        task("IC", 2026, 8, 2026, 10)
+        task("IC", start_year=2026, start_month=8, end_year=2026, end_month=10)
     assert beyond.value.message.startswith(
         f"GATS has no Census {asked} for 202609, in the requested range 202608 to 202610: "
         f"it is not released yet: the latest {flow} month released is 202608"
     ), "the first month missing, not the end month"
     with pytest.raises(NotFoundError) as before:
-        task("IC", 1966, 11, 1967, 2)
+        task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
     assert before.value.message.startswith(
         f"GATS has no Census {asked} for 196611, in the requested range 196611 to 196702: "
         f"the {flow} data starts at 196701"
@@ -1484,7 +1625,9 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError) as info:
-        tasks.get_census_export_series("IC", 2026, 7, 2026, 8)
+        tasks.get_census_export_series(
+            "IC", start_year=2026, start_month=7, end_year=2026, end_month=8
+        )
     assert info.value.retry_after is not None
     slack = CLOCK_SLACK.total_seconds()
     assert 3151 - slack <= info.value.retry_after <= 3151 + slack
@@ -1744,7 +1887,9 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
             await mcp_call(server, tool, arguments)
         assert str(info.value) == f"error: InvalidRequestError: {refusal}", tool
     with pytest.raises(InvalidRequestError) as python:
-        await tasks.get_census_export_series.async_fn("IC", 2024, 8, 2026, 8)
+        await tasks.get_census_export_series.async_fn(
+            "IC", start_year=2024, start_month=8, end_year=2026, end_month=8
+        )
     assert python.value.message == refusal
     assert respx_mock.calls.call_count == 0, "refused before any request"
     releases = replay_fixture(EXPORT_RELEASES, "all")
@@ -1767,7 +1912,9 @@ def test_a_ceiling_set_from_python_is_refused_in_the_same_words(
     request (respx is active with no route mounted)."""
     tasks.SERIES.set(12)
     with pytest.raises(InvalidRequestError) as info:
-        tasks.get_census_import_series("IC", 2025, 8, 2026, 8)
+        tasks.get_census_import_series(
+            "IC", start_year=2025, start_month=8, end_year=2026, end_month=8
+        )
     assert info.value.message == (
         "2025-08 to 2026-08 is 13 months; one call fetches at most 12 months, the ceiling set "
         "for this process (the MCP server starts with 24 by default; --series-months raises "
@@ -1793,11 +1940,15 @@ def test_the_python_api_spans_60_months(
         if namespace is not None:
             tasks.mcp_apply_options(namespace)
         assert tasks.SERIES.value == 60
-        result = tasks.get_census_export_series("IC", 2021, 9, 2026, 8)
+        result = tasks.get_census_export_series(
+            "IC", start_year=2021, start_month=9, end_year=2026, end_month=8
+        )
         assert result.data == []
         assert result.meta.vintage == RELEASED_2026_08
         with pytest.raises(InvalidRequestError) as longer:
-            tasks.get_census_export_series("IC", 2021, 8, 2026, 8)
+            tasks.get_census_export_series(
+                "IC", start_year=2021, start_month=8, end_year=2026, end_month=8
+            )
         assert longer.value.message == (
             "2021-08 to 2026-08 is 61 months; one call fetches at most 60 months. Nothing was "
             "sent. Ask for a shorter range, or for consecutive ranges of at most 60 months one "
@@ -1877,12 +2028,12 @@ IC_UN_EXPORTS_URL = f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/IC/year/20
 TP_UN_IMPORTS_URL = f"{BASE_URL}/api/gats/UNTradeImports/reporterCode/TP/year/2019"
 MC_UN_RE_EXPORTS_URL = f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/MC/year/2019"
 UN_DATA_NOTE = (
-    "filter by partner_code, e.g. 'US' (United States), or by hs6_code, a full code or a "
-    "prefix such as the chapter '03', to see the rest"
+    "filter by partner_country_code, e.g. 'US' (United States), or by hs6_code, a full code "
+    "or a prefix such as the chapter '03', to see the rest"
 )
 UN_RELEASE_DATES_NOTE = (
     "the list runs newest year first, one row per reporter and year; filter by "
-    "reporter_code, e.g. 'IC' (Iceland), or by year, e.g. 2019, to see the rest"
+    "reporter_code, e.g. 'IC' (Iceland), or by statistical_year, e.g. 2019, to see the rest"
 )
 IC_2019_EXPORTS_RELEASED = "2020-06-03T05:50:46"
 """``releaseTimeStamp`` of Iceland's 2019 in the recorded UN exports list, as upstream wrote it."""
@@ -2010,7 +2161,7 @@ def test_isoformat_gives_back_every_recorded_un_release_time(endpoint: str) -> N
 
 
 @pytest.mark.parametrize(
-    ("partner_code", "hs6_code", "expected"),
+    ("partner_country_code", "hs6_code", "expected"),
     [
         ("US", None, 298),
         ("NO", None, 142),
@@ -2032,30 +2183,34 @@ def test_isoformat_gives_back_every_recorded_un_release_time(endpoint: str) -> N
         "no_match",
     ],
 )
-def test_partner_code_and_hs6_code_select_after_the_one_request(
+def test_partner_country_code_and_hs6_code_select_after_the_one_request(
     replay_fixture: ReplayFixture,
-    partner_code: str | None,
+    partner_country_code: str | None,
     hs6_code: str | None,
     expected: int,
 ) -> None:
-    """Iceland's 2019 exports: ``partner_code`` keeps one partner, ``hs6_code`` the codes it
-    starts (a chapter, a heading, a full code); neither is sent upstream. ``NO`` (Norway)
-    was discontinued in 198712 by the countries list and is a partner of 2019 here."""
+    """Iceland's 2019 exports: ``partner_country_code``, named after the field it reads,
+    keeps one partner, ``hs6_code`` the codes it starts (a chapter, a heading, a full code);
+    neither is sent upstream. ``NO`` (Norway) was discontinued in 198712 by the countries
+    list and is a partner of 2019 here."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     data = replay_fixture(UN_EXPORTS, "IC_2019")
-    result = tasks.get_un_exports("IC", 2019, partner_code=partner_code, hs6_code=hs6_code)
+    result = tasks.get_un_exports(
+        "IC", 2019, partner_country_code=partner_country_code, hs6_code=hs6_code
+    )
     recorded = [
         r
         for r in _recorded(UN_EXPORTS, "IC_2019")
-        if (partner_code is None or r["partnerCountryCode"] == partner_code)
+        if (partner_country_code is None or r["partnerCountryCode"] == partner_country_code)
         and (hs6_code is None or str(r["hS6Code"]).startswith(hs6_code))
     ]
     assert len(result.data) == len(recorded) == expected
     assert _partners_and_codes(result.data) == [
         (r["partnerCountryCode"], r["hS6Code"]) for r in recorded
     ]
-    assert (result.meta.request.get("partner_code"), result.meta.request.get("hs6_code")) == (
-        partner_code,
+    request = result.meta.request
+    assert (request.get("partner_country_code"), request.get("hs6_code")) == (
+        partner_country_code,
         hs6_code,
     ), "a filter not given is left out (sdk-core ADR-0041, decision 3)"
     assert result.meta.vintage == IC_2019_EXPORTS_RELEASED
@@ -2178,7 +2333,7 @@ def test_a_discontinued_code_is_accepted_on_the_un_side(
         tasks.get_census_exports("DA", 2019, 1)
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")
-    australia = tasks.get_un_reexports("MC", 2019, partner_code="AS")
+    australia = tasks.get_un_reexports("MC", 2019, partner_country_code="AS")
     assert len(australia.data) == 27
     assert {r.partner_country_code for r in australia.data} == {"AS"}
     assert australia.data[0].hs6_code == "220421"
@@ -2207,8 +2362,8 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
         )
         with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
             task("ISL", 2019)
-        with pytest.raises(UnknownCode, match="'ZZ' is not a partner_code") as partner:
-            task("IC", 2019, partner_code="ZZ")
+        with pytest.raises(UnknownCode, match="'ZZ' is not a partner_country_code") as partner:
+            task("IC", 2019, partner_country_code="ZZ")
         assert "The UN Trade operations take no partner" in partner.value.message
         with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 19"):
             task("IC", 19)
@@ -2227,17 +2382,18 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
         tasks.get_un_release_dates("R")  # type: ignore[arg-type]
     with pytest.raises(UnknownCode, match="'ZZ' is not a reporter_code"):
         tasks.get_un_release_dates(ProductType.X, reporter_code="ZZ")
-    with pytest.raises(InvalidRequestError, match="four-digit year"):
-        tasks.get_un_release_dates(ProductType.M, year=19)
+    with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit year"):
+        tasks.get_un_release_dates(ProductType.M, statistical_year=19)
     assert respx_mock.calls.call_count == 0
 
 
 @pytest.mark.parametrize(
-    ("task", "arguments", "release_list", "url", "param", "first"),
+    ("task", "arguments", "filters", "release_list", "url", "param", "first"),
     [
         (
             tasks.get_un_exports,
             ("AUS", 2019),
+            {},
             UN_EXPORT_RELEASES,
             UN_EXPORT_RELEASES_URL,
             "reporter_code",
@@ -2246,6 +2402,7 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
         (
             tasks.get_un_imports,
             ("NOR", 2019),
+            {},
             UN_IMPORT_RELEASES,
             UN_IMPORT_RELEASES_URL,
             "reporter_code",
@@ -2253,15 +2410,17 @@ def test_un_arguments_are_checked_before_any_request(respx_mock: respx.MockRoute
         ),
         (
             tasks.get_un_reexports,
-            ("MC", 2019, "AUS"),
+            ("MC", 2019),
+            {"partner_country_code": "AUS"},
             UN_EXPORT_RELEASES,
             UN_EXPORT_RELEASES_URL,
-            "partner_code",
+            "partner_country_code",
             [("AS", "Australia"), ("A2", "Australia")],
         ),
         (
             tasks.get_un_exports,
             ("FRA", 2019),
+            {},
             UN_EXPORT_RELEASES,
             UN_EXPORT_RELEASES_URL,
             "reporter_code",
@@ -2275,6 +2434,7 @@ def test_a_shared_iso_code_is_refused_with_the_listed_reporters_first(
     respx_mock: respx.MockRouter,
     task: Callable[..., Any],
     arguments: tuple[Any, ...],
+    filters: dict[str, Any],
     release_list: str,
     url: str,
     param: str,
@@ -2287,7 +2447,7 @@ def test_a_shared_iso_code_is_refused_with_the_listed_reporters_first(
     ``FRA`` keeps ``F1`` first, since there the list holds the child, not the parent."""
     releases = replay_fixture(release_list, "all")
     with pytest.raises(UnknownCode) as info:
-        task(*arguments)
+        task(*arguments, **filters)
     assert info.value.param == param
     assert list(info.value.closest[:2]) == first
     names = ", ".join(f"{code} ({name})" for code, name in first)
@@ -2316,7 +2476,7 @@ def test_un_release_dates_rank_a_shared_iso_code_and_the_census_tasks_do_not(
     with pytest.raises(UnknownCode, match=r"Did you mean IC \(Iceland\)"):
         tasks.get_un_imports("ISL", 2019)
     with pytest.raises(InvalidRequestError, match="four-digit year such as 2026, got 19"):
-        tasks.get_un_exports("IC", 19, partner_code="AUS")
+        tasks.get_un_exports("IC", 19, partner_country_code="AUS")
     assert respx_mock.calls.call_count == 1, "only the UN exports list, once"
 
 
@@ -2435,7 +2595,7 @@ def test_get_un_release_dates(
     assert result.meta.retrieved_at.tzinfo is not None
     entry = cache.get(cache_key("GET", httpx.URL(url)))
     assert entry is not None
-    again = tasks.get_un_release_dates(product_type, year=2019)
+    again = tasks.get_un_release_dates(product_type, statistical_year=2019)
     assert route.call_count == 1
     assert again.meta.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
     assert len(again.data) == 32
@@ -2443,7 +2603,7 @@ def test_get_un_release_dates(
 
 
 def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixture) -> None:
-    """``reporter_code`` keeps one reporter's years, newest first, ``year`` one year's
+    """``reporter_code`` keeps one reporter's years, newest first, ``statistical_year`` one year's
     reporters in code order; a listed reporter and a year it lacks selects nothing."""
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
@@ -2452,16 +2612,26 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
     assert {r.reporter_code for r in iceland.data} == {"IC"}
     assert iceland.data[0].release_time_stamp.isoformat() == IC_2019_EXPORTS_RELEASED
     assert iceland.meta.request == {"product_type": "X", "reporter_code": "IC"}
-    latest = tasks.get_un_release_dates(ProductType.M, year=2019)
+    latest = tasks.get_un_release_dates(ProductType.M, statistical_year=2019)
     codes = [r.reporter_code for r in latest.data]
     assert len(codes) == 32
     assert codes == sorted(codes)
     assert "TP" in codes
-    assert latest.meta.request == {"product_type": "M", "year": 2019}
-    (one,) = tasks.get_un_release_dates("M", reporter_code="TP", year=2019).data  # type: ignore[arg-type]
+    assert latest.meta.request == {"product_type": "M", "statistical_year": 2019}
+    (one,) = tasks.get_un_release_dates("M", reporter_code="TP", statistical_year=2019).data  # type: ignore[arg-type]
     assert one.release_time_stamp.isoformat() == "2020-07-16T01:15:37"
-    assert tasks.get_un_release_dates(ProductType.X, reporter_code="AS", year=2018).data == []
-    assert len(tasks.get_un_release_dates(ProductType.M, reporter_code="AS", year=2018).data) == 1
+    assert (
+        tasks.get_un_release_dates(ProductType.X, reporter_code="AS", statistical_year=2018).data
+        == []
+    )
+    assert (
+        len(
+            tasks.get_un_release_dates(
+                ProductType.M, reporter_code="AS", statistical_year=2018
+            ).data
+        )
+        == 1
+    )
     assert tasks.get_un_release_dates(ProductType.X, reporter_code="CD").data == []
 
 
@@ -2476,7 +2646,7 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
             "IC_2019",
             UN_EXPORT_RELEASES,
             3980,
-            {"partner_code": "US", "hs6_code": "0304"},
+            {"partner_country_code": "US", "hs6_code": "0304"},
             16,
         ),
         (
@@ -2496,7 +2666,7 @@ def test_un_release_dates_filter_by_reporter_and_year(replay_fixture: ReplayFixt
             "MC_2019",
             UN_EXPORT_RELEASES,
             421,
-            {"partner_code": "AS"},
+            {"partner_country_code": "AS"},
             27,
         ),
     ],
@@ -2514,7 +2684,8 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     narrowed: int,
 ) -> None:
     """Over MCP each reporter-year is cut at the default cap with a note naming
-    ``partner_code`` and ``hs6_code`` (sdk-core ADR-0038); a filtered call comes back whole."""
+    ``partner_country_code`` and ``hs6_code`` (sdk-core ADR-0038); a filtered call comes back
+    whole."""
     replay_fixture(release_list, "all")
     data = replay_fixture(fixture, case)
     url = {
@@ -2566,7 +2737,7 @@ async def test_the_un_release_dates_tool_names_its_filters_when_cut(
     replay_fixture: ReplayFixture,
 ) -> None:
     """3,796 reporter-years over MCP: cut at 200 rows, 2019's 32, 2018's 80 and 88 of
-    2017's, with a note naming ``reporter_code`` and ``year``; one reporter comes back
+    2017's, with a note naming ``reporter_code`` and ``statistical_year``; one reporter comes back
     whole."""
     route = replay_fixture(UN_EXPORT_RELEASES, "all")
     payload = await mcp_call(server, "usda_gats_get_un_release_dates", {"product_type": "X"})
@@ -2608,7 +2779,11 @@ def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
     app = FastAPI()
     app.include_router(router)
     http = TestClient(app)
-    params: dict[str, str | int] = {"reporter_code": "IC", "year": 2019, "partner_code": "US"}
+    params: dict[str, str | int] = {
+        "reporter_code": "IC",
+        "year": 2019,
+        "partner_country_code": "US",
+    }
     response = http.get("/usda-gats/get_un_exports", params={**params, "hs6_code": "030444"})
     assert response.status_code == 200, response.text
     (row,) = response.json()["data"]
@@ -2621,7 +2796,7 @@ def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
     assert unlisted.status_code == 404
     assert unlisted.json()["title"] == "NotFoundError"
     releases = http.get(
-        "/usda-gats/get_un_release_dates", params={"product_type": "X", "year": 2019}
+        "/usda-gats/get_un_release_dates", params={"product_type": "X", "statistical_year": 2019}
     )
     assert releases.status_code == 200
     assert len(releases.json()["data"]) == 32
@@ -2630,7 +2805,9 @@ def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
 TASK_REFUSALS: list[tuple[Callable[[], object], str]] = [
     (lambda: tasks.get_census_release_dates("Z"), 'product_type must be "X"'),  # type: ignore[arg-type]
     (
-        lambda: tasks.get_census_export_series("IC", 2026, 8, 2026, 7),
+        lambda: tasks.get_census_export_series(
+            "IC", start_year=2026, start_month=8, end_year=2026, end_month=7
+        ),
         "the range starts at 2026-08, after its end 2026-07",
     ),
     (lambda: tasks.list_countries(search=3), "search must be text"),  # type: ignore[arg-type]
@@ -2702,6 +2879,10 @@ def test_a_un_answer_names_its_countries_its_hs6_codes_and_its_units(
     assert set(names["partner_country_code"]) == {r.partner_country_code for r in result.data}
     assert {"census_uom_id1", "census_uom_id2", "fas_converted_uom_id"} <= set(names)
     assert "fas_non_converted_uom_id" in names
+    partner = tasks.get_un_exports("IC", 2019, partner_country_code="US")
+    assert partner.meta.names["partner_country_code"] == {"US": "United States"}, (
+        "the filter, named after the records' field, names its code under it"
+    )
     chapter = tasks.get_un_exports("IC", 2019, hs6_code="03")
     assert set(chapter.meta.names["hs6_code"]) == {r.hs6_code for r in chapter.data}, (
         "a prefix names no code of its own: the rows' codes alone"

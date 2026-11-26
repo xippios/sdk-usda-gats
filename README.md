@@ -8,6 +8,21 @@ retrieved_at, request), and the data tasks the release time of what they answer.
 depends on `xippios-usda-fas`, the shared package of the USDA FAS sources, for the
 api.data.gov gateway and the kit of its snapshot script.
 
+## Scope
+
+Of GATS's API the package wraps all nineteen operations that its documentation lists
+(`docs/upstream/`): the Census exports, imports and re-exports of one partner in one month,
+the same by US customs district, the UN Trade exports, imports and re-exports of one
+reporter in one year, the four release lists and the six lists of codes, five of which the
+package ships and refreshes before each release. GATS documents path parameters alone,
+`partnerCode`, `year` and `month` for the Census operations and `reporterCode` and `year`
+for the UN Trade operations, and the tasks take every one. The documentation lists XML
+beside JSON among the forms that each operation produces; the package asks for JSON, so XML
+is the one documented choice that a caller cannot make. What the package adds is one
+partner's series over months and filters that select records of an answer, of a release
+list and of the packaged lists. It ranks no partner, sums no record and picks no month for
+the caller: a caller reads every record as GATS sends it.
+
 ## Install
 
 ```bash

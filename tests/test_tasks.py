@@ -2627,7 +2627,7 @@ def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
 
 
 TASK_REFUSALS: list[tuple[Callable[[], object], str]] = [
-    (lambda: tasks.get_census_release_dates("Z"), 'product_type must be "X"'),
+    (lambda: tasks.get_census_release_dates("Z"), 'product_type must be "X"'),  # type: ignore[arg-type]
     (
         lambda: tasks.get_census_export_series("IC", 2026, 8, 2026, 7),
         "the range starts at 2026-08, after its end 2026-07",

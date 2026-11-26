@@ -1,12 +1,13 @@
 """The packaged lists, the enum rendered from them and the argument checks of the data tasks."""
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
 
 import pytest
-from xippios.core import InvalidRequestError, PackagedList, UnknownCode, parse
+from xippios.core import InvalidRequestError, PackagedCodes, PackagedList, UnknownCode, parse
 from xippios.core.http import status_for
 from xippios.core.testing import load_fixture
 
@@ -260,8 +261,8 @@ def test_a_leaf_discontinued_before_the_month_is_refused() -> None:
     assert error.message == (
         "partner_code 'D1' (Denmark) was discontinued in 198712 (discontinuedOn in "
         "GATS's countries list, packaged, fetched 2026-10-28) and is no other code's parent: "
-        "it holds no trade after that month, so 2026-08 (202608) is refused. Listed under "
-        "the same name: 9U, DA (discontinued 198712)."
+        "it holds no trade after that month, so 2026-08 (202608) is refused. Nothing was "
+        "sent. Listed under the same name: 9U, DA (discontinued 198712)."
     )
 
 
@@ -274,7 +275,8 @@ def test_a_leaf_refusal_names_its_parent_code() -> None:
         "partner_code 'GE' (Germany, Federal Republic (Former)) was discontinued in 199009 "
         "(discontinuedOn in GATS's countries list, packaged, fetched 2026-10-28) and is no "
         "other code's parent: it holds no trade after that month, so 2026-08 (202608) is "
-        "refused. Its parent code GM (Germany) is accepted for every month. No other listed "
+        "refused. Nothing was sent. Its parent code GM (Germany) is accepted for every "
+        "month. No other listed "
         f"code carries the name 'Germany, Federal Republic (Former)'; {COUNTRIES_TASK} "
         "searches them."
     )
@@ -298,7 +300,7 @@ def test_a_leaf_refusal_names_no_parent_the_list_does_not_hold(
     assert "parent code" not in message
     assert "None" not in message
     assert message.endswith(
-        "is refused. No other listed code carries the name "
+        "is refused. Nothing was sent. No other listed code carries the name "
         f"'Germany, Federal Republic (Former)'; {COUNTRIES_TASK} searches them."
     )
 
@@ -405,20 +407,20 @@ def test_listed_customs_districts_pass(district: int) -> None:
 @pytest.mark.parametrize(
     ("district", "closest"),
     [
-        (12, [("11", "PHILADELPHIA, PA."), ("13", "BALTIMORE, MD."), ("10", "NEW YORK, N.Y.")]),
+        (12, [(11, "PHILADELPHIA, PA."), (13, "BALTIMORE, MD."), (10, "NEW YORK, N.Y.")]),
         (
             100,
             [
-                ("99", "MILITARY SHIPMENTS"),
-                ("80", "MAIL SHIPMENTS"),
-                ("70", "SHIPMENTS UNDER $251"),
+                (99, "MILITARY SHIPMENTS"),
+                (80, "MAIL SHIPMENTS"),
+                (70, "SHIPMENTS UNDER $251"),
             ],
         ),
-        (-1, [("0", "Z UNKNOW CDIST CODES"), ("1", "PORTLAND,MAINE"), ("2", "ST.ALBANS, VT.")]),
+        (-1, [(0, "Z UNKNOW CDIST CODES"), (1, "PORTLAND,MAINE"), (2, "ST.ALBANS, VT.")]),
     ],
 )
 def test_an_unknown_customs_district_names_the_nearest_ids(
-    district: int, closest: list[tuple[str, str]]
+    district: int, closest: list[tuple[int, str]]
 ) -> None:
     """``UnknownCode``'s wording serves the district list too: the parameter, the list,
     the nearest listed ids with their names, why it is refused."""
@@ -435,7 +437,7 @@ def test_an_unknown_customs_district_names_the_nearest_ids(
     assert list(error.closest) == closest
     assert error.message.startswith(
         f"{district} is not a customs_district_id in the packaged customsDistricts list "
-        "(fetched 2026-10-28). Did you mean "
+        "(fetched 2026-10-28). Nothing was sent. Did you mean "
     )
     assert f"{DISTRICTS_TASK} lists the ids" in error.message
     assert "partner code" not in error.message, "the partner reason is the countries list's"
@@ -766,7 +768,7 @@ def test_a_full_hs6_code_the_list_lacks_names_the_codes_sharing_its_digits(
     first, name = closest[0]
     assert error.message.startswith(
         f"{code!r} is not a hs6_code in the packaged HS6Commodities list (fetched "
-        f"2026-10-28). Did you mean {first} ({name}), "
+        f"2026-10-28). Nothing was sent. Did you mean {first} ({name}), "
     )
     assert f"{HS6_TASK} lists the codes" in error.message
     assert "partner" not in error.message
@@ -811,9 +813,65 @@ def test_the_year_message_names_both_data_series() -> None:
     with pytest.raises(InvalidRequestError) as info:
         validate_year(19)
     assert info.value.message == (
-        "year must be a four-digit year such as 2026, got 19. GATS's Census data starts in "
-        "January 1967, its UN Trade data in 1989."
+        "year must be a four-digit year such as 2026, got 19. Nothing was sent. GATS's Census "
+        "data starts in January 1967, its UN Trade data in 1989."
     )
     with pytest.raises(InvalidRequestError, match=r"^statistical_year must be a four-digit"):
         validate_year(19, "statistical_year")
     assert validate_year(1987, "statistical_year") == 1987
+
+
+REFUSED_BEFORE_A_REQUEST: list[tuple[Callable[[], object], str]] = [
+    (lambda: params.validate_country_code(2, "partner_code"), "partner_code must be"),  # type: ignore[arg-type]
+    (lambda: params.validate_partner_month("D1", 2026, 8), "partner_code 'D1' (Denmark)"),
+    (lambda: params.validate_customs_district_id("10"), "customs_district_id must be"),  # type: ignore[arg-type]
+    (lambda: params.validate_year(99), "year must be a four-digit year"),
+    (lambda: params.validate_month(13), "month must be a whole number"),
+    (lambda: params.validate_hs10_code("03.04"), "hs10_code must be 1 to 10 digits"),
+    (lambda: params.validate_hs6_prefix("x"), "hs6_code must be 1 to 6 digits"),
+]
+"""Each refusal of a check that ``params`` makes itself, with the start of its message."""
+
+
+@pytest.mark.parametrize(("refuse", "opening"), REFUSED_BEFORE_A_REQUEST)
+def test_a_refusal_before_a_request_says_that_nothing_was_sent(
+    refuse: Callable[[], object], opening: str
+) -> None:
+    """Every check runs before a task's first request, so its refusal says so after its
+    first sentence (conventions §5), as core's ``UnknownCode`` does."""
+    with pytest.raises(InvalidRequestError) as info:
+        refuse()
+    message = info.value.message
+    assert message.startswith(opening)
+    _, rest = message.split(". ", 1)
+    assert rest.startswith("Nothing was sent."), message
+    assert message.count("Nothing was sent.") == 1
+
+
+@pytest.mark.parametrize(
+    ("list_name", "code", "name"),
+    [
+        ("countries", "countryCode", "countryName"),
+        ("regions", "regionCode", "regionName"),
+        ("HS6Commodities", "hS6Code", "commodityName"),
+        ("unitsOfMeasure", "unitOfMeasureId", "unitOfMeasureName"),
+        ("customsDistricts", "customsDistrictId", "customsDistrictName"),
+    ],
+)
+def test_each_packaged_list_is_declared_once_for_its_checks_and_names(
+    list_name: str, code: str, name: str
+) -> None:
+    """``params`` declares each packaged list once, ``PackagedList.codes``, which core's
+    ``check`` refuses an argument by and ``NamedBy`` names a record's codes by (sdk-core
+    ADR-0045)."""
+    declared = {
+        "countries": params.COUNTRIES,
+        "regions": params.REGIONS,
+        "HS6Commodities": params.HS6_CODES,
+        "unitsOfMeasure": params.UNITS,
+        "customsDistricts": params.DISTRICTS,
+    }[list_name]
+    assert isinstance(declared, PackagedCodes)
+    assert (declared.list_name, declared.code) == (list_name, code)
+    first = declared.packaged.records[0]
+    assert declared.name_of(first[code]) == " ".join(str(first[name]).split())

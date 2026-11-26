@@ -88,6 +88,12 @@ def _published_naive(meta: ResultMeta) -> None:
     assert meta.published_at_naive is True
 
 
+def _json_number(value: object) -> bool:
+    """A JSON number as an adapter writes a decimal: an integer where it has no fractional
+    digits, else a float (sdk-core ADR-0067)."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
 def _recorded(endpoint: str, case: str) -> list[dict[str, object]]:
     records: list[dict[str, object]] = json.loads(
         load_fixture(FIXTURES / endpoint / f"{case}.json").response.body
@@ -580,9 +586,9 @@ def test_an_unknown_customs_district_is_refused_before_any_request(
     with pytest.raises(UnknownCode) as info:
         task("IC", 2026, 8, customs_district_id=12)
     assert info.value.closest == (
-        ("11", "PHILADELPHIA, PA."),
-        ("13", "BALTIMORE, MD."),
-        ("10", "NEW YORK, N.Y."),
+        (11, "PHILADELPHIA, PA."),
+        (13, "BALTIMORE, MD."),
+        (10, "NEW YORK, N.Y."),
     )
     assert info.value.message.startswith(
         "12 is not a customs_district_id in the packaged customsDistricts list"
@@ -991,9 +997,11 @@ async def test_the_imports_tool_names_the_filter_too(replay_fixture: ReplayFixtu
     payload = await mcp_call(
         server, "usda_gats_get_census_imports", {"partner_code": "CH", "year": 2026, "month": 8}
     )
-    assert len(payload["data"]) == 185, "the 64 KB cap cuts these wider rows before 200"
+    assert len(payload["data"]) == 179, (
+        "the 64 KB cap cuts these wider rows before 200, the names in meta counted"
+    )
     assert payload["note"] == (
-        f"showing 185 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+        f"showing 179 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
     )
 
 
@@ -1048,7 +1056,7 @@ def test_values_are_json_numbers_over_http(replay_fixture: ReplayFixture) -> Non
     assert [row["value"] for row in response.json()["data"]] == [
         r["value"] for r in _recorded(EXPORTS, "CH_2026_8") if str(r["hS10Code"]).startswith("0201")
     ]
-    assert all(isinstance(row["value"], float) for row in response.json()["data"])
+    assert all(_json_number(row["value"]) for row in response.json()["data"])
     rejected = http.get("/usda-gats/get_census_exports", params={**params, "partner_code": "ZZ"})
     assert rejected.status_code == 422
     assert rejected.json()["title"] == "UnknownCode"
@@ -1346,9 +1354,9 @@ def test_series_arguments_are_checked_before_any_request(
     with pytest.raises(InvalidRequestError) as after:
         task("IC", 2026, 8, 2026, 7)
     assert after.value.message == (
-        "the range starts at 2026-08, after its end 2026-07: pass the earlier month as "
-        "start_year and start_month, e.g. start_year=2026, start_month=6, end_year=2026, "
-        "end_month=8."
+        "the range starts at 2026-08, after its end 2026-07. Nothing was sent. Pass the "
+        "earlier month as start_year and start_month, e.g. start_year=2026, start_month=6, "
+        "end_year=2026, end_month=8."
     )
     with pytest.raises(InvalidRequestError) as span:
         task("IC", 2021, 8, 2026, 8)
@@ -1502,7 +1510,7 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
             IMPORTS,
             IMPORT_RELEASES,
             3294,
-            183,
+            177,
         ),
     ],
     ids=["exports", "imports"],
@@ -1585,7 +1593,7 @@ async def test_the_reexport_series_tool_end_to_end(
         "quantity2": first["quantity2"],
         "value": first["value"],
     }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
-    assert isinstance(payload["data"][0]["value"], float)
+    assert _json_number(payload["data"][0]["value"])
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusReExports"
     assert payload["meta"]["vintage"] == RELEASED_2026_08
     assert sent_urls(data) == [_ic_url("censusReExports", 7), _ic_url("censusReExports", 8)]
@@ -1628,7 +1636,7 @@ def test_the_series_over_http(replay_fixture: ReplayFixture, respx_mock: respx.M
     assert [(row["date"], row["hs10_code"]) for row in rows] == [
         pair for pair in _months_recorded(EXPORTS, *IC_MONTHS) if str(pair[1]).startswith("03")
     ]
-    assert all(isinstance(row["value"], float) for row in rows)
+    assert all(_json_number(row["value"]) for row in rows)
     assert response.json()["meta"]["vintage"] == RELEASED_2026_08
     span = http.get("/usda-gats/get_census_export_series", params={**params, "start_year": 2021})
     assert span.status_code == 422
@@ -2277,6 +2285,9 @@ def test_a_shared_iso_code_is_refused_with_the_listed_reporters_first(
     assert list(info.value.closest[:2]) == first
     names = ", ".join(f"{code} ({name})" for code, name in first)
     assert f"Did you mean {names}" in info.value.message
+    assert "Nothing was sent." not in info.value.message, "the release list was read"
+    assert " release list (GATSData_GetUNTrade" in info.value.message
+    assert "was read to rank the codes, and nothing else was sent." in info.value.message
     assert sent_urls(releases) == [url], "the release list, then no data call"
     assert respx_mock.calls.call_count == 1
 
@@ -2334,6 +2345,12 @@ def test_a_shared_iso_code_is_refused_unranked_when_the_list_cannot_be_read(
     assert info.value.param == "reporter_code"
     assert info.value.closest[:2] == (("A2", "Australia"), ("AS", "Australia"))
     assert "Did you mean A2 (Australia), AS (Australia)" in info.value.message
+    assert "Nothing was sent." not in info.value.message, "the release list was asked for"
+    assert (
+        "The UN Trade exports release list (GATSData_GetUNTradeExportDataReleaseInfo) was "
+        "asked for to rank the codes and could not be read (RateLimitError), and nothing "
+        "else was sent."
+    ) in info.value.message
     assert info.value.__cause__ is None
     assert releases.call_count == 1, "the list was asked once, not retried"
     assert data.call_count == 0
@@ -2500,7 +2517,9 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     arguments: dict[str, object] = {"reporter_code": case[:2], "year": 2019}
     payload = await mcp_call(server, tool, arguments)
     shown = len(payload["data"])
-    assert shown == 200
+    assert shown == {UN_EXPORTS: 141, UN_IMPORTS: 70, UN_RE_EXPORTS: 200}[fixture], (
+        "the names of the answer's partners and HS6 codes in meta count in the 64 KB"
+    )
     assert payload["note"] == (
         f"showing {shown} of {count} rows (cap: 200 rows or 65536 bytes); {UN_DATA_NOTE}"
     )
@@ -2518,7 +2537,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
         "quantity2": first["quantity2"],
         "value": first["value"],
     }, "Decimal values are JSON numbers (sdk-core ADR-0031)"
-    assert isinstance(payload["data"][0]["value"], float)
+    assert _json_number(payload["data"][0]["value"])
     assert payload["meta"]["endpoint"] == endpoint
     assert payload["meta"]["vintage"] == _un_release_time(release_list, case[:2], "2019")
     assert payload["meta"]["published_at"] == payload["meta"]["vintage"]
@@ -2598,3 +2617,96 @@ def test_the_un_tasks_over_http(replay_fixture: ReplayFixture) -> None:
     )
     assert releases.status_code == 200
     assert len(releases.json()["data"]) == 32
+
+
+TASK_REFUSALS: list[tuple[Callable[[], object], str]] = [
+    (lambda: tasks.get_census_release_dates("Z"), 'product_type must be "X"'),
+    (
+        lambda: tasks.get_census_export_series("IC", 2026, 8, 2026, 7),
+        "the range starts at 2026-08, after its end 2026-07",
+    ),
+    (lambda: tasks.list_countries(search=3), "search must be text"),  # type: ignore[arg-type]
+]
+"""The refusals that ``tasks`` makes itself before any request, each with its opening."""
+
+
+@pytest.mark.parametrize(("refuse", "opening"), TASK_REFUSALS)
+def test_a_task_refusal_before_a_request_says_that_nothing_was_sent(
+    respx_mock: respx.MockRouter, refuse: Callable[[], object], opening: str
+) -> None:
+    """A task's own refusal of an argument comes before any request (respx is active with
+    no route mounted), so it says so after its first sentence (conventions §5)."""
+    with pytest.raises(InvalidRequestError) as info:
+        refuse()
+    message = info.value.message
+    assert message.startswith(opening)
+    assert message.split(". ", 1)[1].startswith("Nothing was sent."), message
+    assert not respx_mock.calls
+
+
+def test_a_census_answer_names_its_partner_its_rows_codes_and_their_units(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Each code field of a record declares the packaged list that names it (``NamedBy``),
+    so the answer names the partner of its rows and their four unit ids, and the task names
+    the partner it was asked for (``names_codes``; sdk-core ADR-0067)."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(EXPORTS, "CH_2026_8")
+    names = tasks.get_census_exports("CH", 2026, 8).meta.names
+    assert names["partner_code"] == {"CH": "China"}
+    assert names["country_code"] == {"CH": "China"}
+    assert names["census_uom_id1"]["47"] == "Kilograms"
+    assert {"census_uom_id2", "fas_converted_uom_id", "fas_non_converted_uom_id"} <= set(names)
+
+
+def test_an_answer_without_rows_names_what_the_call_asked_for(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """A listed partner without trade answers no row, and its answer still names the partner
+    asked for; the district tasks name the district asked for, and the UN Trade tasks the
+    reporter (sdk-core ADR-0067, decision 3)."""
+    replay_fixture(EXPORT_RELEASES, "all")
+    replay_fixture(EXPORTS, "no_data_valid_partner")
+    empty = tasks.get_census_exports("BV", 2026, 8)
+    assert empty.data == []
+    assert empty.meta.names == {"partner_code": {"BV": "Bouvet Island"}}
+    replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
+    district = tasks.get_customs_district_exports("IC", 2026, 8, customs_district_id=10)
+    assert district.meta.names["customs_district_id"] == {"10": "NEW YORK, N.Y."}
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_RE_EXPORTS, "IC_2019")
+    un = tasks.get_un_reexports("IC", 2019)
+    assert un.data == []
+    assert un.meta.names == {"reporter_code": {"IC": "Iceland"}}
+
+
+def test_a_un_answer_names_its_countries_its_hs6_codes_and_its_units(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """A UN Trade record names its reporter, its partner, its HS6 code and its four unit
+    ids from the packaged lists, and a full ``hs6_code`` asked for is named too."""
+    replay_fixture(UN_EXPORT_RELEASES, "all")
+    replay_fixture(UN_EXPORTS, "IC_2019")
+    result = tasks.get_un_exports("IC", 2019, hs6_code="030444")
+    names = result.meta.names
+    assert names["reporter_code"] == names["reporter_country_code"] == {"IC": "Iceland"}
+    assert names["hs6_code"] == {"030444": "Codlet Fillets Frh/Ch"}
+    assert set(names["partner_country_code"]) == {r.partner_country_code for r in result.data}
+    assert {"census_uom_id1", "census_uom_id2", "fas_converted_uom_id"} <= set(names)
+    assert "fas_non_converted_uom_id" in names
+    chapter = tasks.get_un_exports("IC", 2019, hs6_code="03")
+    assert set(chapter.meta.names["hs6_code"]) == {r.hs6_code for r in chapter.data}, (
+        "a prefix names no code of its own: the rows' codes alone"
+    )
+
+
+def test_a_country_names_its_region_and_its_parent(respx_mock: respx.MockRouter) -> None:
+    """``list_countries`` names each record's region and parent code from the packaged
+    regions and countries lists, and a customs district its region by the name upstream
+    sends beside it, which ``meta.names`` takes nothing for."""
+    result = tasks.list_countries(search="CHN")
+    assert result.meta.names["region_code"] == {"R40": "East Asia"}
+    assert result.meta.names["country_parent_code"] == {"CH": "China"}
+    districts = tasks.list_customs_districts()
+    assert "customs_district_region_code" not in districts.meta.names
+    assert not respx_mock.calls

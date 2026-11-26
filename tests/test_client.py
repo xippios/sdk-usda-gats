@@ -43,13 +43,14 @@ from xippios.usda.gats._client import (
     CACHE_MAX_BYTES,
     COMMODITIES_PATH,
     COMMODITIES_TTL,
+    DEFAULT_TTL,
     LIFETIMES,
     RATE_LIMIT,
     RELEASE_DATES_PATHS,
     RELEASE_DATES_TTL,
     SOURCE,
-    UN_RELEASE_DATES_PATHS,
-    UN_RELEASE_DATES_TTL,
+    UN_TRADE_PATH,
+    UN_TRADE_TTL,
     auth,
     cache,
     classify,
@@ -218,44 +219,52 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     assert releases.call_count == 0
 
 
-def test_the_client_caches_five_paths_and_nothing_else() -> None:
-    """Core's one cache with a lifetime per path prefix: the two Census release-date paths for
-    an hour, the two UN Trade release-date paths for a day, the feed being frozen, and the
-    commodities path for a day (sdk-core ADR-0040, decision 3). No other prefix is named, so
-    the data, the countries and every other path go to the wire, as before core 0.5.0. A
-    body of up to 16 MiB is stored, twice core's default."""
+def test_the_client_caches_every_answer_with_a_lifetime_per_prefix() -> None:
+    """Core's one cache with a lifetime per path prefix keeps every answer, by the
+    maintainer's decision of 2026-11-26 (sdk-core ADR-0040, decision 3; ADR-0061, decision
+    9): core's default of 300 seconds for every path, the two Census release-date paths for
+    an hour, every UN Trade path, its data and its two release lists, for a day, the feed
+    being frozen, and the commodities path for a day. A body of up to 16 MiB is stored,
+    twice core's default."""
     assert config.cache is cache
     assert isinstance(cache, MemoryCache)
     assert config.cache_max_bytes == CACHE_MAX_BYTES == 16 * 1024 * 1024
-    assert (RELEASE_DATES_TTL, UN_RELEASE_DATES_TTL, COMMODITIES_TTL) == (3600.0, 86400.0, 86400.0)
+    assert (DEFAULT_TTL, RELEASE_DATES_TTL, UN_TRADE_TTL, COMMODITIES_TTL) == (
+        300.0,
+        3600.0,
+        86400.0,
+        86400.0,
+    )
     assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
-    assert {UN_EXPORT_RELEASES, UN_IMPORT_RELEASES} == UN_RELEASE_DATES_PATHS
+    assert UN_TRADE_PATH == "/api/gats/UNTrade"
+    assert all(path.startswith(UN_TRADE_PATH) for path in (UN_EXPORT_RELEASES, *UN_DATA))
     assert COMMODITIES_PATH == "/api/gats/commodities"
     assert (
         dict(cache.lifetimes)
         == dict(LIFETIMES)
         == {
+            "/": DEFAULT_TTL,
             EXPORT_RELEASES: RELEASE_DATES_TTL,
             IMPORT_RELEASES: RELEASE_DATES_TTL,
-            UN_EXPORT_RELEASES: UN_RELEASE_DATES_TTL,
-            UN_IMPORT_RELEASES: UN_RELEASE_DATES_TTL,
+            UN_TRADE_PATH: UN_TRADE_TTL,
             COMMODITIES_PATH: COMMODITIES_TTL,
         }
     )
 
 
-UNCACHED = [
+CENSUS_DATA = [
     "/api/gats/censusExports/partnerCode/CH/year/2026/month/8",
     "/api/gats/censusImports/partnerCode/CH/year/2026/month/8",
     "/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8",
+]
+"""Census data paths, which core's default keeps for 300 seconds."""
+
+UN_DATA = [
     "/api/gats/UNTradeExports/reporterCode/IC/year/2019",
     "/api/gats/UNTradeImports/reporterCode/TP/year/2019",
     "/api/gats/UNTradeReExports/reporterCode/MC/year/2019",
-    "/api/gats/countries",
-    "/api/gats/HS6Commodities",
-    REGIONS,
 ]
-"""Paths of the client that no prefix of ``LIFETIMES`` starts, and so are never stored."""
+"""UN Trade data paths, which ``UN_TRADE_PATH`` keeps for a day."""
 
 
 def _entry(stored_at: float) -> CachedResponse:
@@ -264,26 +273,29 @@ def _entry(stored_at: float) -> CachedResponse:
 
 
 def test_each_path_keeps_its_own_lifetime() -> None:
-    """``LIFETIMES`` in a ``MemoryCache`` with a clock of its own: two hours on, the Census
-    release list's entry has expired while the UN Trade release list's and the commodities
-    entry still answer; past a day, they have expired too. A path that no prefix starts is
-    never stored."""
+    """``LIFETIMES`` in a ``MemoryCache`` with a clock of its own: every path is stored. Ten
+    minutes on, the Census data and the packaged lists' paths have expired, core's 300
+    seconds; two hours on, the Census release list's entry too, while the UN Trade answers
+    and the commodities entry still answer; past a day, they have expired too."""
     now = [1_000_000.0]
     store = MemoryCache(lifetimes=LIFETIMES, clock=lambda: now[0])
+    other = [*CENSUS_DATA, "/api/gats/countries", "/api/gats/HS6Commodities", REGIONS]
+    daily = [UN_EXPORT_RELEASES, *UN_DATA, COMMODITIES_PATH]
     keys = {
         path: cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
-        for path in (EXPORT_RELEASES, UN_EXPORT_RELEASES, COMMODITIES_PATH, *UNCACHED)
+        for path in (EXPORT_RELEASES, *daily, *other)
     }
     for path, key in keys.items():
         store.set(key, _entry(now[0]), path=path)
-    assert len(store) == 3, "the data paths and the packaged lists' paths are not stored"
+    assert len(store) == len(keys), "every path is stored"
+    now[0] += 600
+    assert [path for path in other if store.get(keys[path]) is not None] == []
+    assert store.get(keys[EXPORT_RELEASES]) is not None, "an hour has not passed"
     now[0] += 2 * 3600
     assert store.get(keys[EXPORT_RELEASES]) is None, "an hour has passed"
-    assert store.get(keys[UN_EXPORT_RELEASES]) is not None, "a day has not"
-    assert store.get(keys[COMMODITIES_PATH]) is not None, "a day has not"
+    assert [path for path in daily if store.get(keys[path]) is None] == [], "a day has not"
     now[0] += 86400.0
-    assert store.get(keys[UN_EXPORT_RELEASES]) is None
-    assert store.get(keys[COMMODITIES_PATH]) is None
+    assert [path for path in daily if store.get(keys[path]) is not None] == []
 
 
 @pytest.mark.anyio
@@ -376,12 +388,18 @@ async def test_a_release_list_that_fails_the_models_is_asked_again(
 
 
 @pytest.mark.anyio
-async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
+async def test_census_data_is_cached_for_five_minutes(replay_fixture: ReplayFixture) -> None:
+    """A Census month is one entry for core's default of 300 seconds: the second read sends
+    nothing and says when the entry was stored (conventions §4)."""
     route = replay_fixture("get_census_exports", "CH_2026_8")
-    await api.get_census_exports("CH", 2026, 8)
-    await api.get_census_exports("CH", 2026, 8)
-    assert route.call_count == 2
-    assert len(cache) == 0
+    first = await api.get_census_exports("CH", 2026, 8)
+    again = await api.get_census_exports("CH", 2026, 8)
+    assert route.call_count == 1
+    assert len(cache) == 1
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{CENSUS_DATA[0]}")))
+    assert entry is not None
+    assert again.retrieved_at == datetime.fromtimestamp(entry.stored_at, UTC)
+    assert again.payload == first.payload
 
 
 @pytest.mark.anyio
@@ -410,12 +428,14 @@ async def test_the_un_release_lists_are_stored_once_each(
 
 
 @pytest.mark.anyio
-async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> None:
+async def test_un_trade_data_is_cached_for_a_day(replay_fixture: ReplayFixture) -> None:
+    """A UN Trade reporter-year is one entry under ``UN_TRADE_PATH``, kept for a day: the
+    second read sends nothing."""
     route = replay_fixture("get_un_trade_re_exports", "MC_2019")
     await api.get_un_trade_re_exports("MC", "2019")
     await api.get_un_trade_re_exports("MC", "2019")
-    assert route.call_count == 2
-    assert len(cache) == 0
+    assert route.call_count == 1
+    assert len(cache) == 1
 
 
 @pytest.mark.anyio

@@ -256,8 +256,8 @@ def test_the_release_list_is_fetched_once_for_two_task_calls(
     first = tasks.get_census_exports("CH", 2026, 8)
     second = tasks.get_census_exports("CH", 2026, 8, hs10_code="02")
     assert releases.call_count == 1
-    assert data.call_count == 2
-    assert sent_urls(data) == [CH_EXPORTS_URL, CH_EXPORTS_URL]
+    assert data.call_count == 1, "the month is the cache's on the second call"
+    assert sent_urls(data) == [CH_EXPORTS_URL]
     entry = cache.get(cache_key("GET", httpx.URL(EXPORT_RELEASES_URL)))
     assert entry is not None
     stored = datetime.fromtimestamp(entry.stored_at, UTC)
@@ -737,7 +737,8 @@ async def test_a_parent_code_over_mcp_end_to_end(replay_fixture: ReplayFixture) 
     payload = await mcp_call(server, "usda_gats_get_census_exports", arguments)
     shown = len(payload["data"])
     assert payload["note"] == (
-        f"showing {shown} of 597 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+        f"showing {shown} of 597 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}; "
+        f"continue with offset={shown}"
     )
     assert {row["country_code"] for row in payload["data"]} == {"Y1"}
     assert payload["meta"]["endpoint"] == "GATSData_GetCensusExports"
@@ -842,7 +843,7 @@ def test_get_census_reexports(replay_fixture: ReplayFixture) -> None:
     ]
     assert chapter.meta.request["hs10_code"] == "62"
     assert sent_urls(releases) == [EXPORT_RELEASES_URL], "the list once, from the cache after"
-    assert sent_urls(data) == [IC_RE_EXPORTS_URL, IC_RE_EXPORTS_URL]
+    assert sent_urls(data) == [IC_RE_EXPORTS_URL], "the filter is the cache's answer"
 
 
 def test_a_re_export_month_not_released_says_which_list_was_checked(
@@ -932,7 +933,7 @@ def test_customs_district_tasks(
     assert new_york.data == [r for r in result.data if r.customs_district_id == 10]
     assert new_york.meta.request["customs_district_id"] == 10
     assert sent_urls(releases) == [release_url]
-    assert sent_urls(data) == [url, url], "the filter is not sent upstream"
+    assert sent_urls(data) == [url], "the filter is not sent upstream, the month cached"
 
 
 def test_both_filters_narrow_the_district_imports(replay_fixture: ReplayFixture) -> None:
@@ -989,7 +990,8 @@ async def test_the_district_tools_name_both_filters_when_cut(
     shown = len(payload["data"])
     assert shown == 200
     assert payload["note"] == (
-        f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
+        f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}; "
+        f"continue with offset={shown}"
     )
     assert (payload["meta"]["vintage"], payload["meta"]["published_at"]) == (None, None)
     assert "customs_district_id" not in payload["meta"]["request"], "not given, left out"
@@ -1203,8 +1205,10 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     replay_fixture: ReplayFixture,
 ) -> None:
     """Exports to China in August 2026, 777 rows, over MCP: cut at the default cap with a
-    note that names ``hs10_code``, the one filter the tool has (sdk-core ADR-0038); the chapter
-    filter returns all 26 rows of chapter 02, without a note."""
+    note that names ``hs10_code``, the one filter the tool has (sdk-core ADR-0038), and the
+    ``offset`` to continue with; the chapter filter returns all 26 rows of chapter 02,
+    without a note, from the client's cache, which keeps the month (sdk-core ADR-0061,
+    decision 9)."""
     replay_fixture(EXPORT_RELEASES, "all")
     data = replay_fixture(EXPORTS, "CH_2026_8")
     arguments: dict[str, object] = {"partner_code": "CH", "year": 2026, "month": 8}
@@ -1212,7 +1216,8 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     shown = len(payload["data"])
     assert shown == 200
     assert payload["note"] == (
-        f"showing {shown} of 777 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+        f"showing {shown} of 777 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}; "
+        f"continue with offset={shown}"
     )
     assert payload["data"][0] == {
         "date": "202608",
@@ -1235,9 +1240,76 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
     )
     assert len(chapter["data"]) == 26
     assert "note" not in chapter
-    assert sent_urls(data) == [CH_EXPORTS_URL, CH_EXPORTS_URL]
+    assert sent_urls(data) == [CH_EXPORTS_URL], "the narrower filter is the cache's answer"
     with pytest.raises(AssertionError, match="error: UnknownCode: 'ZZ' is not a partner_code"):
         await mcp_call(server, "usda_gats_get_census_exports", {**arguments, "partner_code": "ZZ"})
+
+
+@pytest.mark.anyio
+async def test_a_cut_month_is_read_whole_by_its_offset(replay_fixture: ReplayFixture) -> None:
+    """The six Census month tools take a paged cap, since the client's cache keeps the
+    month and the release list (sdk-core ADR-0047, ADR-0061, decision 9): all 777 recorded
+    rows of exports to China in August 2026 arrive in upstream order through ``offset``,
+    each continuation sending no request (https://github.com/xippios/sdk-usda-gats/issues/32)."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, "CH_2026_8")
+    arguments: dict[str, object] = {"partner_code": "CH", "year": 2026, "month": 8}
+    rows: list[dict[str, object]] = []
+    while True:
+        payload = await mcp_call(
+            server, "usda_gats_get_census_exports", {**arguments, "offset": len(rows)}
+        )
+        rows.extend(payload["data"])
+        if not payload["note"].endswith(f"; continue with offset={len(rows)}"):
+            break
+    assert payload["note"].startswith(f"showing rows {len(rows) - len(payload['data']) + 1} to "), (
+        "the last page names its rows and no offset"
+    )
+    assert [row["hs10_code"] for row in rows] == [
+        record["hS10Code"] for record in _recorded(EXPORTS, "CH_2026_8")
+    ]
+    assert len(rows) == 777
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL]
+    assert sent_urls(data) == [CH_EXPORTS_URL], "every continuation is the cache's"
+
+
+def test_a_narrower_filter_on_a_month_already_read_sends_no_request(
+    replay_fixture: ReplayFixture,
+) -> None:
+    """Every answer enters the client's cache (sdk-core ADR-0061, decision 9): the month
+    read whole, the chapter filter answers from the cache, its time the stored one."""
+    releases = replay_fixture(EXPORT_RELEASES, "all")
+    data = replay_fixture(EXPORTS, "CH_2026_8")
+    whole = tasks.get_census_exports("CH", 2026, 8)
+    chapter = tasks.get_census_exports("CH", 2026, 8, hs10_code="02")
+    assert len(whole.data) == 777
+    assert len(chapter.data) == 26
+    assert sent_urls(data) == [CH_EXPORTS_URL]
+    assert sent_urls(releases) == [EXPORT_RELEASES_URL]
+    entry = cache.get(cache_key("GET", httpx.URL(CH_EXPORTS_URL)))
+    assert entry is not None
+    assert chapter.meta.retrieved_at <= datetime.fromtimestamp(entry.stored_at, UTC)
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [
+        "get_census_exports",
+        "get_census_imports",
+        "get_census_reexports",
+        "get_customs_district_exports",
+        "get_customs_district_imports",
+        "get_customs_district_reexports",
+    ],
+)
+def test_the_census_month_tools_are_paged_and_the_series_are_not(tool: str) -> None:
+    """A month's answer is the cache's on a second run, so its tool is paged; a series
+    sends a request per month, so the three series tools stay unpaged (sdk-core ADR-0061,
+    decision 9)."""
+    assert tasks.MCP_CAPS[tool].paged is True
+    for series in ("get_census_export_series", "get_census_import_series"):
+        assert tasks.MCP_CAPS[series].paged is False
+    assert tasks.MCP_CAPS["get_census_reexport_series"].paged is False
 
 
 @pytest.mark.anyio
@@ -1251,7 +1323,8 @@ async def test_the_imports_tool_names_the_filter_too(replay_fixture: ReplayFixtu
         "the 64 KB cap cuts these wider rows before 200, the names in meta counted"
     )
     assert payload["note"] == (
-        f"showing 179 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}"
+        f"showing 179 of 3294 rows (cap: 200 rows or 65536 bytes); {HS10_NOTE}; "
+        "continue with offset=179"
     )
 
 
@@ -1530,7 +1603,7 @@ def test_hs10_code_filters_every_month_of_a_series(
     assert none.data == []
     assert none.meta.vintage == RELEASED_2026_08, "the months' releases, data or none"
     sent = [_ic_url("censusImports", 7), _ic_url("censusImports", 8)]
-    assert sent_urls(data) == sent * 3, "the filter is not sent upstream"
+    assert sent_urls(data) == sent, "the filter is not sent upstream, the months cached"
 
 
 def test_a_one_month_series_answers_what_the_month_task_answers(
@@ -1587,7 +1660,7 @@ def test_a_one_month_series_answers_what_the_month_task_answers(
             "end_year": 2026,
             "end_month": 8,
         }
-        assert data.call_count == 2
+        assert data.call_count == 1, "the series' month is the cache's"
 
 
 def test_a_series_vintage_is_the_newest_release_among_its_months(
@@ -1925,7 +1998,7 @@ async def test_the_series_tools_name_the_filter_and_a_shorter_range_when_cut(
     chapter = await mcp_call(server, tool, {**arguments, "hs10_code": "02"})
     assert "note" not in chapter
     assert {row["hs10_code"][:2] for row in chapter["data"]} == {"02"}
-    assert data.call_count == 2
+    assert data.call_count == 1, "the narrower filter is the cache's answer"
     with pytest.raises(
         AssertionError, match="error: InvalidRequestError: 2021-08 to 2026-08 is 61"
     ):
@@ -2178,7 +2251,7 @@ def test_the_python_api_spans_60_months(
             "sent. Ask for a shorter range, or for consecutive ranges of at most 60 months one "
             "after another."
         )
-    assert sent_urls(months) == urls * 2
+    assert sent_urls(months) == urls, "the second series' months are the cache's"
 
 
 @pytest.mark.usefixtures("restore_series_ceiling")
@@ -2458,7 +2531,7 @@ def test_the_un_release_list_is_fetched_once_for_two_task_calls(
     tasks.get_un_exports("IC", 2019, hs6_code="03")
     tasks.get_un_reexports("MC", 2019)
     assert releases.call_count == 1
-    assert sent_urls(exports) == [IC_UN_EXPORTS_URL, IC_UN_EXPORTS_URL]
+    assert sent_urls(exports) == [IC_UN_EXPORTS_URL], "the reporter-year is cached for a day"
     assert sent_urls(re_exports) == [MC_UN_RE_EXPORTS_URL]
 
 
@@ -2981,7 +3054,7 @@ async def test_the_un_data_tools_name_both_filters_when_cut(
     assert len(whole["data"]) == narrowed
     assert "note" not in whole
     assert whole["meta"]["request"] == {"reporter_code": case[:2], "year": 2019, **narrow}
-    assert sent_urls(data) == [url, url], "the filters are not sent upstream"
+    assert sent_urls(data) == [url], "the filters are not sent upstream, the year cached"
     with pytest.raises(AssertionError, match="error: UnknownCode: 'ZZ' is not a reporter_code"):
         await mcp_call(server, tool, {**arguments, "reporter_code": "ZZ"})
     with pytest.raises(AssertionError, match="error: NotFoundError: GATS has no UN Trade"):

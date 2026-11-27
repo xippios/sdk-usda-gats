@@ -35,7 +35,7 @@ from xippios.usda.gats import api, tasks
 from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
-from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
+from xippios.usda.gats.models import Commodity, CustomsDistrict, Region, UnitOfMeasure
 from xippios.usda.gats.params import PACKAGE
 
 LISTS: list[tuple[str, str, str, str, int, dict[str, Any]]] = [
@@ -534,6 +534,50 @@ def test_a_product_type_no_record_carries_is_refused_once_the_list_is_read(
     assert route.call_count == 1
     tasks.list_commodities(product_type="T")
     assert route.call_count == 1, "the next call from the cache"
+
+
+@pytest.mark.parametrize(
+    ("count", "named"),
+    [
+        (20, ", ".join(f"'T{n:02d}'" for n in range(19)) + " and 'T19'"),
+        (25, ", ".join(f"'T{n:02d}'" for n in range(20)) + " and 5 more"),
+    ],
+    ids=["20-named-whole", "25-cut-at-20"],
+)
+def test_a_product_type_refusal_names_at_most_20_types_and_how_many_more(
+    count: int, named: str
+) -> None:
+    """Upstream fixes no number of product types, so the refusal names the first 20 that the
+    records carry, in the order the list first holds them, and then how many more
+    (conventions §5): 20 types are named whole, and 25 give the first 20 and ``and 5 more``.
+    Each record is an input of the test, not an answer from USDA FAS Global Agricultural
+    Trade System."""
+    commodities = [
+        Commodity.model_validate(
+            {
+                "hS10Code": "0101210010",
+                "startDate": "201201",
+                "endDtate": None,
+                "productType": product_type,
+                "commodityName": "HORSES",
+                "commodityDescription": None,
+                "isAgCommodity": True,
+                "censusUOMId1": 0,
+                "censusUOMId2": 0,
+                "fasConvertedUOMId": 0,
+                "fasNonConvertedUOMId": 0,
+            }
+        )
+        for product_type in [f"T{n:02d}" for n in range(count)]
+    ]
+    with pytest.raises(InvalidRequestError) as info:
+        tasks._carried("x", commodities)
+    assert info.value.message == (
+        "product_type 'x' is carried by no record of GATS's HS10 list, so it would keep none. "
+        "The list (GATSData_GetCommodities) was read, and nothing else was sent. "
+        f"Its {count} records carry the product types {named}, in the order the list first "
+        "holds them, compared exactly as upstream writes them."
+    )
 
 
 def test_a_product_type_that_is_no_text_is_refused_before_the_request(

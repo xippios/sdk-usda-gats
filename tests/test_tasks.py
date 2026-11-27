@@ -607,6 +607,17 @@ def test_a_discontinued_leaf_after_its_month_is_the_empty_list_with_a_note_unsen
     assert respx_mock.calls.call_count == 0
 
 
+def test_the_countries_tool_says_what_a_census_task_does_after_a_leafs_month() -> None:
+    """The text of the ``list_countries`` tool says that a Census task answers a month
+    after a leaf's ``discontinued_on`` with the empty list and a note, as the test above
+    holds, where it called that month the last a Census task accepts."""
+    from xippios.core.mcp.server import _description
+
+    description = " ".join(_description(tasks.list_countries).split())
+    assert "the last a Census task accepts" not in description
+    assert "a Census task answers a later month with the empty list and a note" in description
+
+
 def test_a_discontinued_leaf_passes_for_a_month_before_its_end(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
@@ -978,7 +989,8 @@ async def test_the_district_tools_name_both_filters_when_cut(
     replay_fixture: ReplayFixture,
 ) -> None:
     """Exports to China by district, 1,697 rows, over MCP: cut at the default cap with a
-    note naming ``hs10_code`` and ``customs_district_id``; one district of Iceland's
+    note naming ``hs10_code`` and ``customs_district_id`` and no ``offset``, since the
+    district tools stay unpaged (sdk-core ADR-0061, decision 9); one district of Iceland's
     exports comes back whole."""
     replay_fixture(EXPORT_RELEASES, "all")
     replay_fixture(DISTRICT_EXPORTS, "CH_2026_8")
@@ -990,9 +1002,9 @@ async def test_the_district_tools_name_both_filters_when_cut(
     shown = len(payload["data"])
     assert shown == 200
     assert payload["note"] == (
-        f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}; "
-        f"continue with offset={shown}"
+        f"showing {shown} of 1697 rows (cap: 200 rows or 65536 bytes); {DISTRICT_NOTE}"
     )
+    assert "offset" not in payload["note"], "a district answer has no bound: no paged cap"
     assert (payload["meta"]["vintage"], payload["meta"]["published_at"]) == (None, None)
     assert "customs_district_id" not in payload["meta"]["request"], "not given, left out"
 
@@ -1247,7 +1259,7 @@ async def test_mcp_tool_call_end_to_end_names_the_filter_when_cut(
 
 @pytest.mark.anyio
 async def test_a_cut_month_is_read_whole_by_its_offset(replay_fixture: ReplayFixture) -> None:
-    """The six Census month tools take a paged cap, since the client's cache keeps the
+    """The three Census month tools take a paged cap, since the client's cache keeps the
     month and the release list (sdk-core ADR-0047, ADR-0061, decision 9): all 777 recorded
     rows of exports to China in August 2026 arrive in upstream order through ``offset``,
     each continuation sending no request (https://github.com/xippios/sdk-usda-gats/issues/32)."""
@@ -1292,24 +1304,32 @@ def test_a_narrower_filter_on_a_month_already_read_sends_no_request(
 
 
 @pytest.mark.parametrize(
+    "tool", ["get_census_exports", "get_census_imports", "get_census_reexports"]
+)
+def test_the_three_census_month_tools_are_paged(tool: str) -> None:
+    """A partner-month is one record per HS10 code, which the HS10 list bounds under the
+    cache's bytes, so a second run is the cache's and the tool is paged (sdk-core ADR-0061,
+    decision 9)."""
+    assert tasks.MCP_CAPS[tool].paged is True
+
+
+@pytest.mark.parametrize(
     "tool",
     [
-        "get_census_exports",
-        "get_census_imports",
-        "get_census_reexports",
         "get_customs_district_exports",
         "get_customs_district_imports",
         "get_customs_district_reexports",
+        "get_census_export_series",
+        "get_census_import_series",
+        "get_census_reexport_series",
     ],
 )
-def test_the_census_month_tools_are_paged_and_the_series_are_not(tool: str) -> None:
-    """A month's answer is the cache's on a second run, so its tool is paged; a series
-    sends a request per month, so the three series tools stay unpaged (sdk-core ADR-0061,
-    decision 9)."""
-    assert tasks.MCP_CAPS[tool].paged is True
-    for series in ("get_census_export_series", "get_census_import_series"):
-        assert tasks.MCP_CAPS[series].paged is False
-    assert tasks.MCP_CAPS["get_census_reexport_series"].paged is False
+def test_the_district_tools_and_the_series_stay_unpaged(tool: str) -> None:
+    """A district month is one record per code and district, which no list bounds under
+    the cache's bytes, and a series' months together can pass them, so a second run could
+    send its requests again: these tools stay unpaged (sdk-core ADR-0061, decision 9: a
+    tool whose answer can pass the bound stays unpaged)."""
+    assert tasks.MCP_CAPS[tool].paged is False
 
 
 @pytest.mark.anyio

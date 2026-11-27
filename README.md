@@ -8,6 +8,23 @@ retrieved_at, request), and the data tasks the release time of what they answer.
 depends on `xippios-usda-fas`, the shared package of the USDA FAS sources, for the
 api.data.gov gateway and the kit of its snapshot script.
 
+## Scope
+
+Of GATS's API the package wraps all nineteen operations that its documentation lists
+(`docs/upstream/`): the Census exports, imports and re-exports of one partner in one month,
+the same by US customs district, the UN Trade exports, imports and re-exports of one
+reporter in one year, the four release lists and the six lists of codes, five of which the
+package ships and refreshes before each release. GATS documents path parameters alone,
+`partnerCode`, `year` and `month` for the Census operations and `reporterCode` and `year`
+for the UN Trade operations, and the tasks take every one. The documentation lists XML
+beside JSON among the forms that each operation produces; the package asks for JSON, so XML
+is the one documented choice that a caller cannot make
+(https://github.com/xippios/sdk-usda-gats/issues/64). What the package adds is one partner's
+series over months and filters that select records of an answer, of a release list and of
+the packaged lists. It ranks no partner, sums no record and picks no month for the caller:
+a caller reads every record as GATS sends it. What the package observed of GATS that the
+documentation does not say, each note with its probe, stands in `docs/upstream/OBSERVED.md`.
+
 ## Install
 
 ```bash
@@ -42,9 +59,10 @@ len(this_year.data)  # 8: 202608 back to 202601; an unreleased or pre-1967 year 
 
 `partner_code` is GATS's own two-character code, not ISO (`"CH"` China, `"MX"` Mexico,
 `"JA"` Japan, `"IC"` Iceland), checked against the countries list packaged in `reference/`
-before any call, since GATS answers an unknown code with an empty list. An unknown code is
-refused, naming close codes (an ISO or GENC code leads to its partner code first: `"CHN"`
-names `CH` before `CN`) or pointing to `list_countries` when none is close. Of the 26 codes
+before any call, since GATS answers an unknown code with an empty list, as it answers a
+listed partner without trade. An unknown code is refused, naming close codes (an ISO or
+GENC code leads to its partner code first: `"CHN"` names `CH` before `CN`) or pointing to
+`list_countries` when none is close. Of the 26 codes
 GATS marks discontinued (`discontinuedOn`), the 7 that are no other code's parent hold no
 trade after their last month: a Census task answers such a month with an empty list and
 sends no request, its note in `meta.notes` naming the code's month, the listed codes of the
@@ -58,14 +76,11 @@ product or a prefix such as a chapter, applied after the one data request.
 `get_census_imports` takes the same arguments and adds five consumption and CIF fields per
 record; `get_census_reexports` answers the exports' record for US re-exports.
 
-Two parents were recorded for 2026-08, each answering under its own code: `"Y1"`
-(Leeward-Windward Islands, discontinued 198801) holds every HS10 code of `"AC"` (Antigua
-and Barbuda), one of its nine islands, at no lower a value, as the sum of its children
-would, and `"AS"` (Australia, discontinued 198712) answers the 669 records of its child
-`"A2"` apart from the code, while `"NF"` (Norfolk Island), another child, answered none.
-On that evidence the package accepts every parent for every month. `"18"` and `"01"`
-answered an empty list, which means no data, as for any listed partner without trade;
-the package assumes no member list for them.
+A parent answers for its children under its own code, as the two recorded ones did, so
+the package accepts every parent for every month (`docs/upstream/OBSERVED.md`, "A parent
+code answers for its children"); `"01"` and `"18"` answered an empty list, which means no
+data, as for any listed partner without trade, and the package assumes no member list for
+the region codes ("The region codes `01` and `18` answer the empty list").
 
 The customs-district forms answer the same partner-month by US customs district, one
 record per district and HS10 code, and take `customs_district_id` too, checked against
@@ -148,12 +163,12 @@ months answered before it, and none of the months is returned.
 
 ## UN Trade data
 
-> **The UN half of GATS is frozen.** As recorded on 2026-10-26, both UN Trade release
-> lists end with statistical year 2019, and their newest release is dated 2021-01-18: no
-> later year has appeared since. The package wraps this data faithfully, as GATS serves
-> it, so that a product-level comparison with UN Comtrade is possible elsewhere; it maps
-> no code. Reporter, partner and HS6 codes stay GATS's own (`list_countries`,
-> `list_hs6_commodities`), not UN Comtrade's and not ISO.
+> **The UN half of GATS is frozen.** Both UN Trade release lists end with statistical year
+> 2019, and their newest release is dated 2021-01-18: no later year has appeared since
+> (`docs/upstream/OBSERVED.md`, "The UN Trade release lists end in 2019"). The package
+> wraps this data faithfully, as GATS serves it, so that a product-level comparison with
+> UN Comtrade is possible elsewhere; it maps no code. Reporter, partner and HS6 codes stay
+> GATS's own (`list_countries`, `list_hs6_commodities`), not UN Comtrade's and not ISO.
 
 GATS serves trade "as reported by UN COMTrade", one reporter and one statistical year per
 request, one record per partner and HS6 code:
@@ -177,16 +192,16 @@ coverage = get_un_release_dates(ProductType.X, reporter_code="IC")
 by position and two filters by name, applied after the one data request:
 `partner_country_code`, upstream's field that it reads (exact), and `hs6_code` (a full
 code from the packaged HS6 list, or a prefix of 1 to 5 digits). The
-records keep GATS's codes as the data carries them, older ones included: the countries
-list marks `AS` (Australia), `DA` (Denmark), `IT` (Italy), `NO` (Norway) and `NZ` (New
-Zealand) discontinued in 1987, yet the UN data uses them for later years and never their
-same-name successors (`A2`, `N3`, ...). So the UN tasks check both country codes for
-membership in the packaged list only; the Census tasks' discontinuation rule does not
-apply. An ISO or GENC code that several listed codes share is refused naming first the
-codes the flow's UN release list holds as reporters: `"AUS"` names `AS` before `A2`,
-`"FRA"` names `F1` before `FR`. The lists follow no rule on the codes themselves (the
-parent reports for Australia, its child for France, both for Germany), so such a refusal
-reads the list first, still before the data request, and comes unranked when the list
+records keep GATS's codes as the data carries them, older ones included: the UN data uses
+`AS` (Australia), `DA` (Denmark), `IT` (Italy), `NO` (Norway) and `NZ` (New Zealand) for
+later years, which the countries list marks discontinued in 1987, and never their
+successors of the same name (`A2`, `N3`, ...), as `docs/upstream/OBSERVED.md` notes. So the
+UN tasks check both country codes for membership in the packaged list only; the Census
+tasks' discontinuation rule does not apply. An ISO or GENC code that several listed codes
+share is refused naming first the codes the flow's UN release list holds as reporters:
+`"AUS"` names `AS` before `A2`, `"FRA"` names `F1` before `FR`. The lists follow no rule
+on the codes themselves (the parent reports for Australia, its child for France, both for
+Germany), so such a refusal reads the list first, still before the data request, and comes unranked when the list
 cannot be read; the Census tasks keep the current code first. Before the data request a
 task checks the reporter-year against the flow's UN release list, which the client keeps
 for a day, the feed being frozen: the imports task the imports list, the exports task
@@ -202,11 +217,11 @@ flow's, refuses it. A listed reporter-year without trade is an empty list (Icela
 re-exports). `meta.vintage` of the exports and imports tasks is the reporter-year's
 release time as upstream states it, and `meta.published_at` that time parsed, naive, as
 for the Census tasks; the re-exports task leaves both empty. The client keeps a
-reporter-year's answer for a day. One reporter-year can be large: Iceland's 2019 imports
-are 23,396 records (about 5.2 MB), India's 2016 exports 75,919 (about 17 MB).
+reporter-year's answer for a day. One reporter-year can be large, India's 2016 exports more
+than the 16 MiB the cache stores (`docs/upstream/OBSERVED.md`, "One UN Trade answer is a
+reporter's whole year").
 `get_un_release_dates(product_type, *, reporter_code=None, statistical_year=None)`
-returns either list, one record per reporter and year, 3,796 for exports and 3,832 for
-imports as recorded.
+returns either list, one record per reporter and year, newest year first.
 
 ## Reference lists
 
@@ -236,10 +251,11 @@ The HS10 list is not packaged: 24,936 records and about 7.6 MB. `list_commoditie
 search=None, hs10_code=None, product_type=None)` fetches it live, in one request the client keeps for
 a day and parses into records once for that day, and filters it: `search` on the name
 and the description, `hs10_code` a prefix of the code, `product_type` exact.
-Upstream's product types are `"X"` (exports, 5,919 records), `"M"` (imports, 14,469),
-`"T"` (2,704) and `"B"` (1,844); upstream documents none of them, and the `T` and `B`
-records carry seven-digit codes padded with three spaces, kept as sent. A product type
-that no record carries is refused once the list is read, naming those it carries. On a
+Upstream's product types are `"X"` (exports), `"M"` (imports), `"T"` and `"B"`; upstream
+documents none of them, and the `T` and `B` records carry seven-digit codes padded with
+three spaces, kept as sent (`docs/upstream/OBSERVED.md`, "The HS10 commodities list"). A
+product type that no record carries is refused once the list is read, naming those it
+carries. On a
 cache hit `meta.retrieved_at` is when the list was fetched.
 
 ## MCP
@@ -335,7 +351,8 @@ twenty tasks as 0.2.0, on xippios-core 0.5.x (`~=0.5.0`) and xippios-usda-fas 0.
 Trade tasks and six list tasks.
 Alpha: the public surface may change in a minor version before 1.0 (conventions §12);
 `CHANGELOG.md` lists every change. The UN Trade tasks wrap a frozen series (conventions
-§4): their rows name the feed's last release, 2021-01-18, as recorded on 2026-10-26.
+§4): their rows name the feed's last release, 2021-01-18, as `docs/upstream/OBSERVED.md`
+notes with its probe.
 
 Every request counts against api.data.gov's quota of 1,000 requests per hour per key,
 shared by every package using the same `DATA_GOV_API_KEY` (xippios-usda-psd and

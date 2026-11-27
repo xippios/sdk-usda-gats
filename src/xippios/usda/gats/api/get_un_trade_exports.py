@@ -9,16 +9,15 @@ returns a list of records of Commodity Export data as reported by UN COMTrade fo
 year. UN COMTrade reports data on a yearly basis at a HS6 Code Level." The record shape is
 the recorded one (``models.UNTradeRecord``), one record per partner and HS6 code: one
 answer is one reporter-year across all partners and products, never paged or sliced
-(3,980 records, about 885 KB of JSON, for Iceland in 2019; 75,919 records, about 17 MB,
-for India in 2016, recorded on 2026-10-26 and not kept). The codes in it are GATS's,
-never UN Comtrade's.
+(3,980 records, about 885 KB of JSON, for Iceland in 2019, and about 17 MB for India in
+2016, as the note "One UN Trade answer is a reporter's whole year" of
+``docs/upstream/OBSERVED.md`` has it). The codes in it are GATS's, never UN Comtrade's.
 
-Recorded answers (2026-10-26): an unknown reporter code (``ZZ``, 2019), a year without a
-release record for any reporter (2035) and the year after the release lists' latest
-(Iceland, 2020) all answer HTTP 200 with ``[]`` (``unknown_reporter``, ``future_year``,
-``unreleased_year``); a year that is not a number (``abc``) answers HTTP 404 with an empty
-``text/plain`` body (``year_text``), which core's status mapping raises as
-``NotFoundError``.
+An unknown reporter code, a year without a release record for any reporter and a year the
+release lists do not hold for the reporter all answer HTTP 200 with ``[]``, and a year that
+is not a number HTTP 404 with an empty body, which core's status mapping raises as
+``NotFoundError``: the notes of ``docs/upstream/OBSERVED.md`` under "Empty answers and
+refusals", with their fixtures.
 """
 
 from urllib.parse import quote

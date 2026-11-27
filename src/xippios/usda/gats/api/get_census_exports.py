@@ -9,11 +9,12 @@ corrections applied once a year." The record shape is the recorded one
 (``models.CensusExport``): one answer is one partner-month across all products, never
 paged or sliced (777 records, about 154 KB of JSON, for China in August 2026).
 
-Recorded answers (2026-10-25): an unknown partner code (``ZZ``), a month after the latest
-release (2035-01) and a listed partner without trade (``BV``, Bouvet Island) all answer
-HTTP 200 with ``[]`` (``unknown_partner``, ``future_month``, ``no_data_valid_partner``);
-month 0 and month 13 answer HTTP 404 with an empty ``text/plain`` body (``month_0``,
-``month_13``), which core's status mapping raises as ``NotFoundError``.
+An unknown partner code, a month after the latest release and a listed partner without
+trade all answer HTTP 200 with ``[]``, and month 0 and month 13 HTTP 404 with an empty
+body, which core's status mapping raises as ``NotFoundError``: the notes "An unknown code
+answers the empty list", "A period not released answers the empty list" and "Month 0, month
+13 and a year that is no number answer HTTP 404 with an empty body" of
+``docs/upstream/OBSERVED.md``, with their fixtures.
 """
 
 from urllib.parse import quote

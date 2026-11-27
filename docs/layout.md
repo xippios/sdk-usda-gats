@@ -13,9 +13,9 @@ instead, named after the service, and this file says so (conventions §2).
 
 ```
 src/xippios/usda/gats/
-  _client.py       also LIFETIMES, the five paths the cache keeps and for how long, and the
-                   gateway of xippios.usda.fas, with no data path, whose policy keeps the
-                   key's quota
+  _client.py       also LIFETIMES, how long the cache keeps every answer, by path prefix,
+                   and the gateway of xippios.usda.fas, with no data path, whose policy
+                   keeps the key's quota
   errors.py        the reasons UnknownCode names for GATS's codes (conventions §5)
   models.py        also ProductType, written by hand for the value set the two release lists
                    document; each code field declares the packaged list that names it
@@ -42,5 +42,6 @@ tests/
                    offline
 docs/
   upstream/        also openapi/, the GATS parts of the portal's document and the backend's
-                   document
+                   document, and OBSERVED.md, the notes by hand on what GATS does but never
+                   documents
 ```

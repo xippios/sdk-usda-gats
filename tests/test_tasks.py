@@ -1835,16 +1835,18 @@ def test_a_series_passes_over_the_months_before_the_data_with_a_note(
     """1966-11 to 1967-02: both lists begin at 196701, so the series passes over 196611 and
     196612 without a request and names them in a note, and fetches 196701 and 196702, as
     the month task answers each (way P2). NOT RECORDED: no answer for Iceland in 1967 is
-    recorded, so each month of either flow is served the recorded empty exports answer of a
-    listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS gives
-    alike there, and the test checks what was sent, the note and the vintage (conventions
-    §10, kind 3)."""
+    recorded, so each month is served the recorded empty exports answer of a listed partner
+    without trade, Bouvet Island (``BV``) in August 2026 (conventions §10, kind 3). The
+    exports case takes it as an answer GATS gives alike there and checks the empty list as
+    well; no empty Census imports answer is recorded, so the imports case checks only what
+    was sent, with the note and the vintage that the recorded imports list gives."""
     replay_fixture(release_list, "all")
     path = "censusExports" if flow == "exports" else "censusImports"
     urls = [f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/1967/month/{m}" for m in (1, 2)]
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
     result = task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
-    assert result.data == []
+    if flow == "exports":
+        assert result.data == [], "the recorded empty exports answer, at its own operation"
     assert result.meta.notes == [
         f"GATS holds no Census {flow} for 196611 to 196612: {operation} lists 716 months, "
         "196701 to 202608, and none of them, so the series passed them over without a data "

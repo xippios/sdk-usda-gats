@@ -12,8 +12,10 @@ tasks, the customs-district tasks and the three series answer their check from t
 for Iceland from June to August 2026, three data calls, the import and re-export series from
 July to August, two data calls each. The Census data tasks ask for Iceland (``"IC"``), a
 listed partner with modest trade, so the nightly run stays light, in August 2026, released on
-2026-10-06; ``vintage`` is that month's release time as upstream writes it, a date and a time
-without a zone. The UN Trade tasks ask for the reporter-years the fixtures hold, all of
+2026-10-06; ``vintage`` of the exports and imports tasks and their series is that month's
+release time as upstream writes it, a date and a time without a zone, and the re-export and
+customs-district tasks leave it empty, since the list they read is another flow's, as
+``get_un_reexports`` does. The UN Trade tasks ask for the reporter-years the fixtures hold, all of
 statistical year 2019: Iceland's exports of chapter 03, Sao Tome and Principe's imports,
 Macau's re-exports, and Iceland's years in the exports release list. The UN Trade feed is
 frozen, its newest release dated 2021-01-18 as recorded on 2026-10-26, so these tests assert
@@ -91,6 +93,11 @@ def _published_naive(meta: ResultMeta) -> None:
     assert meta.published_at_naive is True
 
 
+def _no_vintage(meta: ResultMeta) -> None:
+    """A task that reads another flow's release list states no release of its own data."""
+    assert (meta.vintage, meta.published_at) == (None, None)
+
+
 def _quota_is_the_gateways() -> None:
     snapshot = Gateway.policy.snapshot()
     assert snapshot is not None
@@ -130,7 +137,9 @@ async def test_get_census_release_dates_live(
     assert {r.product_type for r in result.data} == {ProductType.X}
     assert (result.meta.published_at, result.meta.vintage) == (None, None)
     # The filter answers from the client's cache: no keyed call of its own.
-    one_year = await tasks.get_census_release_dates_async(ProductType.X, statistical_year=YEAR)
+    one_year = await tasks.get_census_release_dates_async(
+        ProductType.X, statistical_year_month=f"{YEAR}"
+    )
     year_months = [r.statistical_year_month for r in one_year.data]
     assert year_months == [month for month in months if month[:4] == f"{YEAR}"]
     assert 8 <= len(year_months) <= 12
@@ -141,18 +150,18 @@ async def test_get_census_release_dates_live(
 async def test_get_census_reexports_live(record_property: Callable[[str, object], None]) -> None:
     result = await tasks.get_census_reexports_async(PARTNER, YEAR, MONTH)
     assert {(r.country_code, r.date) for r in result.data} <= {(PARTNER, "202608")}
-    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     record_property("records", len(result.data))
-    record_property("vintage", result.meta.vintage)
 
 
 async def test_get_census_export_series_live(
     record_property: Callable[[str, object], None],
 ) -> None:
     """June to August 2026: three data calls, the exports list from the cache."""
-    result = await tasks.get_census_export_series_async(PARTNER, YEAR, 6, YEAR, MONTH)
+    result = await tasks.get_census_export_series_async(
+        PARTNER, start_year=YEAR, start_month=6, end_year=YEAR, end_month=MONTH
+    )
     assert result.data
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
@@ -170,7 +179,9 @@ async def test_get_census_import_series_live(
     record_property: Callable[[str, object], None],
 ) -> None:
     """July and August 2026: two data calls, the imports list from the cache."""
-    result = await tasks.get_census_import_series_async(PARTNER, YEAR, 7, YEAR, MONTH)
+    result = await tasks.get_census_import_series_async(
+        PARTNER, start_year=YEAR, start_month=7, end_year=YEAR, end_month=MONTH
+    )
     assert result.data
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
@@ -189,19 +200,19 @@ async def test_get_census_reexport_series_live(
 ) -> None:
     """July and August 2026: two data calls, the exports list from the cache. A month
     may hold no re-exports, so the records may be none."""
-    result = await tasks.get_census_reexport_series_async(PARTNER, YEAR, 7, YEAR, MONTH)
+    result = await tasks.get_census_reexport_series_async(
+        PARTNER, start_year=YEAR, start_month=7, end_year=YEAR, end_month=MONTH
+    )
     dates = [r.date for r in result.data]
     assert dates == sorted(dates), "month order, oldest first"
     assert {(r.country_code, r.date) for r in result.data} <= {
         (PARTNER, "202607"),
         (PARTNER, "202608"),
     }
-    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == "GATSData_GetCensusReExports"
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     record_property("records", len(result.data))
     record_property("months", sorted(set(dates)))
-    record_property("vintage", result.meta.vintage)
 
 
 def _districts() -> set[int]:
@@ -224,12 +235,10 @@ async def test_customs_district_task_live(
     assert {(r.country_code, r.date) for r in result.data} <= {(PARTNER, "202608")}
     districts = {r.customs_district_id for r in result.data}
     assert districts <= _districts(), "every district is packaged"
-    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    _published_naive(result.meta)
+    _no_vintage(result.meta)
     record_property("records", len(result.data))
     record_property("districts", sorted(districts))
-    record_property("vintage", result.meta.vintage)
 
 
 async def test_list_commodities_live(record_property: Callable[[str, object], None]) -> None:
@@ -284,9 +293,12 @@ async def test_un_data_task_live(
     if hs6_code is not None:
         assert all(r.hs6_code.startswith(hs6_code) for r in result.data)
     _in_gats_vocabulary(result.data)
-    _vintage_is_a_release_time(result.meta.vintage)
     assert result.meta.endpoint == endpoint
-    _published_naive(result.meta)
+    if task == "get_un_reexports":
+        _no_vintage(result.meta)
+    else:
+        _vintage_is_a_release_time(result.meta.vintage)
+        _published_naive(result.meta)
     record_property("records", len(result.data))
     record_property("vintage", result.meta.vintage)
 

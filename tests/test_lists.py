@@ -21,7 +21,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from xippios.core import InvalidRequestError, PackagedList
+from xippios.core import InvalidRequestError, PackagedList, UnknownCode
 from xippios.core.client import cache_key
 from xippios.core.testing import (
     ReplayFixture,
@@ -94,6 +94,8 @@ COMMODITIES_NOTE = (
     "filter by search (name or description, e.g. 'wheat'), by hs10_code (a code or a "
     "prefix such as '0201') or by product_type ('X' exports, 'M' imports) to see the rest"
 )
+REGIONS_TASK = "list_regions (over MCP, the tool usda_gats_list_regions)"
+"""The regions list task as a refusal of a region names it, with its MCP tool."""
 
 
 def _fetched(name: str) -> datetime:
@@ -216,13 +218,46 @@ def test_list_countries_by_region(respx_mock: respx.MockRouter) -> None:
     assert not respx_mock.calls
 
 
-def test_an_unknown_region_is_an_empty_list(respx_mock: respx.MockRouter) -> None:
-    """No validation: a region no country carries has no countries, a correct answer."""
-    unknown = tasks.list_countries(region_code="R00")
-    assert unknown.data == []
-    assert unknown.meta.request == {"region_code": "R00"}
-    assert unknown.meta.retrieved_at == FETCHED["countries"]
-    assert tasks.list_countries(region_code="r05").data == [], "exact, as list_regions spells it"
+def test_a_region_no_country_carries_is_refused_naming_the_closest(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Every region of the packaged regions list holds a country of the packaged countries
+    list, so a region that list lacks is one no record carries: it is refused, naming the
+    closest regions, where it answered an empty list, and nothing is sent, as for any
+    packaged list (sdk-core ADR-0045; https://github.com/xippios/sdk-usda-gats/issues/31)."""
+    for region in tasks.list_regions().data:
+        assert tasks.list_countries(region_code=region.region_code).data, region.region_code
+    with pytest.raises(UnknownCode) as lower:
+        tasks.list_countries(region_code="r05")
+    assert (lower.value.param, lower.value.value, lower.value.list_name) == (
+        "region_code",
+        "r05",
+        "regions",
+    )
+    assert lower.value.closest[0] == ("R05", "North America"), "spelled as list_regions has it"
+    assert lower.value.message.startswith(
+        "'r05' is not a region_code in the packaged regions list (fetched 2026-10-28). "
+        "Nothing was sent. Did you mean R05 (North America)"
+    )
+    assert (
+        "Every region of the packaged regions list holds a country of the packaged countries "
+        "list, so a region it lacks would keep no country, and the package refuses it."
+    ) in lower.value.message
+    with pytest.raises(UnknownCode) as unknown:
+        tasks.list_countries(region_code="Atlantis")
+    assert unknown.value.closest == ()
+    assert REGIONS_TASK in unknown.value.message, "no region is close: the list task"
+    with pytest.raises(InvalidRequestError, match="region_code"):
+        tasks.list_countries(region_code=5)  # type: ignore[arg-type]
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_a_region_no_country_carries_is_an_error_over_mcp(
+    respx_mock: respx.MockRouter,
+) -> None:
+    with pytest.raises(AssertionError, match="error: UnknownCode: 'R00' is not a region_code"):
+        await mcp_call(server, "usda_gats_list_countries", {"region_code": "R00"})
     assert not respx_mock.calls
 
 
@@ -468,14 +503,60 @@ def test_list_commodities_filters(replay_fixture: ReplayFixture) -> None:
         "a padded code is seven digits"
     )
     assert len(tasks.list_commodities(product_type="X").data) == 5919
-    assert tasks.list_commodities(product_type="x").data == [], "exact, as upstream writes it"
-    assert tasks.list_commodities(product_type="R").data == []
     secretions = tasks.list_commodities(search="secretions").data
     assert [(c.hs10_code, c.product_type) for c in secretions] == [
         ("0510004020", "M"),
         ("3001200000", "M"),
         ("3001200000", "X"),
     ], "upstream text the fixture's key grep matches"
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize("product_type", ["x", "R", "", "XM"])
+def test_a_product_type_no_record_carries_is_refused_once_the_list_is_read(
+    replay_fixture: ReplayFixture, product_type: str
+) -> None:
+    """The recorded HS10 list carries four product types, ``B``, ``X``, ``M`` and ``T``,
+    which upstream documents nowhere, so the list itself says which a record carries: a
+    product type none carries, compared as upstream writes it, is refused once the list was
+    read, naming those it carries and saying what was sent, where it answered an empty list
+    (https://github.com/xippios/sdk-usda-gats/issues/31; conventions §5)."""
+    route = replay_fixture("get_commodities", "all")
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.list_commodities(product_type=product_type)
+    assert not isinstance(info.value, UnknownCode), "no packaged list holds the types"
+    assert info.value.message == (
+        f"product_type {product_type!r} is carried by no record of GATS's HS10 list, so it "
+        "would keep none. The list (GATSData_GetCommodities) was read, and nothing else was "
+        "sent. Its 24,936 records carry the product types 'B', 'X', 'M' and 'T', in the order "
+        "the list first holds them, compared exactly as upstream writes them."
+    )
+    assert route.call_count == 1
+    tasks.list_commodities(product_type="T")
+    assert route.call_count == 1, "the next call from the cache"
+
+
+def test_a_product_type_that_is_no_text_is_refused_before_the_request(
+    respx_mock: respx.MockRouter,
+) -> None:
+    with pytest.raises(InvalidRequestError) as info:
+        tasks.list_commodities(product_type=1)  # type: ignore[arg-type]
+    assert info.value.message == (
+        "product_type must be text, a product type as the HS10 list writes it, such as 'X' "
+        "(exports) or 'M' (imports), got 1. Nothing was sent."
+    )
+    assert not respx_mock.calls
+
+
+@pytest.mark.anyio
+async def test_a_product_type_no_record_carries_is_an_error_over_mcp(
+    replay_fixture: ReplayFixture,
+) -> None:
+    route = replay_fixture("get_commodities", "all")
+    with pytest.raises(
+        AssertionError, match="error: InvalidRequestError: product_type 'x' is carried by no"
+    ):
+        await mcp_call(server, "usda_gats_list_commodities", {"product_type": "x"})
     assert route.call_count == 1
 
 

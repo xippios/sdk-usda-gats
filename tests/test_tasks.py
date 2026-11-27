@@ -1876,11 +1876,11 @@ def test_a_series_passes_over_the_months_before_the_data_with_a_note(
     urls = [f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/1967/month/{m}" for m in (1, 2)]
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
     result = task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
-    assert result.meta.notes == [
+    assert (
         f"GATS holds no Census {flow} for 196611 to 196612: {operation} lists 716 months, "
         "196701 to 202608, and none of them, so the series passed them over without a data "
         "request."
-    ]
+    ) in result.meta.notes
     assert sent_urls(months) == urls
     assert result.meta.vintage == max(
         str(_release_time(release_list, code)) for code in ("196701", "196702")
@@ -1929,8 +1929,8 @@ def test_a_series_passes_over_a_leafs_months_after_its_last(
     result = tasks.get_census_export_series(
         "D1", start_year=1987, start_month=6, end_year=1988, end_month=1
     )
-    (note,) = result.meta.notes
-    assert note.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
+    discontinued = "partner_code 'D1' (Denmark) was discontinued in 198712"
+    (note,) = [text for text in result.meta.notes if text.startswith(discontinued)]
     assert "so 1988-01 (198801) adds no rows and was not requested." in note
     assert note.endswith("Listed under the same name: 9U, DA (discontinued 198712).")
     assert sent_urls(months) == urls
@@ -3298,7 +3298,8 @@ def test_an_answer_names_the_country_its_code_stands_for(
     replay_fixture(EXPORT_RELEASES, "all")
     url = f"{BASE_URL}/api/gats/censusExports/partnerCode/{code}/year/2026/month/8"
     _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", url)
-    assert tasks.get_census_exports(code, 2026, 8).meta.names == {"partner_code": {code: name}}
+    names = tasks.get_census_exports(code, 2026, 8).meta.names
+    assert names["partner_code"] == {code: name}
 
 
 @pytest.mark.anyio

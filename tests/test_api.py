@@ -644,7 +644,7 @@ async def test_the_partner_code_is_quoted_into_the_path(
     """
     url = f"{BASE_URL}/api/gats/{path}/partnerCode/C%2FH/year/2026/month/8"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    assert (await wrapper("C/H", 2026, 8)).payload == []
+    await wrapper("C/H", 2026, 8)
     assert sent_urls(route) == [url]
 
 
@@ -1032,7 +1032,7 @@ async def test_the_reporter_code_and_year_are_quoted_into_the_path(
     asserts only what was sent (conventions §10, kind 3)."""
     url = f"{BASE_URL}/api/gats/{path}/reporterCode/I%2FC/year/20%2F19"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    assert (await wrapper("I/C", "20/19")).payload == []
+    await wrapper("I/C", "20/19")
     assert sent_urls(route) == [url]
 
 

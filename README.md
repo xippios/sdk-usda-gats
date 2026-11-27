@@ -77,10 +77,10 @@ product or a prefix such as a chapter, applied after the one data request.
 record; `get_census_reexports` answers the exports' record for US re-exports.
 
 A parent answers for its children under its own code, as the two recorded ones did, so
-the package accepts every parent for every month; `"01"` and `"18"` answered an empty list,
-which means no data, as for any listed partner without trade, and the package assumes no
-member list for the region codes (`docs/upstream/OBSERVED.md`, "A parent code answers for
-its children").
+the package accepts every parent for every month (`docs/upstream/OBSERVED.md`, "A parent
+code answers for its children"); `"01"` and `"18"` answered an empty list, which means no
+data, as for any listed partner without trade, and the package assumes no member list for
+the region codes ("The region codes `01` and `18` answer the empty list").
 
 The customs-district forms answer the same partner-month by US customs district, one
 record per district and HS10 code, and take `customs_district_id` too, checked against

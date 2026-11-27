@@ -43,18 +43,23 @@ holds what the package does with it; `_client.classify` maps nothing of GATS's o
   named after upstream's field that it reads (sdk-core ADR-0061, decision 2):
   `partner_country_code` reads `partnerCountryCode` and `statistical_year` `statisticalYear`,
   each exactly, `statistical_year_month` is a prefix of `statisticalYearMonth`'s six digits,
-  one year or one month, and `hs10_code` and `hs6_code` a prefix of the code. A filter that no
-  record can match is refused rather than answered with an empty list: a `region_code` that
-  the packaged regions list lacks before any request, and a `product_type` that no record of
-  the HS10 list carries once the list is read, naming the four it carries
-  (https://github.com/xippios/sdk-usda-gats/issues/31).
+  one year or one month, and `hs10_code` and `hs6_code` a prefix of the code. Two filters
+  refuse a value that no record carries rather than answer an empty list: a `region_code`
+  that the packaged regions list lacks, before any request, and a `product_type` that no
+  record of the HS10 list carries, once the list is read, naming the four it carries
+  (https://github.com/xippios/sdk-usda-gats/issues/31). A code is checked as the next item
+  says, and a prefix, a `search` or a year that matches no record answers the empty list:
+  `list_hs6_commodities(hs6_code="9999")` and `get_census_release_dates("X",
+  statistical_year_month="1966")`.
 - Empty means empty: an unknown code answers `[]` as a listed partner without trade does, so
   `params` refuses one before the call by core's `check` of its packaged list (`UnknownCode`,
   naming the closest codes, an ISO or GENC code leading to GATS's code first), and every
   refusal before a request says `Nothing was sent.` A month 0 or 13 and a year that is no
   number, which GATS answers with an empty 404, never reach it.
-- A parent code passes for every month, since a parent answers for its children, and so do
-  the region codes `01` to `18`, for which the package assumes no member list. A discontinued
+- A parent code passes for every month, since the two parents recorded answered the Census
+  exports for their children (the other flows are
+  https://github.com/xippios/sdk-usda-gats/issues/25), and so do the region codes `01` to
+  `18`, for which the package assumes no member list. A discontinued
   code that is no other code's parent holds no trade after its `discontinuedOn`: every Census
   task answers such a month with the empty list and `params.leaf_note`, sending no request,
   the note keeping every word of the refusal it replaced, and a series passes the months over

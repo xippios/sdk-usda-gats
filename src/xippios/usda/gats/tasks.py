@@ -1522,10 +1522,11 @@ async def _un_ranked(
     For that one the flow's release list is read, which the task reads before its data
     anyway, and ``check`` runs again with the list's reporters: the refusal names the
     codes the list holds as reporters first, still before the data call. No rule on the
-    codes themselves ranks them: as recorded on 2026-10-26 both lists hold ``AS`` and
-    never ``A2`` (Australia), ``NO`` and never ``N3`` (Norway), but ``F1`` and never
-    ``FR`` (France), ``SR`` and never ``SZ`` (Switzerland), and both ``GM`` and ``GE``
-    (Germany) for different years. The list only ranks the refusal: when it cannot be
+    codes themselves ranks them: both lists hold ``AS`` and never ``A2`` (Australia),
+    ``NO`` and never ``N3`` (Norway), but ``F1`` and never ``FR`` (France), ``SR`` and
+    never ``SZ`` (Switzerland), and both ``GM`` and ``GE`` (Germany) for different years,
+    as the note "The UN data keeps codes discontinued in 1987" of
+    ``docs/upstream/OBSERVED.md`` has it. The list only ranks the refusal: when it cannot be
     read (no key, a refused key, a spent quota, the network), the refusal is raised as
     the first check made it, unranked, since a refused argument is refused whatever the
     list does.
@@ -2012,10 +2013,10 @@ async def get_un_release_dates_async(
     within a year: ``statistical_year`` (``"2019"``), ``product_type``, ``reporter_code`` and
     ``release_time_stamp``, the time of the reporter-year's latest release as upstream states
     it, without a time zone (``2020-06-03T05:50:46`` for Iceland's 2019 exports). The UN Trade
-    feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18,
-    as recorded on 2026-10-26. The three UN data tasks check a reporter-year against this list,
-    and the exports and imports tasks give its time as ``meta.vintage``; the re-exports task
-    gives none. One request,
+    feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18
+    (``docs/upstream/OBSERVED.md``). The three UN data tasks check a reporter-year against
+    this list, and the exports and imports tasks give its time as ``meta.vintage``; the
+    re-exports task gives none. One request,
     kept by the client for a day, the filters applied after it; ``meta.retrieved_at`` is when it
     was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
     release.
@@ -2276,9 +2277,10 @@ async def list_commodities_async(
         product_type: Keep the records whose ``productType`` is this, exactly as upstream
             writes it: ``"X"`` (exports), ``"M"`` (imports), ``"T"`` or ``"B"``. A type no
             record carries is refused once the list is read, naming those it carries. Omit
-            (``None``) for all. As recorded on 2026-10-26: ``"X"`` 5,919 records (export
-            codes, as in the Census exports and re-exports records), ``"M"`` 14,469 (import
-            codes), ``"T"`` 2,704 and ``"B"`` 1,844.
+            (``None``) for all. ``"X"`` holds 5,919 records (export codes, as in the
+            Census exports and re-exports records), ``"M"`` 14,469 (import codes), ``"T"``
+            2,704 and ``"B"`` 1,844, as the note "The HS10 commodities list" of
+            ``docs/upstream/OBSERVED.md`` has it.
     """
     _search(search)
     if hs10_code is not None:

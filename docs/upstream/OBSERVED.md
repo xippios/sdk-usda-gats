@@ -63,7 +63,8 @@ district 10.
 
 Probe: 2026-10-26, `GATSData_GetCustomsDistrictsExports`,
 `GATSData_GetCustomsDistrictsImports` and `GATSData_GetCustomsDistrictsReExports`, against
-the Census answers of the same day; samples
+the Census answers of the same flow, partner and month, Iceland's recorded on 2026-10-26 and
+China's exports on 2026-10-25, the samples of "A Census record"; samples
 `tests/fixtures/get_customs_districts_exports/IC_2026_8.json`,
 `tests/fixtures/get_customs_districts_exports/CH_2026_8.json`,
 `tests/fixtures/get_customs_districts_imports/IC_2026_8.json` and
@@ -165,7 +166,9 @@ Probe: 2026-10-26, `GATSData_GetUNTradeExportDataReleaseInfo` and
 
 The countries list held 322 codes, each with `countryCode`, `regionCode`,
 `countryParentCode`, `countryName`, `description`, `isO3Code`, `discontinuedOn` and
-`gencCode`. 26 carry `discontinuedOn`, a month as six digits (`"198712"`); a code whose
+`gencCode`. 26 carry `discontinuedOn`, six digits, for 25 of them a year and a month
+(`"198712"`) and for `YS` (Yemen (Aden)) `"199091"`, no month, which as text sorts after
+every month of 1990 and before 1991's; a code whose
 `countryParentCode` is its own code is no other code's parent by that alone, and 19 of the
 26 are the parent of another code. The two-digit codes `"01"` (Caribbean,nes) to `"18"`
 (ASEAN) stand in region `R99` beside codes such as `AY` (Antarctica) and `BV` (Bouvet

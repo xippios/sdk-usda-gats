@@ -19,9 +19,9 @@ across all districts and products, never paged. Error shapes are mapped once in
 
 from urllib.parse import quote
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import CustomsDistrictExport
 
 __all__ = ["get_customs_districts_re_exports"]
@@ -29,7 +29,7 @@ __all__ = ["get_customs_districts_re_exports"]
 
 async def get_customs_districts_re_exports(
     partner_code: str, year: int, month: int
-) -> list[CustomsDistrictExport]:
+) -> Answer[list[CustomsDistrictExport]]:
     """Call ``GATSData_GetCustomsDistrictsReExports``.
 
     Args:
@@ -38,8 +38,9 @@ async def get_customs_districts_re_exports(
         month: ``month``, e.g. ``8`` (August).
 
     Returns:
-        One ``CustomsDistrictExport`` per customs district and HS10 code, in upstream
-        order; ``[]`` when upstream has none.
+        Core's ``Answer``: as ``payload`` one ``CustomsDistrictExport`` per customs district and
+        HS10 code, in upstream order; ``[]`` when upstream has none,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         NotFoundError: Upstream answered HTTP 404.
@@ -50,10 +51,6 @@ async def get_customs_districts_re_exports(
         f"/api/gats/customsDistrictReExports/partnerCode/{quote(partner_code, safe='')}"
         f"/year/{year}/month/{month}"
     )
-    raw = await client.get_json(path)
-    return parse(
-        list[CustomsDistrictExport],
-        raw,
-        source=SOURCE,
-        endpoint="GATSData_GetCustomsDistrictsReExports",
+    return await client.get_answer(
+        path, parse=list[CustomsDistrictExport], endpoint="GATSData_GetCustomsDistrictsReExports"
     )

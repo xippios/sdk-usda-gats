@@ -3,8 +3,10 @@
 Typed Python client, MCP server and FastAPI routes for
 [USDA FAS Global Agricultural Trade System](https://apps.fas.usda.gov/gats/default.aspx), part of the
 [xippios SDK family](https://github.com/xippios). Names and semantics follow the
-upstream documentation; every response carries release metadata (source, endpoint,
-retrieved_at, published_at, vintage).
+upstream documentation; every response carries its metadata (source, endpoint,
+retrieved_at, request), and the data tasks the release time of what they answer. It
+depends on `xippios-usda-fas`, the shared package of the USDA FAS sources, for the
+api.data.gov gateway and the kit of its snapshot script.
 
 ## Install
 
@@ -127,8 +129,8 @@ month's than the end month's (2025-12 to 2026-02 gives December's revised
 **Pacing.** A series spends one keyed request per month, plus the release list unless
 the client's cache holds it, and sends them one after another at the client's pace of
 one request per second, never at once: 60 months take about a minute and 60 of the
-key's 1,000 requests per hour. A quota spent partway raises `RateLimitError`, and none of
-the months is returned.
+key's 1,000 requests per hour. A quota spent partway raises `RateLimitError`, naming the
+months answered before it, and none of the months is returned.
 
 ## UN Trade data
 
@@ -236,9 +238,12 @@ Tools are read-only and named `usda_gats_<verb>_<noun>`. Results are capped, at
 that names the tool's filters: one partner-month is one row per HS10 product (777 rows
 for exports to China in August 2026, 3,294 for imports, 1,697 by customs district), so
 the notes of the Census data tools name `hs10_code`, and those of the customs-district
-tools `customs_district_id` too, while the series tools' notes say the rows run oldest
-month first and name `hs10_code` and fewer months; `usda_gats_list_hs6_commodities`
-names `search` and `hs6_code`, `usda_gats_list_commodities` its three filters. The UN
+tools `customs_district_id` too, while a cut series shows its newest rows and its note
+says the rows run oldest month first and names `hs10_code` and fewer months;
+`usda_gats_list_hs6_commodities` names `search` and `hs6_code`, `usda_gats_list_commodities`
+its three filters. Those two and the two release-date tools take `offset`, the rows already
+shown, and answer the next rows from the packaged list or the client's cache without a
+request, the note of a cut answer naming the `offset` to continue with. The UN
 Trade data tools name `partner_code` and `hs6_code` (one reporter-year is one row per
 partner and HS6 code, 3,980 rows for Iceland's 2019 exports), and
 `usda_gats_get_un_release_dates` names `reporter_code` and `year` (3,796 reporter-years
@@ -246,24 +251,28 @@ in the exports list).
 `usda_gats_list_countries` has a cap of its own, 400 rows or 100,000 bytes, so its 322
 codes arrive whole. `usda_gats_get_census_release_dates` returns the newest 200 months,
 more than sixteen years, with a note that says so and names `statistical_year`, which
-keeps one year's months. `--http` serves streamable HTTP instead of stdio.
+keeps one year's months, and `offset`. Every answer names its codes in `meta.names`, the
+partners, reporters, districts, HS6 codes and units, from the packaged lists, and those it
+was asked for too, so an answer without rows names them. `--http` serves streamable HTTP
+instead of stdio.
 
 `--series-months MONTHS` sets the most months one series tool call spans, a whole number
 from 1 to 60. The server starts with 24: two years, 24 requests, about 24 seconds at the
 client's pace of one request per second. The Python API and the HTTP router allow 60, five
-years and about a minute (`tasks.SERIES_MAX_MONTHS`). A longer range is refused before
-any request, with a message that names the ceiling in force and, below 60,
-`--series-months`; a value outside 1 to 60 stops the server at start with exit status 2.
+years and about a minute (`tasks.SERIES`, core's `Ceiling`). A longer range is refused
+before any request, with a message that names the ceiling in force and, below 60,
+`--series-months`, and says that nothing was sent; a value outside 1 to 60 stops the
+server at start with exit status 2.
 For five-year series over MCP, append `"--series-months", "60"` to the `args` above.
 
 The entry point `xippios-usda-gats-mcp` sets the 24, or the `--series-months` given:
 core's `main` applies the option through the hooks `tasks.mcp_add_options` and
 `tasks.mcp_apply_options`. `xippios.usda.gats.mcp.build()` returns the tool set the entry
 point serves, with both hooks, so a host that serves it applies the option as the entry
-point does: `tools.apply_options(tools.option_defaults(), server)` sets the 24. A host that
+point does: `tools.apply_options(tools.option_defaults())` sets the 24. A host that
 imports `xippios.usda.gats.mcp.server` and serves it another way applies no option and
 keeps 60. The ceiling is process-wide
-(`tasks.series_ceiling()`, `tasks.set_series_ceiling(months)`), so a Python or HTTP call
+(`tasks.SERIES.value`, `tasks.SERIES.set(months)`), so a Python or HTTP call
 made inside an MCP server's process meets the MCP ceiling too: one ceiling, and one MCP
 server, per process.
 
@@ -294,9 +303,10 @@ server, per process.
 | `GATSData_GetUnitsOfMeasure` (`unitsOfMeasure`) | `list_units_of_measure()`, packaged as `reference/unitsOfMeasure.json`; `enums.UnitOfMeasureId` | `usda_gats_list_units_of_measure` | alpha |
 | `GATSData_GetCustomsDistricts` (`customsDistricts`) | `list_customs_districts()`, packaged as `reference/customsDistricts.json`, which checks `customs_district_id` | `usda_gats_list_customs_districts` | alpha |
 
-All nineteen operations of the snapshot (`docs/upstream/`) are wrapped. 0.3.0 covers them
-with the same twenty tasks as 0.2.0, on xippios-core 0.4.x (`~=0.4.0`): six Census data
-tasks, three month series, the Census release dates, four UN Trade tasks and six list tasks.
+All nineteen operations of the snapshot (`docs/upstream/`) are wrapped, with the same
+twenty tasks as 0.2.0, on xippios-core 0.5.x (`~=0.5.0`) and xippios-usda-fas 0.1.x
+(`~=0.1.0`): six Census data tasks, three month series, the Census release dates, four UN
+Trade tasks and six list tasks.
 Alpha: the public surface may change in a minor version before 1.0 (conventions §12);
 `CHANGELOG.md` lists every change. The UN Trade tasks wrap a frozen series (conventions
 §4): their rows name the feed's last release, 2021-01-18, as recorded on 2026-10-26.
@@ -316,6 +326,54 @@ it waits for the quota to come back when that takes at most 30 s, and otherwise 
 
 Data comes from USDA FAS Global Agricultural Trade System (https://apps.fas.usda.gov/gats/default.aspx) under its own terms of use;
 this package adds no rights to it. Documentation snapshot: `docs/upstream/`.
+
+## Workflows
+
+`ci.yml` runs ruff, its format check, mypy, pytest and pre-commit on Python 3.12, 3.13 and
+3.14, requires a changelog entry of every pull request but Dependabot's and refuses a
+fixture file over 256 KiB that a pull request adds or changes. It runs on every pull request and,
+called by `publish.yml`, once for a release, and its job `ci` is the check the
+organization's ruleset requires. It is handed no secret, and no variable switches it off.
+
+`publish.yml` is the release train (conventions §12): on a push to `main` whose
+`pyproject.toml` names a version that has no tag yet and has its section in `CHANGELOG.md`,
+it runs `ci.yml`, refuses a core pinned to git, tags the merge commit, builds the package
+and, once a reviewer of the environment `pypi` approves the run, publishes it to PyPI by
+trusted publishing. Every push to `main` and a dispatch start it, and a push that brings no
+release ends quietly. It is handed no secret: the step that tells a release is handed the
+job's token as `GH_TOKEN`, the tag goes with the job's token and PyPI trusts the workflow
+itself. Its job `tag` holds the one checkout of the repository that keeps its credentials,
+since it pushes the tag with the job's token; every other checkout sets
+`persist-credentials: false` (conventions §13). No variable switches it off.
+
+`live.yml` runs every `live` test against the upstream with `--tb=short --assert=plain`, so
+its public log holds neither a failing test's arguments nor the values an assertion compared.
+It runs every night at 02:57 UTC and on demand, never on a pull request.
+Its pytest step alone is handed `XIPPIOS_LIVE_TESTS` and, each from the secret of the same
+name, `DATA_GOV_API_KEY`, so the checkout, setup-uv and `uv sync` see none.
+A variable `WORKFLOW_LIVE` of `off`, the repository's over the organization's, switches it off.
+
+`conventions.yml` calls the organization's review of a pull request against the documents
+listed under Documents below, the check `conventions / conventions`, when a pull request
+opens, is pushed to, reopens or is edited, and on a push to `main` or a dispatch the review
+of the range of commits, `range / range`. It hands the review the organization's
+secret of the model's key, by name. A variable `WORKFLOW_CONVENTIONS` of `off`, the
+repository's over the organization's, switches both off.
+
+`adr-index.yml` calls the organization's check of the ADR index, `adr-index / adr-index`,
+which runs `scripts/adr_index.py --check`, when a pull request opens, is pushed to or
+reopens. It hands over nothing, and the called workflow reads its switch itself: a variable
+`WORKFLOW_ADR_INDEX` of `off`, the repository's over the organization's, skips the check.
+
+`siblings.yml` runs `.github/scripts/check-siblings.sh`, which installs the wheel beside
+every sibling on PyPI under the same provider namespace that shares its core minor and
+beside the source packages it depends on, and proves that the namespace levels stay portions
+(sdk-core ADR-0006, sdk-core ADR-0021). It runs on every pull request and push to `main`, a
+check the ruleset does not require, in a workflow of its own, since `ci.yml` is core's file,
+which `publish.yml` calls for a release. It hands the script the job's read-only token as
+`GITHUB_TOKEN`, for the listing of the organization's repositories, since GitHub limits the
+calls of a runner without one. A variable `WORKFLOW_SIBLINGS` of `off`, the repository's
+over the organization's, switches it off.
 
 ## Documents
 

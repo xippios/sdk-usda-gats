@@ -16,9 +16,9 @@ recorded for ``GATSData_GetCensusExports`` were not repeated here.
 
 from urllib.parse import quote
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import CustomsDistrictImport
 
 __all__ = ["get_customs_districts_imports"]
@@ -26,7 +26,7 @@ __all__ = ["get_customs_districts_imports"]
 
 async def get_customs_districts_imports(
     partner_code: str, year: int, month: int
-) -> list[CustomsDistrictImport]:
+) -> Answer[list[CustomsDistrictImport]]:
     """Call ``GATSData_GetCustomsDistrictsImports``.
 
     Args:
@@ -35,8 +35,9 @@ async def get_customs_districts_imports(
         month: ``month``, e.g. ``8`` (August).
 
     Returns:
-        One ``CustomsDistrictImport`` per customs district and HS10 code, in upstream
-        order; ``[]`` when upstream has none.
+        Core's ``Answer``: as ``payload`` one ``CustomsDistrictImport`` per customs district and
+        HS10 code, in upstream order; ``[]`` when upstream has none,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         NotFoundError: Upstream answered HTTP 404.
@@ -47,10 +48,6 @@ async def get_customs_districts_imports(
         f"/api/gats/customsDistrictImports/partnerCode/{quote(partner_code, safe='')}"
         f"/year/{year}/month/{month}"
     )
-    raw = await client.get_json(path)
-    return parse(
-        list[CustomsDistrictImport],
-        raw,
-        source=SOURCE,
-        endpoint="GATSData_GetCustomsDistrictsImports",
+    return await client.get_answer(
+        path, parse=list[CustomsDistrictImport], endpoint="GATSData_GetCustomsDistrictsImports"
     )

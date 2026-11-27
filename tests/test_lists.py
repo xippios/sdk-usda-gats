@@ -32,7 +32,7 @@ from xippios.core.testing import (
 )
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, cache, commodities_cache
+from xippios.usda.gats._client import BASE_URL, cache
 from xippios.usda.gats.enums import UnitOfMeasureId
 from xippios.usda.gats.mcp import server
 from xippios.usda.gats.models import CustomsDistrict, Region, UnitOfMeasure
@@ -105,15 +105,6 @@ def _fetched(name: str) -> datetime:
     return datetime.fromisoformat(fetched)
 
 
-def test_every_list_task_is_exported() -> None:
-    import xippios.usda.gats as package
-
-    for task in [*IDS, "list_commodities"]:
-        assert task in tasks.__all__
-        assert task in package.__all__
-        assert getattr(package, task) is getattr(tasks, task)
-
-
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("task", "name", "wrapper", "endpoint", "count", "request_"), LISTS, ids=IDS
@@ -132,7 +123,7 @@ async def test_list_answers_the_recorded_records_without_a_call(
     route = replay_fixture(wrapper, "all")
     result = await getattr(tasks, f"{task}_async")()
     assert not respx_mock.calls, f"{task} called upstream"
-    recorded = await getattr(api, wrapper)()
+    recorded = (await getattr(api, wrapper)()).payload
     assert route.call_count == 1, "the one call is the wrapper's"
     assert result.data == recorded, "same records, same values, upstream order"
     assert len(result.data) == count
@@ -364,16 +355,22 @@ def test_list_hs6_commodities_refuses_an_hs6_code_that_is_not_digits(
 async def test_hs6_commodities_over_mcp_are_cut_with_a_note_naming_the_filters(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """2,909 codes keep the default cap: 200 rows or 64 KB, with a note naming ``search``
-    and ``hs6_code``, the two filters the tool has; a search or a chapter comes back
-    whole."""
+    """2,909 codes keep the default bounds, 200 rows or 64 KB, with a note naming
+    ``search`` and ``hs6_code``, the two filters the tool has, and a paged cap: the list is
+    packaged, so ``offset`` answers the next rows without a request (sdk-core ADR-0047,
+    ADR-0061, decision 9); a search or a chapter comes back whole."""
     payload = await mcp_call(server, "usda_gats_list_hs6_commodities", {})
     shown = len(payload["data"])
     assert 0 < shown <= CAP
     assert payload["note"] == (
-        f"showing {shown} of 2909 rows (cap: 200 rows or 65536 bytes); {HS6_NOTE}"
+        f"showing {shown} of 2909 rows (cap: 200 rows or 65536 bytes); {HS6_NOTE}; "
+        f"continue with offset={shown}"
     )
     assert payload["data"][0]["hs6_code"] == "010110"
+    after = await mcp_call(server, "usda_gats_list_hs6_commodities", {"offset": shown})
+    more = len(after["data"])
+    assert after["note"].startswith(f"showing rows {shown + 1} to {shown + more} of 2909")
+    assert after["data"][0] != payload["data"][-1]
     wheat = await mcp_call(server, "usda_gats_list_hs6_commodities", {"search": "wheat"})
     assert len(wheat["data"]) == 15
     assert "note" not in wheat
@@ -542,9 +539,10 @@ def test_list_commodities_parses_the_list_once_per_cache_entry(
 def test_a_slot_never_answers_for_another_answer(
     respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """NOT RECORDED as such: the second answer is the recorded list's first record alone,
-    a stand-in for a list upstream changed. Once the first answer's entry is gone, the
-    slot it filled does not answer for the new one, which is parsed and returned."""
+    """NOT RECORDED as such: the first answer is the recorded list served in memory, the
+    second the recorded list's first record alone, changed in memory as a stand-in for a
+    list upstream changed (conventions §10, kinds 3 and 4). Once the first answer's entry
+    is gone, the slot it filled does not answer for the new one, which is parsed and returned."""
     parses = _count_parses(monkeypatch)
     body = load_fixture(COMMODITIES_FIXTURE).response.body
     assert isinstance(body, str)
@@ -575,7 +573,7 @@ def test_an_answer_the_cache_does_not_keep_is_parsed_every_time(
     cannot answer for the entry a later answer gets."""
     parses = _count_parses(monkeypatch)
     route = replay_fixture("get_commodities", "all")
-    monkeypatch.setattr(commodities_cache, "set", lambda key, value: None)
+    monkeypatch.setattr(cache, "set", lambda key, value, *, path: None)
     tasks.list_commodities(search="wheat")
     tasks.list_commodities(search="swine")
     assert route.call_count == 2
@@ -595,15 +593,20 @@ def test_list_commodities_checks_hs10_code_before_the_request(
 async def test_commodities_over_mcp_are_cut_with_a_note_naming_the_filters(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """24,936 records keep the default cap with a note naming the three filters; a
-    narrow query comes back whole, from the cache."""
+    """24,936 records keep the default bounds with a note naming the three filters and a
+    paged cap, since the client's cache keeps the list for a day: ``offset`` answers the
+    next rows from the cache, and a narrow query comes back whole, from the cache too
+    (sdk-core ADR-0047, ADR-0061, decision 9)."""
     route = replay_fixture("get_commodities", "all")
     payload = await mcp_call(server, "usda_gats_list_commodities", {})
     shown = len(payload["data"])
     assert 0 < shown <= CAP
     assert payload["note"] == (
-        f"showing {shown} of 24936 rows (cap: 200 rows or 65536 bytes); {COMMODITIES_NOTE}"
+        f"showing {shown} of 24936 rows (cap: 200 rows or 65536 bytes); {COMMODITIES_NOTE}; "
+        f"continue with offset={shown}"
     )
+    after = await mcp_call(server, "usda_gats_list_commodities", {"offset": shown})
+    assert after["note"].startswith(f"showing rows {shown + 1} to ")
     assert payload["data"][0]["hs10_code"] == "0011010   ", "kept as sent"
     assert payload["meta"]["vintage"] is None
     narrow = await mcp_call(

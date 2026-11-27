@@ -19,15 +19,15 @@ mapped once in ``xippios.usda.gats._client.classify``; the probes recorded for
 
 from urllib.parse import quote
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import UNTradeRecord
 
 __all__ = ["get_un_trade_re_exports"]
 
 
-async def get_un_trade_re_exports(reporter_code: str, year: str) -> list[UNTradeRecord]:
+async def get_un_trade_re_exports(reporter_code: str, year: str) -> Answer[list[UNTradeRecord]]:
     """Call ``GATSData_GetUNTradeReExports``.
 
     Args:
@@ -37,8 +37,9 @@ async def get_un_trade_re_exports(reporter_code: str, year: str) -> list[UNTrade
             upstream's example is 2010.
 
     Returns:
-        One ``UNTradeRecord`` per partner and HS6 code, in upstream order; ``[]`` when
-        upstream has none.
+        Core's ``Answer``: as ``payload`` one ``UNTradeRecord`` per partner and HS6 code, in
+        upstream order; ``[]`` when upstream has none,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         NotFoundError: Upstream answered HTTP 404.
@@ -49,5 +50,6 @@ async def get_un_trade_re_exports(reporter_code: str, year: str) -> list[UNTrade
         f"/api/gats/UNTradeReExports/reporterCode/{quote(reporter_code, safe='')}"
         f"/year/{quote(year, safe='')}"
     )
-    raw = await client.get_json(path)
-    return parse(list[UNTradeRecord], raw, source=SOURCE, endpoint="GATSData_GetUNTradeReExports")
+    return await client.get_answer(
+        path, parse=list[UNTradeRecord], endpoint="GATSData_GetUNTradeReExports"
+    )

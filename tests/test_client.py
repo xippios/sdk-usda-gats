@@ -1,17 +1,18 @@
-"""The client's error mapping, and core's quota policy wired to the gateway's answers.
+"""The client's wiring and its cache, and the shared package's api.data.gov gateway on it.
 
 Recorded answers come from ``tests/fixtures``: the invalid-key answer
 (``get_regions/invalid_key.json``, sent with a made-up key on 2026-10-25) and the
-quota headers of the keyed answers. GATS has no recorded 429: the gateway's 429 and its
-``NOT_FOUND`` 404 are built in the shape api.data.gov documents and sdk-usda-psd recorded
-(its ``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), and every such test
-says so. The gateway's mapping and its quota policy are core's (``xippios.core.data_gov``,
-sdk-core ADR-0032, sdk-core ADR-0037) and are tested there; this module checks that the
-package installs them, that the policy reads a 429 on a GATS path, and that ``classify``
-shapes core's retries of a 429.
+quota headers of the keyed answers. GATS has no recorded 429: the gateway's 429 is built in
+the shape api.data.gov documents and sdk-usda-psd recorded (its
+``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), and every such test says so.
+The gateway and its quota policy are the shared package's (``xippios.usda.fas``'s
+``Gateway``, sdk-core ADR-0032, sdk-core ADR-0037), whose tests hold its answers, the key's
+codes, the policy's headers and window, a 429 classified on its own and core's retries of a
+429; this module checks that the package installs them, that the policy reads a 429 through
+the package's client, that GATS's own answers fall through ``classify``, and which answers
+the cache keeps and for how long.
 """
 
-import dataclasses
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,16 +21,12 @@ import httpx
 import pytest
 import respx
 from xippios.core import (
-    AsyncClient,
     AuthError,
     MemoryCache,
-    NotFoundError,
     RateLimitError,
-    RetryPolicy,
     ValidationError,
 )
 from xippios.core.client import CachedResponse, cache_key
-from xippios.core.data_gov import API_KEY_ENV, Gateway
 from xippios.core.testing import (
     CLOCK_SLACK,
     ReplayFixture,
@@ -38,30 +35,27 @@ from xippios.core.testing import (
     response_from_fixture,
     sent_urls,
 )
+from xippios.usda.fas import API_KEY_ENV, Gateway
 
 from xippios.usda.gats import api
 from xippios.usda.gats._client import (
     BASE_URL,
     CACHE_MAX_BYTES,
-    CACHED_PATHS,
     COMMODITIES_PATH,
     COMMODITIES_TTL,
+    LIFETIMES,
     RATE_LIMIT,
     RELEASE_DATES_PATHS,
     RELEASE_DATES_TTL,
+    SOURCE,
     UN_RELEASE_DATES_PATHS,
     UN_RELEASE_DATES_TTL,
-    PathCaches,
     auth,
     cache,
-    cache_filter,
     classify,
     client,
-    commodities_cache,
     config,
     gateway,
-    release_dates_cache,
-    un_release_dates_cache,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -80,7 +74,9 @@ def recorded(endpoint: str, case: str) -> httpx.Response:
 def synthesised(
     status: int, body: object, headers: dict[str, str] | None = None, path: str = REGIONS
 ) -> httpx.Response:
-    """NOT RECORDED as such: an answer in the shape api.data.gov documents and sends."""
+    """NOT RECORDED as such: an answer in the shape api.data.gov documents and sends.
+    It is composed from what the gateway documents (conventions §10, kind 2).
+    """
     return httpx.Response(
         status,
         json=body,
@@ -98,38 +94,31 @@ OVER_RATE_LIMIT = {
         ),
     }
 }
-"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway."""
+"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway
+(conventions §10, kind 2)."""
 SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
-"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
-NOT_FOUND = {
-    "error": {
-        "code": "NOT_FOUND",
-        "message": "The requested URL was not found on this server.",
-    }
-}
-"""NOT RECORDED: api.data.gov's documented NOT_FOUND body."""
+"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429 (conventions §10,
+kind 2)."""
 
 
 def test_the_client_is_wired_for_the_gateway() -> None:
-    """One request per second, gats's classify, and the gateway's quota policy, one per
-    process, on api.data.gov's ``x-ratelimit-*`` headers, which count the rolling hour,
-    not a pace; one hour is the wait without ``Retry-After`` (sdk-core ADR-0032, sdk-core ADR-0033,
-    sdk-core ADR-0037)."""
+    """One request per second, gats's classify, and the shared package's gateway installed: its
+    key auth and its one quota policy per process for the shared key, whose headers and window
+    the shared package's tests hold (sdk-core ADR-0032, sdk-core ADR-0037). The gateway is built
+    with no data path, since GATS answers a month or a year without data with ``[]`` and never
+    with FAS's empty 404, so it maps no answer of GATS's to ``NoDataForYear``."""
     assert (RATE_LIMIT.per_minute, RATE_LIMIT.capacity) == (60, 1)
     assert config.rate_limit is RATE_LIMIT
     assert config.classify is classify
     assert client.config is config
-    policy = Gateway.policy
-    assert config.observe == policy.observe, "installed: every answer reaches the policy"
-    assert config.before_request == policy.before_request
-    assert (policy.limit_header, policy.remaining_header) == (
-        "x-ratelimit-limit",
-        "x-ratelimit-remaining",
-    )
-    assert (policy.window, policy.source) == (3600.0, "api.data.gov")
-    assert gateway.source == "usda-gats"
+    assert config.base_url == BASE_URL == "https://api.fas.usda.gov"
+    assert gateway.source == SOURCE == "usda-gats"
+    assert gateway.data_path is None, "no data path: GATS never answers FAS's empty 404"
+    assert gateway.policy is Gateway.policy, "one policy per process for the shared key"
+    assert config.observe == Gateway.policy.observe, "installed: every answer reaches it"
+    assert config.before_request == Gateway.policy.before_request
     assert auth is gateway.auth
-    assert auth.header == "X-Api-Key"
+    assert (auth.location, auth.name) == ("header", "X-Api-Key")
     assert auth.env_var == API_KEY_ENV == "DATA_GOV_API_KEY"  # pragma: allowlist secret
 
 
@@ -161,18 +150,6 @@ def test_keyed_gats_answers_carry_the_hourly_quota(
     assert "x-ratelimit-reset" not in response.headers
 
 
-def test_invalid_key_is_an_auth_error_naming_the_code_and_the_variable() -> None:
-    response = recorded("get_regions", "invalid_key")
-    error = classify(response)
-    assert isinstance(error, AuthError)
-    assert error.status == 403
-    assert "API_KEY_INVALID" in error.message
-    assert API_KEY_ENV in error.message
-    assert "An invalid api_key was supplied. Get one at <host>" in error.message
-    assert "api.fas.usda.gov" not in error.message, "host-free (conventions §5)"
-    assert error.source == "usda-gats"
-
-
 def test_the_recorded_invalid_key_answer_is_the_documented_shape() -> None:
     """The bad-key answer carries api.data.gov's error object and no quota headers: the
     gateway refuses it before counting."""
@@ -184,52 +161,16 @@ def test_the_recorded_invalid_key_answer_is_the_documented_shape() -> None:
     assert "x-ratelimit-limit" not in response.headers
 
 
-@pytest.mark.parametrize(
-    "code",
-    ["API_KEY_MISSING", "API_KEY_DISABLED", "API_KEY_UNAUTHORIZED", "API_KEY_UNVERIFIED"],
-)
-def test_every_documented_key_code_is_an_auth_error(code: str) -> None:
-    """NOT RECORDED: the other documented codes, in the recorded body's shape."""
-    error = classify(synthesised(403, {"error": {"code": code, "message": "documented"}}))
-    assert isinstance(error, AuthError)
-    assert code in error.message
-
-
-def test_a_403_without_a_gateway_code_falls_through_to_core() -> None:
-    assert classify(synthesised(403, {"Message": "Access denied"})) is None
-
-
 @pytest.mark.anyio
 async def test_a_call_raises_auth_error_on_the_recorded_invalid_key(
     replay_fixture: ReplayFixture, placeholder_api_key: str
 ) -> None:
     route = replay_fixture("get_regions", "invalid_key")
     with pytest.raises(AuthError, match="API_KEY_INVALID") as info:
-        await client.get_json(REGIONS)
+        await client.get_answer(REGIONS)
     assert placeholder_api_key not in str(info.value)
     assert route.call_count == 1, "a 403 is never retried"
     assert sent_urls(route) == [f"{BASE_URL}{REGIONS}"]
-
-
-def test_the_gateway_not_found_is_a_not_found_error() -> None:
-    """NOT RECORDED: api.data.gov's documented NOT_FOUND body."""
-    error = classify(synthesised(404, NOT_FOUND))
-    assert isinstance(error, NotFoundError)
-    assert f"no route for {REGIONS} (HTTP 404 NOT_FOUND" in error.message
-    assert "api.fas.usda.gov" not in error.message
-
-
-@pytest.mark.anyio
-async def test_a_call_raises_not_found_error_on_the_gateway_not_found(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """NOT RECORDED: the gateway's NOT_FOUND through the package's client, sent once."""
-    route = respx_mock.get(f"{BASE_URL}/api/gats/nowhere").mock(
-        return_value=httpx.Response(404, json=NOT_FOUND)
-    )
-    with pytest.raises(NotFoundError, match="no route for /api/gats/nowhere"):
-        await client.get_json("/api/gats/nowhere")
-    assert route.call_count == 1
 
 
 def test_an_empty_404_falls_through_to_core() -> None:
@@ -239,42 +180,16 @@ def test_an_empty_404_falls_through_to_core() -> None:
     assert classify(response) is None
 
 
-def test_other_statuses_fall_through_to_core() -> None:
-    assert classify(synthesised(500, {"Message": "An error has occurred."})) is None
-    assert classify(recorded("get_countries", "all")) is None
-
-
-def test_a_429_is_a_rate_limit_error_with_its_retry_after() -> None:
-    """NOT RECORDED here: psd's recorded 429, body and quota headers, on a GATS path."""
-    error = classify(synthesised(429, OVER_RATE_LIMIT, SPENT))
-    assert isinstance(error, RateLimitError)
-    assert error.retry_after == 3151.0
-    assert "OVER_RATE_LIMIT: You have exceeded your rate limit" in error.message
-    assert "api.fas.usda.gov" not in error.message, "host-free (conventions §5)"
-    assert "expected back in 3151 s" in error.message, "no snapshot without the client"
-    assert "retry after" not in error.message, "core's adapters append the retry hint"
-    assert API_KEY_ENV in error.message
-    assert error.source == "usda-gats"
-
-
-def test_429_without_retry_after_falls_back_to_the_quota_window() -> None:
-    """NOT RECORDED: the 429 body without Retry-After or quota headers."""
-    error = classify(synthesised(429, OVER_RATE_LIMIT))
-    assert isinstance(error, RateLimitError)
-    assert error.retry_after == Gateway.policy.window == 3600.0
-    assert "an hourly quota per key" in error.message, "no limit known, none invented"
-    assert "expected back in 3600 s" in error.message
-
-
 @pytest.mark.anyio
 @pytest.mark.rate_limited
 async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, through the package's
-    client. Core's ``observe`` marks the gateway's quota spent until its ``Retry-After``,
-    ``classify`` raises after one request (3151 s is beyond ``backoff_max``) with the
-    snapshot's wait from now, and the next request is refused before it is sent, in the
-    gateway's name. Marked ``rate_limited``: the refusal is the policy's pause, which the
-    plugin turns off."""
+    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
+    documents (conventions §10, kind 2), through the package's client. Core's
+    ``observe`` marks the gateway's quota spent until its ``Retry-After``, ``classify``
+    raises after one request (3151 s is beyond ``backoff_max``) with the snapshot's wait
+    from now, and the next request is refused before it is sent, in the gateway's name.
+    Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns
+    off."""
     route = respx_mock.get(f"{BASE_URL}/api/gats/countries").mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
@@ -294,9 +209,8 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     releases = respx_mock.get(f"{BASE_URL}/api/gats/census/data/exports/dataReleaseDates")
     with pytest.raises(RateLimitError, match="nothing was sent") as refused:
         await api.get_census_export_data_release_info()
-    assert refused.value.message.startswith(
-        "api.data.gov quota of the key in DATA_GOV_API_KEY spent"  # pragma: allowlist secret
-    )
+    assert refused.value.message.startswith("quota spent (")
+    assert API_KEY_ENV not in refused.value.message, "core's subject names no key's variable"
     assert refused.value.source == "api.data.gov"
     assert refused.value.retry_after is not None
     assert 3151 - slack <= refused.value.retry_after <= 3151 + slack
@@ -304,158 +218,86 @@ async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter)
     assert releases.call_count == 0
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("retry_after", "shaped", "attempts"),
-    [("3151", True, 1), (None, True, 1), (None, False, 4)],
-    ids=["with_retry_after", "without_retry_after", "control_without_classify"],
-)
-async def test_core_retries_a_429_only_within_its_backoff(
-    respx_mock: respx.MockRouter, retry_after: str | None, shaped: bool, attempts: int
-) -> None:
-    """NOT RECORDED here: psd's recorded 429, with or without its ``Retry-After``. gats's
-    ``classify`` shapes core's retries (sdk-core ADR-0037): its ``RateLimitError`` carries the wait,
-    ``Retry-After`` or else the one-hour window, counted from the snapshot core's
-    ``observe`` took, so within ``CLOCK_SLACK`` of it read through the client, and beyond
-    ``backoff_max`` (30 s), so a 429 is sent once, with or without the header. The control
-    drops ``classify``: core then retries the 429 without ``Retry-After`` on its status
-    alone, three more times at its short backoff, so this test fails if ``classify`` stops
-    shaping the retries."""
-    sleeps: list[float] = []
-
-    async def fake_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-
-    headers = {
-        name: value
-        for name, value in SPENT.items()
-        if retry_after is not None or name != "Retry-After"
-    }
-    route = respx_mock.get(f"{BASE_URL}{REGIONS}").mock(
-        return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=headers)
-    )
-    quick = dataclasses.replace(config, rate_limit=None)
-    if not shaped:
-        quick = dataclasses.replace(quick, classify=None)
-    with pytest.raises(RateLimitError) as info:
-        await AsyncClient(quick, sleep=fake_sleep).get_json(REGIONS)
-    assert route.call_count == attempts
-    assert len(sleeps) == attempts - 1
-    assert all(seconds <= RetryPolicy().backoff_max for seconds in sleeps)
-    if shaped:
-        wait = float(retry_after or 3600)
-        assert info.value.retry_after is not None
-        slack = CLOCK_SLACK.total_seconds()
-        assert wait - slack <= info.value.retry_after <= wait + slack
-    else:
-        assert info.value.retry_after is None, "core's own mapping: no Retry-After, no wait"
-
-
 def test_the_client_caches_five_paths_and_nothing_else() -> None:
-    """Core's cache on the two Census release-date paths for an hour, the two UN Trade
-    release-date paths for a day, the feed being frozen, and the commodities path for a
-    day (sdk-core ADR-0037's ``cache_filter``, a ``MemoryCache`` per TTL behind ``PathCaches``):
-    the data, the countries and every other path go to the wire. A body of up to 16 MiB
-    is stored, twice core's default (sdk-core ADR-0040, decision 3)."""
+    """Core's one cache with a lifetime per path prefix: the two Census release-date paths for
+    an hour, the two UN Trade release-date paths for a day, the feed being frozen, and the
+    commodities path for a day (sdk-core ADR-0040, decision 3). No other prefix is named, so
+    the data, the countries and every other path go to the wire, as before core 0.5.0. A
+    body of up to 16 MiB is stored, twice core's default."""
     assert config.cache is cache
-    assert config.cache_filter is cache_filter
+    assert isinstance(cache, MemoryCache)
     assert config.cache_max_bytes == CACHE_MAX_BYTES == 16 * 1024 * 1024
-    assert isinstance(cache, PathCaches)
-    assert (release_dates_cache.ttl, release_dates_cache.maxsize) == (RELEASE_DATES_TTL, 2)
-    assert RELEASE_DATES_TTL == 3600.0
-    assert (un_release_dates_cache.ttl, un_release_dates_cache.maxsize) == (
-        UN_RELEASE_DATES_TTL,
-        2,
-    )
-    assert UN_RELEASE_DATES_TTL == 86400.0
-    assert (commodities_cache.ttl, commodities_cache.maxsize) == (COMMODITIES_TTL, 1)
-    assert COMMODITIES_TTL == 86400.0
+    assert (RELEASE_DATES_TTL, UN_RELEASE_DATES_TTL, COMMODITIES_TTL) == (3600.0, 86400.0, 86400.0)
     assert {EXPORT_RELEASES, IMPORT_RELEASES} == RELEASE_DATES_PATHS
     assert {UN_EXPORT_RELEASES, UN_IMPORT_RELEASES} == UN_RELEASE_DATES_PATHS
     assert COMMODITIES_PATH == "/api/gats/commodities"
-    assert {*RELEASE_DATES_PATHS, *UN_RELEASE_DATES_PATHS, COMMODITIES_PATH} == CACHED_PATHS
-    assert cache.by_path == {
-        EXPORT_RELEASES: release_dates_cache,
-        IMPORT_RELEASES: release_dates_cache,
-        UN_EXPORT_RELEASES: un_release_dates_cache,
-        UN_IMPORT_RELEASES: un_release_dates_cache,
-        COMMODITIES_PATH: commodities_cache,
-    }
-    for path, cached in [
-        (EXPORT_RELEASES, True),
-        (IMPORT_RELEASES, True),
-        (UN_EXPORT_RELEASES, True),
-        (UN_IMPORT_RELEASES, True),
-        (COMMODITIES_PATH, True),
-        ("/api/gats/censusExports/partnerCode/CH/year/2026/month/8", False),
-        ("/api/gats/censusImports/partnerCode/CH/year/2026/month/8", False),
-        ("/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8", False),
-        ("/api/gats/UNTradeExports/reporterCode/IC/year/2019", False),
-        ("/api/gats/UNTradeImports/reporterCode/TP/year/2019", False),
-        ("/api/gats/UNTradeReExports/reporterCode/MC/year/2019", False),
-        ("/api/gats/countries", False),
-        ("/api/gats/HS6Commodities", False),
-        (REGIONS, False),
-    ]:
-        assert cache_filter(httpx.Request("GET", f"{BASE_URL}{path}")) is cached, path
+    assert (
+        dict(cache.lifetimes)
+        == dict(LIFETIMES)
+        == {
+            EXPORT_RELEASES: RELEASE_DATES_TTL,
+            IMPORT_RELEASES: RELEASE_DATES_TTL,
+            UN_EXPORT_RELEASES: UN_RELEASE_DATES_TTL,
+            UN_IMPORT_RELEASES: UN_RELEASE_DATES_TTL,
+            COMMODITIES_PATH: COMMODITIES_TTL,
+        }
+    )
+
+
+UNCACHED = [
+    "/api/gats/censusExports/partnerCode/CH/year/2026/month/8",
+    "/api/gats/censusImports/partnerCode/CH/year/2026/month/8",
+    "/api/gats/customsDistrictExports/partnerCode/IC/year/2026/month/8",
+    "/api/gats/UNTradeExports/reporterCode/IC/year/2019",
+    "/api/gats/UNTradeImports/reporterCode/TP/year/2019",
+    "/api/gats/UNTradeReExports/reporterCode/MC/year/2019",
+    "/api/gats/countries",
+    "/api/gats/HS6Commodities",
+    REGIONS,
+]
+"""Paths of the client that no prefix of ``LIFETIMES`` starts, and so are never stored."""
 
 
 def _entry(stored_at: float) -> CachedResponse:
+    """A body that no route serves: an entry for the cache alone, an input of the test."""
     return CachedResponse(status=200, headers=(), content=b"[]", stored_at=stored_at)
 
 
-def test_each_path_keeps_its_own_ttl() -> None:
-    """``PathCaches`` with clocks of its own, routed as the client's: two hours on, the
-    Census release list's entry has expired while the UN Trade release list's and the
-    commodities entry still answer; past a day, they have expired too. A key of no path
-    named, or of a named path with a query, is neither stored nor looked up, and
-    ``by_path`` cannot be changed under the routing."""
+def test_each_path_keeps_its_own_lifetime() -> None:
+    """``LIFETIMES`` in a ``MemoryCache`` with a clock of its own: two hours on, the Census
+    release list's entry has expired while the UN Trade release list's and the commodities
+    entry still answer; past a day, they have expired too. A path that no prefix starts is
+    never stored."""
     now = [1_000_000.0]
-    hourly = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=2, clock=lambda: now[0])
-    un_daily = MemoryCache(ttl=UN_RELEASE_DATES_TTL, maxsize=2, clock=lambda: now[0])
-    daily = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1, clock=lambda: now[0])
-    caches = PathCaches(
-        {EXPORT_RELEASES: hourly, UN_EXPORT_RELEASES: un_daily, COMMODITIES_PATH: daily}
-    )
-    with pytest.raises(TypeError):
-        caches.by_path[REGIONS] = hourly  # type: ignore[index]
-    releases = cache_key("GET", httpx.URL(f"{BASE_URL}{EXPORT_RELEASES}"))
-    un_releases = cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}"))
-    commodities = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}"))
-    other = cache_key("GET", httpx.URL(f"{BASE_URL}{REGIONS}"))
-    queried = cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}", params={"a": "1"}))
-    for key in (releases, un_releases, commodities, other, queried):
-        caches.set(key, _entry(now[0]))
-    assert (len(hourly), len(un_daily), len(daily), len(caches)) == (1, 1, 1, 3), (
-        "the other keys are dropped"
-    )
-    assert caches.get(other) is None
-    assert caches.get(queried) is None
+    store = MemoryCache(lifetimes=LIFETIMES, clock=lambda: now[0])
+    keys = {
+        path: cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
+        for path in (EXPORT_RELEASES, UN_EXPORT_RELEASES, COMMODITIES_PATH, *UNCACHED)
+    }
+    for path, key in keys.items():
+        store.set(key, _entry(now[0]), path=path)
+    assert len(store) == 3, "the data paths and the packaged lists' paths are not stored"
     now[0] += 2 * 3600
-    assert caches.get(releases) is None, "an hour has passed"
-    assert caches.get(un_releases) is not None, "a day has not"
-    assert caches.get(commodities) is not None, "a day has not"
+    assert store.get(keys[EXPORT_RELEASES]) is None, "an hour has passed"
+    assert store.get(keys[UN_EXPORT_RELEASES]) is not None, "a day has not"
+    assert store.get(keys[COMMODITIES_PATH]) is not None, "a day has not"
     now[0] += 86400.0
-    assert caches.get(un_releases) is None
-    assert caches.get(commodities) is None
-    caches.set(commodities, _entry(now[0]))
-    caches.clear()
-    assert len(caches) == 0
+    assert store.get(keys[UN_EXPORT_RELEASES]) is None
+    assert store.get(keys[COMMODITIES_PATH]) is None
 
 
 @pytest.mark.anyio
 async def test_the_commodities_list_lands_in_the_daily_cache(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Through the real client: the commodities answer is stored in the day's cache, a
-    release list in the hour's, and the second commodities call sends nothing and carries
-    the entry's stored time."""
+    """Through the real client: the commodities answer and a release list are stored, and
+    the second commodities call sends nothing and carries the entry's stored time."""
     commodities = replay_fixture("get_commodities", "all")
     replay_fixture("get_census_export_data_release_info", "all")
     first = (await api.get_commodities()).payload
     await api.get_census_export_data_release_info()
-    assert (len(commodities_cache), len(release_dates_cache)) == (1, 1)
-    entry = commodities_cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
+    assert len(cache) == 2, "the commodities list and the release list"
+    entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{COMMODITIES_PATH}")))
     assert entry is not None
     answer = await api.get_commodities()
     again, retrieved_at = answer.payload, answer.retrieved_at
@@ -518,8 +360,8 @@ RELEASE_WRAPPERS = [
 async def test_a_release_list_that_fails_the_models_is_asked_again(
     respx_mock: respx.MockRouter, wrapper: str, path: str
 ) -> None:
-    """NOT RECORDED: a 200 of JSON that is no list of releases, which GATS was never seen
-    to send, to show what the cache does with it (conventions §10). The wrapper parses
+    """NOT RECORDED: a 200 of JSON that is no list of releases, a body of no shape GATS
+    sends, to show what the cache does with it (conventions §10, kind 5). The wrapper parses
     through ``get_answer``, which stores an answer only once it parsed, so the next call
     asks upstream again, where the cache answered the same error without a request until
     its entry expired (https://github.com/xippios/sdk-core/issues/122)."""
@@ -543,12 +385,11 @@ async def test_census_data_is_never_cached(replay_fixture: ReplayFixture) -> Non
 
 
 @pytest.mark.anyio
-async def test_the_un_release_lists_land_in_the_days_store(
+async def test_the_un_release_lists_are_stored_once_each(
     replay_fixture: ReplayFixture,
 ) -> None:
-    """Through the real client: each UN Trade list is an entry of its own day's store,
-    never the Census lists' hour's store nor the commodities list's; the second call
-    sends nothing and says when the entry was stored."""
+    """Through the real client: each UN Trade list is an entry of its own, beside the Census
+    list's; the second call sends nothing and says when the entry was stored."""
     exports = replay_fixture("get_un_trade_export_data_release_info", "all")
     imports = replay_fixture("get_un_trade_import_data_release_info", "all")
     replay_fixture("get_census_export_data_release_info", "all")
@@ -556,13 +397,7 @@ async def test_the_un_release_lists_land_in_the_days_store(
     await api.get_un_trade_import_data_release_info()
     await api.get_census_export_data_release_info()
     assert (exports.call_count, imports.call_count) == (1, 1), "both from the wire"
-    stores = (len(un_release_dates_cache), len(release_dates_cache), len(commodities_cache))
-    assert stores == (2, 1, 0)
-    for path in (UN_EXPORT_RELEASES, UN_IMPORT_RELEASES):
-        key = cache_key("GET", httpx.URL(f"{BASE_URL}{path}"))
-        assert un_release_dates_cache.get(key) is not None, path
-        assert release_dates_cache.get(key) is None, path
-        assert commodities_cache.get(key) is None, path
+    assert len(cache) == 3
     entry = cache.get(cache_key("GET", httpx.URL(f"{BASE_URL}{UN_EXPORT_RELEASES}")))
     assert entry is not None
     answer = await api.get_un_trade_export_data_release_info()
@@ -588,7 +423,8 @@ async def test_un_trade_data_is_never_cached(replay_fixture: ReplayFixture) -> N
 async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path spends the quota; the
+    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
+    documents (conventions §10, kind 2), spends the quota; the
     release list cached before it still answers, since a cache hit returns before the
     quota policy's check (sdk-core ADR-0037), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""
@@ -598,7 +434,7 @@ async def test_a_cached_release_list_answers_while_the_quota_is_spent(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )
     with pytest.raises(RateLimitError):
-        await client.get_json(REGIONS)
+        await client.get_answer(REGIONS)
     cached = (await api.get_census_export_data_release_info()).payload
     assert cached == first
     assert releases.call_count == 1, "answered from the cache"

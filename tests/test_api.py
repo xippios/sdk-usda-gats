@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -74,7 +75,7 @@ def units(record: CensusExport | CustomsDistrictExport) -> tuple[int, int, int, 
 
 async def test_get_countries(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_countries", "all")
-    countries = await api.get_countries()
+    countries = (await api.get_countries()).payload
     assert len(countries) == 322
     by_code = {c.country_code: c for c in countries}
     assert len(by_code) == 322, "no code twice"
@@ -100,7 +101,7 @@ async def test_get_countries(replay_fixture: ReplayFixture) -> None:
 
 async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> None:
     replay_fixture("get_countries", "all")
-    country = (await api.get_countries())[0]
+    country = (await api.get_countries()).payload[0]
     assert country.model_dump(mode="json") == {
         "country_code": "01",
         "region_code": "R99",
@@ -116,14 +117,14 @@ async def test_models_serialise_snake_case(replay_fixture: ReplayFixture) -> Non
 async def test_get_regions(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_regions", "all")
     replay_fixture("get_countries", "all")
-    regions = await api.get_regions()
+    regions = (await api.get_regions()).payload
     assert len(regions) == 15
     assert regions[0] == Region(region_code="R05", region_name="North America")
     by_code = {r.region_code: r.region_name for r in regions}
     assert len(by_code) == 15, "no code twice"
     assert [r.region_code for r in regions] == sorted(by_code), "in code order"
     assert by_code["R40"] == "East Asia"
-    countries = await api.get_countries()
+    countries = (await api.get_countries()).payload
     assert {c.region_code for c in countries} <= set(by_code), "every country's region"
     assert sent_urls(route) == [f"{BASE_URL}/api/gats/regions"]
 
@@ -195,7 +196,7 @@ async def test_get_commodities(replay_fixture: ReplayFixture) -> None:
 async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
     """The HS6 list whole: 2,909 records, 720,749 bytes as a fixture file."""
     route = replay_fixture("get_hs6_commodities", "all")
-    records = await api.get_hs6_commodities()
+    records = (await api.get_hs6_commodities()).payload
     assert len(records) == 2909
     assert records[0] == HS6Commodity(
         hs6_code="010110",
@@ -215,7 +216,7 @@ async def test_get_hs6_commodities(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_units_of_measure", "all")
-    records = await api.get_units_of_measure()
+    records = (await api.get_units_of_measure()).payload
     assert [u.unit_of_measure_id for u in records] == list(range(108)), "0 to 107, no gap"
     by_id = {u.unit_of_measure_id: u for u in records}
     assert by_id[47] == UnitOfMeasure(
@@ -233,7 +234,7 @@ async def test_get_units_of_measure(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_customs_districts(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture("get_customs_districts", "all")
-    records = await api.get_customs_districts()
+    records = (await api.get_customs_districts()).payload
     assert len(records) == 53
     ids = [d.customs_district_id for d in records]
     assert ids == sorted(set(ids)), "in id order, no id twice"
@@ -306,7 +307,7 @@ async def test_get_census_import_release_dates(replay_fixture: ReplayFixture) ->
 async def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
     """One partner-month across all products, whole: 777 records, 153,835 bytes."""
     route = replay_fixture(EXPORTS, "CH_2026_8")
-    records = await api.get_census_exports("CH", 2026, 8)
+    records = (await api.get_census_exports("CH", 2026, 8)).payload
     assert len(records) == 777
     assert records[0] == CensusExport(
         date="202608",
@@ -332,7 +333,7 @@ async def test_get_census_exports(replay_fixture: ReplayFixture) -> None:
 async def test_get_census_import(replay_fixture: ReplayFixture) -> None:
     """The largest answer in the family so far: 3,294 records, 1,099,638 bytes."""
     route = replay_fixture("get_census_import", "CH_2026_8")
-    records = await api.get_census_import("CH", 2026, 8)
+    records = (await api.get_census_import("CH", 2026, 8)).payload
     assert len(records) == 3294
     assert records[0] == CensusImport(
         consumption_quantity1=Decimal("9640.0"),
@@ -393,7 +394,7 @@ async def test_the_census_and_district_answers_carry_the_models_fields_in_order(
 
 async def test_get_census_re_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(RE_EXPORTS, "IC_2026_8")
-    records = await api.get_census_re_exports("IC", 2026, 8)
+    records = (await api.get_census_re_exports("IC", 2026, 8)).payload
     assert len(records) == 12
     assert records[0] == CensusExport(
         date="202608",
@@ -417,7 +418,7 @@ async def test_get_census_re_exports(replay_fixture: ReplayFixture) -> None:
 
 async def test_get_customs_districts_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_EXPORTS, "IC_2026_8")
-    records = await api.get_customs_districts_exports("IC", 2026, 8)
+    records = (await api.get_customs_districts_exports("IC", 2026, 8)).payload
     assert len(records) == 107
     assert records[0] == CustomsDistrictExport(
         customs_district_id=1,
@@ -466,9 +467,9 @@ async def test_get_customs_districts_exports(replay_fixture: ReplayFixture) -> N
 )
 async def test_district_records_add_up_to_the_census_record_of_their_code(
     replay_fixture: ReplayFixture,
-    wrapper: Callable[[str, int, int], Awaitable[list[CustomsDistrictExport]]],
+    wrapper: Callable[[str, int, int], Awaitable[Answer[list[CustomsDistrictExport]]]],
     district_endpoint: str,
-    national: Callable[[str, int, int], Awaitable[list[CensusExport]]],
+    national: Callable[[str, int, int], Awaitable[Answer[list[CensusExport]]]],
     national_endpoint: str,
     partner_code: str,
     count: int,
@@ -480,8 +481,8 @@ async def test_district_records_add_up_to_the_census_record_of_their_code(
     case = f"{partner_code}_2026_8"
     route = replay_fixture(district_endpoint, case)
     replay_fixture(national_endpoint, case)
-    by_district = await wrapper(partner_code, 2026, 8)
-    by_code = {r.hs10_code: r for r in await national(partner_code, 2026, 8)}
+    by_district = (await wrapper(partner_code, 2026, 8)).payload
+    by_code = {r.hs10_code: r for r in (await national(partner_code, 2026, 8)).payload}
     assert len(by_district) == count
     totals: defaultdict[str, list[Decimal]] = defaultdict(lambda: [Decimal(0)] * 3)
     for r in by_district:
@@ -496,7 +497,7 @@ async def test_district_records_add_up_to_the_census_record_of_their_code(
 
 async def test_get_customs_districts_exports_for_china(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_EXPORTS, "CH_2026_8")
-    records = await api.get_customs_districts_exports("CH", 2026, 8)
+    records = (await api.get_customs_districts_exports("CH", 2026, 8)).payload
     assert len(records) == 1697
     assert len({r.customs_district_id for r in records}) == 31
     assert len({r.hs10_code for r in records}) == 777, "the codes of the Census exports"
@@ -508,7 +509,7 @@ async def test_get_customs_districts_exports_for_china(replay_fixture: ReplayFix
 
 async def test_get_customs_districts_imports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_IMPORTS, "IC_2026_8")
-    records = await api.get_customs_districts_imports("IC", 2026, 8)
+    records = (await api.get_customs_districts_imports("IC", 2026, 8)).payload
     assert len(records) == 123
     assert records[0] == CustomsDistrictImport(
         customs_district_id=1,
@@ -540,7 +541,7 @@ async def test_get_customs_districts_imports(replay_fixture: ReplayFixture) -> N
 
 async def test_get_customs_districts_re_exports(replay_fixture: ReplayFixture) -> None:
     route = replay_fixture(DISTRICT_RE_EXPORTS, "IC_2026_8")
-    records = await api.get_customs_districts_re_exports("IC", 2026, 8)
+    records = (await api.get_customs_districts_re_exports("IC", 2026, 8)).payload
     assert len(records) == 13
     assert records[0] == CustomsDistrictExport(
         customs_district_id=1,
@@ -580,18 +581,18 @@ async def test_the_lists_name_every_unit_district_and_hs6_code_the_answers_carry
         (DISTRICT_RE_EXPORTS, "IC_2026_8"),
     ]:
         replay_fixture(endpoint, case)
-    unit_ids = {u.unit_of_measure_id for u in await api.get_units_of_measure()}
-    district_ids = {d.customs_district_id for d in await api.get_customs_districts()}
-    hs6_codes = {c.hs6_code for c in await api.get_hs6_commodities()}
+    unit_ids = {u.unit_of_measure_id for u in (await api.get_units_of_measure()).payload}
+    district_ids = {d.customs_district_id for d in (await api.get_customs_districts()).payload}
+    hs6_codes = {c.hs6_code for c in (await api.get_hs6_commodities()).payload}
     census: list[CensusExport | CensusImport] = [
-        *await api.get_census_exports("CH", 2026, 8),
-        *await api.get_census_import("CH", 2026, 8),
-        *await api.get_census_re_exports("IC", 2026, 8),
+        *(await api.get_census_exports("CH", 2026, 8)).payload,
+        *(await api.get_census_import("CH", 2026, 8)).payload,
+        *(await api.get_census_re_exports("IC", 2026, 8)).payload,
     ]
     districts: list[CustomsDistrictExport | CustomsDistrictImport] = [
-        *await api.get_customs_districts_exports("IC", 2026, 8),
-        *await api.get_customs_districts_imports("IC", 2026, 8),
-        *await api.get_customs_districts_re_exports("IC", 2026, 8),
+        *(await api.get_customs_districts_exports("IC", 2026, 8)).payload,
+        *(await api.get_customs_districts_imports("IC", 2026, 8)).payload,
+        *(await api.get_customs_districts_re_exports("IC", 2026, 8)).payload,
     ]
     records = [*census, *districts]
     assert {
@@ -629,7 +630,7 @@ async def test_the_lists_name_every_unit_district_and_hs6_code_the_answers_carry
 )
 async def test_the_partner_code_is_quoted_into_the_path(
     respx_mock: respx.MockRouter,
-    wrapper: Callable[[str, int, int], Awaitable[object]],
+    wrapper: Callable[[str, int, int], Awaitable[Answer[list[Any]]]],
     path: str,
 ) -> None:
     """A slash in the partner code is sent as ``%2F``, so it stays one path segment.
@@ -637,11 +638,13 @@ async def test_the_partner_code_is_quoted_into_the_path(
     No GATS code holds a slash, and a task refuses one before any call
     (``params.validate_partner_code``); this checks the wrapper alone, so the route answers
     ``[]`` and no fixture is needed. respx matches the decoded path, which an unquoted
-    slash would match too: ``sent_urls`` is what shows the quoting.
+    slash would match too: ``sent_urls`` is what shows the quoting. NOT RECORDED here:
+    GATS's recorded empty answer, ``[]``, served at a path no recording holds, for a test
+    that asserts only what was sent (conventions §10, kind 3).
     """
     url = f"{BASE_URL}/api/gats/{path}/partnerCode/C%2FH/year/2026/month/8"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    assert await wrapper("C/H", 2026, 8) == []
+    assert (await wrapper("C/H", 2026, 8)).payload == []
     assert sent_urls(route) == [url]
 
 
@@ -660,7 +663,7 @@ async def test_unknown_partner_future_month_and_no_trade_all_answer_an_empty_lis
     release and a listed partner without trade (Bouvet Island) answer alike, HTTP 200 with
     ``[]``; nothing in the answer tells them apart."""
     route = replay_fixture(EXPORTS, case)
-    assert await api.get_census_exports(partner_code, year, month) == []
+    assert (await api.get_census_exports(partner_code, year, month)).payload == []
     assert sent_urls(route) == [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/{partner_code}/year/{year}/month/{month}"
     ]
@@ -688,7 +691,9 @@ async def test_a_month_out_of_range_is_an_empty_404_and_a_not_found_error(
 
 
 async def test_classify_leaves_every_census_probe_to_core(fixtures_dir: Path) -> None:
-    """No GATS-specific mapping yet: the Census answers fall through ``classify``."""
+    """No GATS-specific mapping yet: the Census answers fall through ``classify``. Each
+    recorded answer is rebuilt in memory for ``classify`` to read (conventions §10, kind 3).
+    """
     for case in ("month_0", "month_13", "unknown_partner", "future_month"):
         fixture = load_fixture(fixtures_dir / EXPORTS / f"{case}.json")
         response = httpx.Response(
@@ -716,7 +721,11 @@ async def test_product_type_members_are_the_release_records_codes(
 
 
 async def test_an_unknown_product_type_code_still_parses() -> None:
-    """``product_type`` stays text: a code the enum does not name never fails an answer."""
+    """``product_type`` stays text: a code the enum does not name never fails an answer.
+
+    The record is an input of the test, not an answer from GATS: a literal given to the
+    model, which no route serves and no ``classify`` reads.
+    """
     record = DataReleaseInfo.model_validate(
         {
             "statisticalYearMonth": "202608",
@@ -828,7 +837,7 @@ async def test_the_un_release_lists_name_reporters_by_gats_country_code(
     replay_fixture("get_countries", "all")
     replay_fixture(UN_EXPORT_RELEASES, "all")
     replay_fixture(UN_IMPORT_RELEASES, "all")
-    countries = {c.country_code: c for c in await api.get_countries()}
+    countries = {c.country_code: c for c in (await api.get_countries()).payload}
     exports = (await api.get_un_trade_export_data_release_info()).payload
     imports = (await api.get_un_trade_import_data_release_info()).payload
     releases = [*exports, *imports]
@@ -852,7 +861,7 @@ async def test_get_un_trade_exports(replay_fixture: ReplayFixture) -> None:
     """One reporter-year across all partners and HS6 codes, whole: 3,980 records,
     1,005,809 bytes as a fixture file, for Iceland in 2019."""
     route = replay_fixture(UN_EXPORTS, "IC_2019")
-    records = await api.get_un_trade_exports("IC", "2019")
+    records = (await api.get_un_trade_exports("IC", "2019")).payload
     assert len(records) == 3980
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -885,7 +894,7 @@ async def test_get_un_trade_imports(replay_fixture: ReplayFixture) -> None:
     """Sao Tome and Principe in 2019: 2,377 records, 597,815 bytes as a fixture file.
     Iceland's 2019 imports, 23,396 records and 5,180,537 bytes of JSON, are not kept."""
     route = replay_fixture(UN_IMPORTS, "TP_2019")
-    records = await api.get_un_trade_imports("TP", "2019")
+    records = (await api.get_un_trade_imports("TP", "2019")).payload
     assert len(records) == 2377
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -912,7 +921,7 @@ async def test_get_un_trade_imports(replay_fixture: ReplayFixture) -> None:
 async def test_get_un_trade_re_exports(replay_fixture: ReplayFixture) -> None:
     """Macau in 2019: 421 records, 106,083 bytes as a fixture file, every quantity 0."""
     route = replay_fixture(UN_RE_EXPORTS, "MC_2019")
-    records = await api.get_un_trade_re_exports("MC", "2019")
+    records = (await api.get_un_trade_re_exports("MC", "2019")).payload
     assert len(records) == 421
     assert records[0] == UNTradeRecord(
         year="2019",
@@ -938,7 +947,7 @@ async def test_iceland_has_no_un_re_exports_for_2019(replay_fixture: ReplayFixtu
     """As recorded: a reporter with 2019 exports and imports answers HTTP 200 with ``[]``
     for its 2019 re-exports; re-exports have no release list to tell."""
     route = replay_fixture(UN_RE_EXPORTS, "IC_2019")
-    assert await api.get_un_trade_re_exports("IC", "2019") == []
+    assert (await api.get_un_trade_re_exports("IC", "2019")).payload == []
     assert sent_urls(route) == [f"{BASE_URL}/api/gats/UNTradeReExports/reporterCode/IC/year/2019"]
 
 
@@ -972,14 +981,14 @@ async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
     replay_fixture(UN_EXPORTS, "IC_2019")
     replay_fixture(UN_IMPORTS, "TP_2019")
     replay_fixture(UN_RE_EXPORTS, "MC_2019")
-    countries = {c.country_code: c for c in await api.get_countries()}
-    hs6_codes = {c.hs6_code for c in await api.get_hs6_commodities()}
-    unit_ids = {u.unit_of_measure_id for u in await api.get_units_of_measure()}
-    exports = await api.get_un_trade_exports("IC", "2019")
+    countries = {c.country_code: c for c in (await api.get_countries()).payload}
+    hs6_codes = {c.hs6_code for c in (await api.get_hs6_commodities()).payload}
+    unit_ids = {u.unit_of_measure_id for u in (await api.get_units_of_measure()).payload}
+    exports = (await api.get_un_trade_exports("IC", "2019")).payload
     records = [
         *exports,
-        *await api.get_un_trade_imports("TP", "2019"),
-        *await api.get_un_trade_re_exports("MC", "2019"),
+        *(await api.get_un_trade_imports("TP", "2019")).payload,
+        *(await api.get_un_trade_re_exports("MC", "2019")).payload,
     ]
     codes = {r.reporter_country_code for r in records} | {r.partner_country_code for r in records}
     assert codes <= set(countries)
@@ -1013,15 +1022,17 @@ async def test_the_lists_name_every_code_and_unit_the_un_answers_carry(
 )
 async def test_the_reporter_code_and_year_are_quoted_into_the_path(
     respx_mock: respx.MockRouter,
-    wrapper: Callable[[str, str], Awaitable[object]],
+    wrapper: Callable[[str, str], Awaitable[Answer[list[Any]]]],
     path: str,
 ) -> None:
     """A slash in the reporter code or in the year, both text, is sent as ``%2F``, so each
     stays one path segment; the route answers ``[]`` and no fixture is needed. respx
-    matches the decoded path: ``sent_urls`` is what shows the quoting."""
+    matches the decoded path: ``sent_urls`` is what shows the quoting. NOT RECORDED here:
+    GATS's recorded empty answer served at a path no recording holds, for a test that
+    asserts only what was sent (conventions §10, kind 3)."""
     url = f"{BASE_URL}/api/gats/{path}/reporterCode/I%2FC/year/20%2F19"
     route = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
-    assert await wrapper("I/C", "20/19") == []
+    assert (await wrapper("I/C", "20/19")).payload == []
     assert sent_urls(route) == [url]
 
 
@@ -1041,7 +1052,7 @@ async def test_unknown_reporter_future_and_unreleased_years_answer_an_empty_list
     HTTP 200 with ``[]``, as Iceland's 2019 re-exports do; nothing in the answer tells them
     apart."""
     route = replay_fixture(UN_EXPORTS, case)
-    assert await api.get_un_trade_exports(reporter_code, year) == []
+    assert (await api.get_un_trade_exports(reporter_code, year)).payload == []
     assert sent_urls(route) == [
         f"{BASE_URL}/api/gats/UNTradeExports/reporterCode/{reporter_code}/year/{year}"
     ]
@@ -1068,7 +1079,8 @@ async def test_a_year_that_is_not_a_number_is_an_empty_404_and_a_not_found_error
 
 
 async def test_classify_leaves_every_un_probe_to_core(fixtures_dir: Path) -> None:
-    """No GATS-specific mapping for the UN Trade answers either."""
+    """No GATS-specific mapping for the UN Trade answers either. Each recorded answer is
+    rebuilt in memory for ``classify`` to read (conventions §10, kind 3)."""
     for case in ("unknown_reporter", "future_year", "unreleased_year", "year_text"):
         fixture = load_fixture(fixtures_dir / UN_EXPORTS / f"{case}.json")
         response = httpx.Response(
@@ -1094,7 +1106,11 @@ async def test_the_un_release_lists_carry_the_product_type_codes_too(
 
 
 async def test_an_unknown_un_product_type_code_still_parses() -> None:
-    """``UNTradeDataReleaseInfo.product_type`` stays text, as the Census record's does."""
+    """``UNTradeDataReleaseInfo.product_type`` stays text, as the Census record's does.
+
+    The record is an input of the test, not an answer from GATS: a literal given to the
+    model, which no route serves and no ``classify`` reads.
+    """
     record = UNTradeDataReleaseInfo.model_validate(
         {
             "statisticalYear": "2019",
@@ -1130,3 +1146,42 @@ async def test_a_cached_wrapper_returns_core_s_answer(
     assert len(answer.payload) == count
     assert all(isinstance(record, model) for record in answer.payload)
     assert answer.retrieved_at.tzinfo is UTC
+
+
+DATA_WRAPPERS: list[tuple[str, tuple[object, ...], str, type[UpstreamModel]]] = [
+    ("get_census_exports", ("CH", 2026, 8), "CH_2026_8", CensusExport),
+    ("get_census_import", ("CH", 2026, 8), "CH_2026_8", CensusImport),
+    ("get_census_re_exports", ("IC", 2026, 8), "IC_2026_8", CensusExport),
+    ("get_customs_districts_exports", ("IC", 2026, 8), "IC_2026_8", CustomsDistrictExport),
+    ("get_customs_districts_imports", ("IC", 2026, 8), "IC_2026_8", CustomsDistrictImport),
+    ("get_customs_districts_re_exports", ("IC", 2026, 8), "IC_2026_8", CustomsDistrictExport),
+    ("get_un_trade_exports", ("IC", "2019"), "IC_2019", UNTradeRecord),
+    ("get_un_trade_imports", ("TP", "2019"), "TP_2019", UNTradeRecord),
+    ("get_un_trade_re_exports", ("MC", "2019"), "MC_2019", UNTradeRecord),
+    ("get_countries", (), "all", Country),
+    ("get_customs_districts", (), "all", CustomsDistrict),
+    ("get_hs6_commodities", (), "all", HS6Commodity),
+    ("get_regions", (), "all", Region),
+    ("get_units_of_measure", (), "all", UnitOfMeasure),
+]
+"""The fourteen wrappers that answered a list before core 0.5.0, each with a recorded case."""
+
+
+@pytest.mark.parametrize(("wrapper", "args", "case", "model"), DATA_WRAPPERS)
+async def test_every_other_wrapper_returns_core_s_answer_too(
+    replay_fixture: ReplayFixture,
+    wrapper: str,
+    args: tuple[object, ...],
+    case: str,
+    model: type[UpstreamModel],
+) -> None:
+    """The fourteen wrappers read with ``get_answer`` as the five cached ones do, so each
+    returns core's ``Answer``: its records as ``payload`` and the time the answer arrived
+    as ``retrieved_at``, which a task reports as ``meta.retrieved_at`` (conventions §4)."""
+    replay_fixture(wrapper, case)
+    before = datetime.now(UTC)
+    answer = await getattr(api, wrapper)(*args)
+    assert isinstance(answer, Answer)
+    assert answer.payload
+    assert all(isinstance(record, model) for record in answer.payload)
+    assert before <= answer.retrieved_at <= datetime.now(UTC)

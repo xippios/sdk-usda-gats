@@ -11,27 +11,31 @@ the district of the customs-district data operations. Error shapes are mapped on
 ``xippios.usda.gats._client.classify``.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import CustomsDistrict
 
 __all__ = ["get_customs_districts"]
 
 
-async def get_customs_districts() -> list[CustomsDistrict]:
+async def get_customs_districts() -> Answer[list[CustomsDistrict]]:
     """Call ``GATSData_GetCustomsDistricts``.
 
     Returns:
-        Every customs district, in upstream order (by id), one ``CustomsDistrict`` per
-        record, e.g.
+        Core's ``Answer``: as ``payload`` every customs district, in upstream order (by id), one
+        ``CustomsDistrict`` per record, e.g.
             ``CustomsDistrict(customs_district_id=10,
             customs_district_name="NEW YORK, N.Y.", customs_district_region_code="EC",
-            customs_district_region_name="EAST COAST DISTRICTS")``
+            customs_district_region_name="EAST COAST DISTRICTS")``,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
     """
-    raw = await client.get_json("/api/gats/customsDistricts")
-    return parse(list[CustomsDistrict], raw, source=SOURCE, endpoint="GATSData_GetCustomsDistricts")
+    return await client.get_answer(
+        "/api/gats/customsDistricts",
+        parse=list[CustomsDistrict],
+        endpoint="GATSData_GetCustomsDistricts",
+    )

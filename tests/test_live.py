@@ -1,69 +1,82 @@
 """Live smoke tests: skipped unless XIPPIOS_LIVE_TESTS=1 (conventions §10).
 
-One live smoke test per task function, twenty tasks in all, twenty-six keyed calls.
-Each data task spends one call for its month or year, and its release list once per flow
-and program: the tests share the client's cache, so ``get_census_exports`` fetches the
-Census exports list and ``get_census_imports`` the imports list, and
-``get_census_release_dates``, the re-export tasks, the customs-district tasks and the
-three series answer their check from the cache; ``get_un_exports`` and
-``get_un_imports`` fetch the two UN Trade lists, and ``get_un_reexports`` and
-``get_un_release_dates`` answer from them. The export series asks for Iceland from June
-to August 2026, three data calls, the import and re-export series from July to August,
-two data calls each.
-The Census data tasks ask for Iceland (``"IC"``), a listed partner with modest trade, so the
-nightly run stays light, in August 2026, released on 2026-10-06; ``vintage`` is that
-month's release time as upstream writes it, a date and a time without a zone. The UN
-Trade tasks ask for the reporter-years the fixtures hold, all of statistical year 2019:
-Iceland's exports of chapter 03, Sao Tome and Principe's imports, Macau's re-exports, and
-Iceland's years in the exports release list. The UN Trade feed is frozen, its newest
-release dated 2021-01-18 as recorded on 2026-10-26, so these tests assert what the
-answers show, codes from the packaged lists included, and never newer data. The five
-packaged lists answer without a call, so their test fetches each list through its
-endpoint wrapper, one call each, and checks that the packaged records equal it: the
-freshness check ``reference/README.md`` promises. A difference fails the test naming what
-is gone and what is new; ``/refresh-reference-data`` then refreshes the package.
-``list_commodities`` fetches the HS10 list live, one call of about 7.6 MB. The tests
-record what they answered as test properties (``--junitxml`` shows them), never a key.
-Next to them, the template's reachability check, ``test_upstream_answers``, sends no key:
-a plain request to ``BASE_URL`` that spends no keyed call.
+Each task that sends a request has a live smoke test, fifteen of the twenty tasks: the six
+Census data tasks, the three series, ``get_census_release_dates``, the three UN Trade data
+tasks, ``get_un_release_dates`` and ``list_commodities``. Each data task spends one call for
+its month or year, and its release list once per flow and program: the tests share the
+client's cache, so ``get_census_exports`` fetches the Census exports list and
+``get_census_imports`` the imports list, and ``get_census_release_dates``, the re-export
+tasks, the customs-district tasks and the three series answer their check from the cache;
+``get_un_exports`` and ``get_un_imports`` fetch the two UN Trade lists, and
+``get_un_reexports`` and ``get_un_release_dates`` answer from them. The export series asks
+for Iceland from June to August 2026, three data calls, the import and re-export series from
+July to August, two data calls each. The Census data tasks ask for Iceland (``"IC"``), a
+listed partner with modest trade, so the nightly run stays light, in August 2026, released on
+2026-10-06; ``vintage`` is that month's release time as upstream writes it, a date and a time
+without a zone. The UN Trade tasks ask for the reporter-years the fixtures hold, all of
+statistical year 2019: Iceland's exports of chapter 03, Sao Tome and Principe's imports,
+Macau's re-exports, and Iceland's years in the exports release list. The UN Trade feed is
+frozen, its newest release dated 2021-01-18 as recorded on 2026-10-26, so these tests assert
+what the answers show, codes from the packaged lists included, and never newer data.
+``list_commodities`` fetches the HS10 list live, one call of about 7.6 MB.
+
+The five other list tasks, ``list_regions``, ``list_countries``, ``list_hs6_commodities``,
+``list_units_of_measure`` and ``list_customs_districts``, answer from the packaged lists and
+send no request, so no live test calls them: their data is held against upstream by core's
+nightly comparison of the packaged lists, which fetches each list of ``LIVE_LISTS`` through
+its wrapper, one keyed call each, and fails on a code gone, new or changed, naming the codes
+and never a record (sdk-core ADR-0055), the signal to run ``/refresh-reference-data``. The
+tests record what they answered as test properties (``--junitxml`` shows them), never a key.
+Core's testing plugin prints the run's requests as ``requests sent by the live run: <n>``,
+the count in the log of ``live.yml`` that ``/release-prep`` cites; core's response cache
+answers a second read of a path within its lifetime, so the run sends fewer requests than
+its calls.
 """
 
-import json
 import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-import httpx
 import pytest
-from xippios.core import PackagedList, ResultMeta, UpstreamModel
-from xippios.core.data_gov import Gateway
+from xippios.core import PackagedCodes, PackagedList, ResultMeta
+from xippios.core.testing.live import *  # noqa: F403
+from xippios.usda.fas import Gateway
 
 from xippios.usda.gats import api, tasks
-from xippios.usda.gats._client import BASE_URL, config
+from xippios.usda.gats._client import SOURCE
 from xippios.usda.gats.models import ProductType
 from xippios.usda.gats.params import PACKAGE, validate_partner_code
+
+
+def _codes(name: str, code: str, label: str) -> PackagedCodes:
+    """The packaged list ``name`` declared by its code field and its name field."""
+    return PackagedList.load(PACKAGE, name).codes(code, label, source=SOURCE)
+
+
+LIVE_LISTS = {  # each packaged list compared, by its file reference/<name>.json
+    "regions": (_codes("regions", "regionCode", "regionName"), api.get_regions),
+    "countries": (_codes("countries", "countryCode", "countryName"), api.get_countries),
+    "HS6Commodities": (
+        _codes("HS6Commodities", "hS6Code", "commodityName"),
+        api.get_hs6_commodities,
+    ),
+    "unitsOfMeasure": (
+        _codes("unitsOfMeasure", "unitOfMeasureId", "unitOfMeasureName"),
+        api.get_units_of_measure,
+    ),
+    "customsDistricts": (
+        _codes("customsDistricts", "customsDistrictId", "customsDistrictName"),
+        api.get_customs_districts,
+    ),
+}
+NO_LIVE_LIST: dict[str, str] = {}  # every packaged list is compared
 
 pytestmark = [pytest.mark.live, pytest.mark.anyio]
 
 PARTNER = validate_partner_code("IC")  # Iceland, in the packaged countries list
 YEAR, MONTH = 2026, 8
 RELEASE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
-
-
-async def test_upstream_answers() -> None:
-    """The base URL answers without a server error (sdk-template's reachability check).
-
-    A plain request, not the package's client, so no key goes out and it spends no keyed
-    call; a keyed gateway's answer to it (a 403 or a 404, say) still shows the host is up.
-    """
-    async with httpx.AsyncClient(
-        headers={"User-Agent": config.user_agent},
-        timeout=config.timeouts.to_httpx(),
-        follow_redirects=True,
-    ) as http:
-        response = await http.get(BASE_URL)
-    assert response.status_code < 500
 
 
 def _vintage_is_a_release_time(vintage: str | None) -> None:
@@ -230,38 +243,6 @@ async def test_list_commodities_live(record_property: Callable[[str, object], No
     assert (result.meta.vintage, result.meta.published_at) == (None, None)
     assert result.meta.endpoint == "GATSData_GetCommodities"
     record_property("records", len(result.data))
-
-
-def _keyed(records: list[Any]) -> list[str]:
-    """Each record as sorted JSON: comparable by value without a quadratic scan."""
-    return [json.dumps(r.model_dump(mode="json"), sort_keys=True) for r in records]
-
-
-LISTS = [
-    ("list_regions", "get_regions", "GATSData_GetRegions"),
-    ("list_countries", "get_countries", "GATSData_GetCountries"),
-    ("list_hs6_commodities", "get_hs6_commodities", "GATSData_GetHS6Commodities"),
-    ("list_units_of_measure", "get_units_of_measure", "GATSData_GetUnitsOfMeasure"),
-    ("list_customs_districts", "get_customs_districts", "GATSData_GetCustomsDistricts"),
-]
-
-
-@pytest.mark.parametrize(("task", "wrapper", "endpoint"), LISTS, ids=[task for task, *_ in LISTS])
-async def test_packaged_list_equals_the_live_list(task: str, wrapper: str, endpoint: str) -> None:
-    packaged = await getattr(tasks, f"{task}_async")()
-    live: list[UpstreamModel] = await getattr(api, wrapper)()
-    ours, theirs = _keyed(packaged.data), _keyed(live)
-    stale = sorted(set(ours) - set(theirs))
-    new = sorted(set(theirs) - set(ours))
-    behind = bool(stale or new)
-    assert not behind, (
-        f"{task} is behind upstream (packaged {packaged.meta.retrieved_at:%Y-%m-%d}): "
-        f"{len(stale)} packaged records upstream no longer sends, {len(new)} upstream "
-        "records the package lacks; "
-        f"first of each: {stale[:5]}, {new[:5]}. Refresh with /refresh-reference-data."
-    )
-    assert ours == theirs, f"{task}: the same records in another order"
-    assert packaged.meta.endpoint == endpoint
 
 
 UN_YEAR = 2019

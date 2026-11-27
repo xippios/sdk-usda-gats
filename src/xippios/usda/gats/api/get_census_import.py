@@ -14,15 +14,15 @@ were not repeated here.
 
 from urllib.parse import quote
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import CensusImport
 
 __all__ = ["get_census_import"]
 
 
-async def get_census_import(partner_code: str, year: int, month: int) -> list[CensusImport]:
+async def get_census_import(partner_code: str, year: int, month: int) -> Answer[list[CensusImport]]:
     """Call ``GATSData_GetCensusImport``.
 
     Args:
@@ -31,8 +31,9 @@ async def get_census_import(partner_code: str, year: int, month: int) -> list[Ce
         month: ``month``, e.g. ``8`` (August).
 
     Returns:
-        One ``CensusImport`` per HS10 code, in upstream order; ``[]`` when upstream has
-        none.
+        Core's ``Answer``: as ``payload`` one ``CensusImport`` per HS10 code, in upstream order;
+        ``[]`` when upstream has none,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         NotFoundError: Upstream answered HTTP 404.
@@ -43,5 +44,6 @@ async def get_census_import(partner_code: str, year: int, month: int) -> list[Ce
         f"/api/gats/censusImports/partnerCode/{quote(partner_code, safe='')}"
         f"/year/{year}/month/{month}"
     )
-    raw = await client.get_json(path)
-    return parse(list[CensusImport], raw, source=SOURCE, endpoint="GATSData_GetCensusImport")
+    return await client.get_answer(
+        path, parse=list[CensusImport], endpoint="GATSData_GetCensusImport"
+    )

@@ -23,17 +23,18 @@ and `partner_code` against `countries.json`, the customs-district filter against
 `customsDistricts.json` and a six-digit `hs6_code` against `HS6Commodities.json`, before
 any call, since GATS answers an unknown code with an empty list; the five `list_*` tasks
 answer from the files without a call. The HS10 list, `GATSData_GetCommodities` (24,936
-records, about 7.6 MB of JSON), is not packaged: `list_commodities` fetches it live. The
-live tests (`tests/test_live.py`) fetch each list through its endpoint wrapper and fail
-when the packaged records differ, naming what is gone and what is new.
+records, about 7.6 MB of JSON), is not packaged: `list_commodities` fetches it live.
+Core's nightly comparison, which `tests/test_live.py` collects with `LIVE_LISTS`, fetches
+each list through its endpoint wrapper and fails on a code gone, new or changed, naming the
+codes and never a record.
 
-| File | Origin | Fetched (UTC) | Records |
-| --- | --- | --- | --- |
-| `regions.json` | `GET https://api.fas.usda.gov/api/gats/regions` (`GATSData_GetRegions`) | 2026-10-28T19:22:39Z | 15 |
-| `countries.json` | `GET https://api.fas.usda.gov/api/gats/countries` (`GATSData_GetCountries`) | 2026-10-28T19:22:40Z | 322 |
-| `HS6Commodities.json` | `GET https://api.fas.usda.gov/api/gats/HS6Commodities` (`GATSData_GetHS6Commodities`) | 2026-10-28T19:22:42Z | 2,909 |
-| `unitsOfMeasure.json` | `GET https://api.fas.usda.gov/api/gats/unitsOfMeasure` (`GATSData_GetUnitsOfMeasure`) | 2026-10-28T19:22:43Z | 108 |
-| `customsDistricts.json` | `GET https://api.fas.usda.gov/api/gats/customsDistricts` (`GATSData_GetCustomsDistricts`) | 2026-10-28T19:22:42Z | 53 |
+| File | Origin | Fetched |
+| --- | --- | --- |
+| `regions.json` | `GET https://api.fas.usda.gov/api/gats/regions` (`GATSData_GetRegions`) | 2026-10-28T19:22:39Z |
+| `countries.json` | `GET https://api.fas.usda.gov/api/gats/countries` (`GATSData_GetCountries`) | 2026-10-28T19:22:40Z |
+| `HS6Commodities.json` | `GET https://api.fas.usda.gov/api/gats/HS6Commodities` (`GATSData_GetHS6Commodities`) | 2026-10-28T19:22:42Z |
+| `unitsOfMeasure.json` | `GET https://api.fas.usda.gov/api/gats/unitsOfMeasure` (`GATSData_GetUnitsOfMeasure`) | 2026-10-28T19:22:43Z |
+| `customsDistricts.json` | `GET https://api.fas.usda.gov/api/gats/customsDistricts` (`GATSData_GetCustomsDistricts`) | 2026-10-28T19:22:42Z |
 
 The five files were written by `scripts/refresh_reference.py` on 2026-10-28 from
 upstream's answers, one keyed call per list, each answered 200. No record changed: every

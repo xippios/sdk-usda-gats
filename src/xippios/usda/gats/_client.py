@@ -1,30 +1,32 @@
 """The configured ``xippios.core`` client for USDA FAS Global Agricultural Trade System.
 
-One ``AsyncClient`` for the whole package, shared by the tasks, the sync facades and the
-MCP server, on api.data.gov's gateway at ``BASE_URL`` with ``Accept: application/json``.
-It keeps a pace of its own, ``RATE_LIMIT``, since the snapshot documents none. The key,
-the gateway's documented answers and its hourly quota are ``xippios.core.data_gov``'s
-(sdk-core ADR-0032): ``gateway.auth`` sends the key from ``DATA_GOV_API_KEY`` in the
-``X-Api-Key`` header; ``Gateway.policy``, one ``QuotaPolicy`` per process for the key,
-keeps api.data.gov's hourly quota from every answer and never fires a request into a
-spent one, waiting within the policy's ``pause_cap`` or refusing without sending
-(sdk-core ADR-0033, sdk-core ADR-0037); and ``classify`` asks ``gateway.classify`` first,
-which maps the gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to
-``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``. ``x-ratelimit-limit: 1000`` and
-``x-ratelimit-remaining`` are on every keyed GATS answer recorded on 2026-10-25, the
-error answers to a valid key included; the gateway sends no reset header.
+One ``AsyncClient`` for the whole package, shared by the tasks, the sync facades and the MCP
+server, on api.data.gov's gateway at ``BASE_URL`` with ``Accept: application/json``. It
+keeps a pace of its own, ``RATE_LIMIT``, since the snapshot documents none. The gateway is
+the shared package's, ``xippios.usda.fas``'s ``Gateway`` (sdk-core ADR-0032, decision 5;
+sdk-core ADR-0065, decision 1): ``gateway.auth`` sends the key from ``DATA_GOV_API_KEY`` in
+the ``X-Api-Key`` header; ``Gateway.policy``, the one ``QuotaPolicy`` per process for that
+key, keeps api.data.gov's hourly quota from every answer from the wire and never fires a
+request into a spent one, waiting it out within 30 s and otherwise refusing it without
+sending (sdk-core ADR-0033, sdk-core ADR-0037); and ``classify`` asks ``gateway.classify``
+first, which maps the gateway's ``API_KEY_*`` answers to ``AuthError``, its 429 to
+``RateLimitError`` and its ``NOT_FOUND`` to ``NotFoundError``. ``Gateway(SOURCE)`` names no
+data path: GATS answers a month or a year without data with ``[]`` and never with FAS's
+empty 404, so no answer of GATS's is the shared package's ``NoDataForYear``. ``x-ratelimit-
+limit: 1000`` and ``x-ratelimit-remaining`` are on every keyed GATS answer recorded on
+2026-10-25, the error answers to a valid key included; the gateway sends no reset header.
 
-Core's response cache keeps five answers and nothing else (``cache``, ``cache_filter``,
-``CACHED_PATHS``): the two Census release-date lists for an hour, since every Census data
-task fetches its flow's list before the data and would otherwise cost two requests
-against the hourly quota; the two UN Trade release-date lists for a day, since the UN
-Trade feed is frozen (both lists end with statistical year 2019, last released on
+Core's response cache keeps five answers and nothing else, one ``MemoryCache`` with a
+lifetime per path, ``LIFETIMES``: the two Census release-date lists for an hour, since
+every Census data task fetches its flow's list before the data and would otherwise cost two
+requests against the hourly quota; the two UN Trade release-date lists for a day, since the
+UN Trade feed is frozen (both lists end with statistical year 2019, last released on
 2021-01-18, as recorded on 2026-10-26), so a UN task costs one keyed call per flow per day
 for its list instead of one per hour; and the HS10 commodities list for a day, 7.6 MB that
-``tasks.list_commodities`` fetches whole for every search. Core's ``MemoryCache`` has one
-TTL, so ``cache`` is a ``CacheBackend`` of the package's own over three of them,
-``PathCaches``. The cache stores a body of up to ``CACHE_MAX_BYTES``, 16 MiB, twice
-core's default, so that the HS10 list stays cached when it grows (sdk-core ADR-0040, decision 3).
+``tasks.list_commodities`` fetches whole for every search. No other path is named, so the
+cache stores no other answer. It stores a body of up to ``CACHE_MAX_BYTES``, 16 MiB, twice
+core's default, so that the HS10 list stays cached when it grows (sdk-core ADR-0040,
+decision 3).
 
 GATS's own answers to an unknown partner, a month out of range or a month without data
 are not mapped here: what they are is recorded under
@@ -43,8 +45,7 @@ from xippios.core import (
     RateLimit,
     XippiosError,
 )
-from xippios.core.client import CachedResponse, cache_key
-from xippios.core.data_gov import API_KEY_ENV, Gateway
+from xippios.usda.fas import API_KEY_ENV, Gateway
 
 from xippios.usda.gats._version import __version__
 
@@ -69,6 +70,8 @@ the same key, last about 17 minutes; past that ``Gateway.policy`` takes over.
 # api.data.gov's key, its documented answers and its hourly quota, kept by one policy per
 # process that every source behind the gateway shares (sdk-core ADR-0032).
 gateway = Gateway(SOURCE)
+"""api.data.gov for this package: ``auth``, ``classify`` and ``install``, with no data path,
+since GATS never answers FAS's empty 404 for a period without data."""
 
 RELEASE_DATES_PATHS: frozenset[str] = frozenset(
     {
@@ -118,10 +121,6 @@ One answer of 24,936 records and about 7.6 MB of JSON, the largest in the family
 no request for a day.
 """
 
-CACHED_PATHS: frozenset[str] = RELEASE_DATES_PATHS | UN_RELEASE_DATES_PATHS | {COMMODITIES_PATH}
-"""The only paths the client caches; the data answers, the countries list and every other
-path are never cached."""
-
 RELEASE_DATES_TTL = 3600.0
 """Seconds a cached Census release-date list answers: one hour.
 
@@ -163,97 +162,28 @@ below either bound.
 """
 
 
-# The package's own until core offers a TTL per path, declined while one source asks for it
-# (https://github.com/xippios/sdk-core/issues/48, part (f); sdk-core ADR-0023, decision 4).
-class PathCaches:
-    """Core's ``CacheBackend`` over one ``MemoryCache`` per path: a TTL per path.
-
-    Core's ``MemoryCache`` keeps one TTL for every entry, and a client takes one backend
-    (``ClientConfig.cache``); this backend routes each entry to the ``MemoryCache`` of its
-    path. The client keys an entry by ``cache_key("GET", url)`` of the request as built
-    from ``BASE_URL`` and the path (``CacheBackend``'s contract), so the keys of the
-    paths named here are known in advance. A key of no path named here finds nothing and
-    is dropped: ``cache_filter`` lets only ``CACHED_PATHS`` through, but a request to one
-    of them with a query has a key of its own (``cache_key`` takes the query in), so it
-    goes to the wire every time and is never stored.
-
-    Args:
-        caches: Path, as ``CACHED_PATHS`` names it, to the cache that keeps its answer,
-            e.g. ``{"/api/gats/commodities": MemoryCache(ttl=86400.0, maxsize=1)}``.
-    """
-
-    def __init__(self, caches: Mapping[str, MemoryCache]) -> None:
-        self._by_path = dict(caches)
-        self._by_key = {
-            cache_key("GET", httpx.URL(f"{BASE_URL}{path}")): store
-            for path, store in self._by_path.items()
-        }
-        self._stores = tuple({id(store): store for store in self._by_key.values()}.values())
-
-    @property
-    def by_path(self) -> Mapping[str, MemoryCache]:
-        """Path to the cache that keeps its answer, as given, as a read-only view.
-
-        ``get``, ``set``, ``clear`` and ``len`` go by what was built from it once, so the
-        view cannot change under them.
-        """
-        return MappingProxyType(self._by_path)
-
-    def get(self, key: str) -> CachedResponse | None:
-        """The live entry for ``key`` from its path's cache, or ``None``."""
-        store = self._by_key.get(key)
-        return None if store is None else store.get(key)
-
-    def set(self, key: str, value: CachedResponse) -> None:
-        """Store ``value`` in its path's cache; a key of no path named here is dropped."""
-        store = self._by_key.get(key)
-        if store is not None:
-            store.set(key, value)
-
-    def clear(self) -> None:
-        """Drop every entry of every cache."""
-        for store in self._stores:
-            store.clear()
-
-    def __len__(self) -> int:
-        return sum(len(store) for store in self._stores)
-
-
-release_dates_cache = MemoryCache(ttl=RELEASE_DATES_TTL, maxsize=2)
-"""The Census release-date lists' cache: its two entries, about 81 KB of JSON each, kept
-for an hour."""
-
-un_release_dates_cache = MemoryCache(ttl=UN_RELEASE_DATES_TTL, maxsize=2)
-"""The UN Trade release-date lists' cache: its two entries, about 400 KB of JSON each,
-kept for a day."""
-
-commodities_cache = MemoryCache(ttl=COMMODITIES_TTL, maxsize=1)
-"""The HS10 commodities list's cache: its one entry, about 7.6 MB, kept for a day."""
-
-cache = PathCaches(
+LIFETIMES: Mapping[str, float] = MappingProxyType(
     {
-        **dict.fromkeys(sorted(RELEASE_DATES_PATHS), release_dates_cache),
-        **dict.fromkeys(sorted(UN_RELEASE_DATES_PATHS), un_release_dates_cache),
-        COMMODITIES_PATH: commodities_cache,
+        **dict.fromkeys(sorted(RELEASE_DATES_PATHS), RELEASE_DATES_TTL),
+        **dict.fromkeys(sorted(UN_RELEASE_DATES_PATHS), UN_RELEASE_DATES_TTL),
+        COMMODITIES_PATH: COMMODITIES_TTL,
     }
 )
-"""Core's response cache, shared by every caller of ``client`` in the process.
+"""Seconds the cache keeps an answer, by path prefix: the five paths it caches and no other.
 
-Only HTTP 200 answers of up to ``CACHE_MAX_BYTES`` are stored, and only for
-``CACHED_PATHS`` (``cache_filter``): the Census release-date lists for an hour, the UN
-Trade release-date lists and the commodities list for a day. A hit sends nothing, so the
-rate limiter and the quota policy never see it (sdk-core ADR-0037).
+Core's ``MemoryCache`` matches the longest prefix that a request's path starts with and
+stores no answer of a path that none starts (sdk-core ADR-0040, decision 3), so the data
+answers, the packaged lists' paths and every other path go to the wire.
 """
 
+cache = MemoryCache(lifetimes=LIFETIMES)
+"""Core's response cache, shared by every caller of ``client`` in the process.
 
-def cache_filter(request: httpx.Request) -> bool:
-    """Whether the client caches ``request``: only a GET of one of ``CACHED_PATHS``.
-
-    ``ClientConfig.cache_filter`` (sdk-core ADR-0037) lets one client cache a few paths and
-    nothing else; core asks it with the request as built, before credentials apply, and
-    caches GETs only.
-    """
-    return request.url.path in CACHED_PATHS
+Only HTTP 200 answers of up to ``CACHE_MAX_BYTES`` are stored, and only for the paths of
+``LIFETIMES``: the Census release-date lists for an hour, the UN Trade release-date lists
+and the commodities list for a day. A hit sends nothing, so the rate limiter and the quota
+policy never see it (sdk-core ADR-0037).
+"""
 
 
 def classify(response: httpx.Response) -> XippiosError | None:
@@ -279,7 +209,6 @@ config = gateway.install(
         base_url=BASE_URL,
         rate_limit=RATE_LIMIT,
         cache=cache,
-        cache_filter=cache_filter,
         cache_max_bytes=CACHE_MAX_BYTES,
         headers={"Accept": "application/json"},
         classify=classify,
@@ -293,26 +222,21 @@ client = AsyncClient(config, auth=auth)
 __all__ = [
     "API_KEY_ENV",
     "BASE_URL",
-    "CACHED_PATHS",
     "CACHE_MAX_BYTES",
     "COMMODITIES_PATH",
     "COMMODITIES_TTL",
     "ENV_VARS",
+    "LIFETIMES",
     "RATE_LIMIT",
     "RELEASE_DATES_PATHS",
     "RELEASE_DATES_TTL",
     "SOURCE",
     "UN_RELEASE_DATES_PATHS",
     "UN_RELEASE_DATES_TTL",
-    "PathCaches",
     "auth",
     "cache",
-    "cache_filter",
     "classify",
     "client",
-    "commodities_cache",
     "config",
     "gateway",
-    "release_dates_cache",
-    "un_release_dates_cache",
 ]

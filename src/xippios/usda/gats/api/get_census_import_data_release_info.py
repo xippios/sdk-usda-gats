@@ -9,7 +9,7 @@ recorded one (``models.DataReleaseInfo``, the exports list's shape): one per sta
 month, newest first, 716 records from ``"196701"`` to ``"202608"`` (about 81 KB of JSON).
 Error shapes are mapped once in ``xippios.usda.gats._client.classify``.
 
-The client caches this path for an hour (``_client.CACHED_PATHS``), so the wrapper reads it
+The client caches this path for an hour (``_client.LIFETIMES``), so the wrapper reads it
 with ``client.get_answer``, which parses it and stores only an answer that parsed, and whose
 ``retrieved_at`` a task reports as ``meta.retrieved_at``: on a cache hit the time the entry
 was stored, else the time the answer arrived (conventions §4, sdk-core ADR-0037).

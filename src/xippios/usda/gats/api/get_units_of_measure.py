@@ -11,26 +11,28 @@ JSON), parsed into ``models.UnitOfMeasure``; its ``unitOfMeasureId`` is what
 shapes are mapped once in ``xippios.usda.gats._client.classify``.
 """
 
-from xippios.core import parse
+from xippios.core import Answer
 
-from xippios.usda.gats._client import SOURCE, client
+from xippios.usda.gats._client import client
 from xippios.usda.gats.models import UnitOfMeasure
 
 __all__ = ["get_units_of_measure"]
 
 
-async def get_units_of_measure() -> list[UnitOfMeasure]:
+async def get_units_of_measure() -> Answer[list[UnitOfMeasure]]:
     """Call ``GATSData_GetUnitsOfMeasure``.
 
     Returns:
-        Every unit of measure, in upstream order (by id), one ``UnitOfMeasure`` per
-        record, e.g.
+        Core's ``Answer``: as ``payload`` every unit of measure, in upstream order (by id), one
+        ``UnitOfMeasure`` per record, e.g.
             ``UnitOfMeasure(unit_of_measure_id=47, unit_of_measure_code="KG",
-            unit_of_measure_name="Kilograms", unit_of_measure_description="Kilograms")``
+            unit_of_measure_name="Kilograms", unit_of_measure_description="Kilograms")``,
+        and as ``retrieved_at`` the time the answer arrived, timezone-aware UTC.
 
     Raises:
         AuthError: api.data.gov refused the key in ``DATA_GOV_API_KEY``.
         RateLimitError: api.data.gov's hourly quota for the key is spent.
     """
-    raw = await client.get_json("/api/gats/unitsOfMeasure")
-    return parse(list[UnitOfMeasure], raw, source=SOURCE, endpoint="GATSData_GetUnitsOfMeasure")
+    return await client.get_answer(
+        "/api/gats/unitsOfMeasure", parse=list[UnitOfMeasure], endpoint="GATSData_GetUnitsOfMeasure"
+    )

@@ -264,10 +264,13 @@ data tools name `hs10_code`, and those of the customs-district tools `customs_di
 too, while a cut series shows its newest rows and its note says the rows run oldest month
 first and names `hs10_code` and fewer months; `usda_gats_list_hs6_commodities` names
 `search` and `hs6_code`, `usda_gats_list_commodities` its three filters. Those two, the two
-release-date tools and the six Census month tools take `offset`, the rows already shown, and
-answer the next rows from the packaged list or the client's cache without a request, the
-note of a cut answer naming the `offset` to continue with: all 777 rows of exports to China
-in August 2026 arrive in four calls, the three after the first sending no request. The UN
+release-date tools and the three Census month tools without a district take `offset`, the
+rows already shown, and answer the next rows from the packaged list or the client's cache
+without a request, the note of a cut answer naming the `offset` to continue with: all 777
+rows of exports to China in August 2026 arrive in four calls, the three after the first
+sending no request. The customs-district tools take no `offset`, since no list keeps their
+answer, one row per code and district, within the cache's 16 MiB, so their two filters
+narrow a cut answer. The UN
 Trade data tools name `partner_country_code` and `hs6_code` (one reporter-year is one row
 per partner and HS6 code, 3,980 rows for Iceland's 2019 exports), and
 `usda_gats_get_un_release_dates` names `reporter_code` and `statistical_year` (3,796

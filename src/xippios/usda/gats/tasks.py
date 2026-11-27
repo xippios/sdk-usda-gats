@@ -382,9 +382,9 @@ MCP_CAPS: Mapping[str, ResultCap] = {
     "get_census_reexport_series": ResultCap(note=SERIES_NOTE, keep="last"),
     "get_census_reexports": ResultCap(note=HS10_NOTE, paged=True),
     "get_census_release_dates": ResultCap(note=RELEASE_DATES_NOTE, paged=True),
-    "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE, paged=True),
-    "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE, paged=True),
-    "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE, paged=True),
+    "get_customs_district_exports": ResultCap(note=DISTRICT_NOTE),
+    "get_customs_district_imports": ResultCap(note=DISTRICT_NOTE),
+    "get_customs_district_reexports": ResultCap(note=DISTRICT_NOTE),
     "get_un_exports": ResultCap(note=UN_DATA_NOTE),
     "get_un_imports": ResultCap(note=UN_DATA_NOTE),
     "get_un_reexports": ResultCap(note=UN_DATA_NOTE),
@@ -400,10 +400,16 @@ own: a tool with a filter names it (§8). One partner-month is one record per HS
 777 records and about 154 KB of JSON for exports to China in August 2026, 3,294 records
 and about 1.1 MB for imports from China; ``hs10_code`` narrows it to a chapter, a heading
 or one product. By customs district it is one record per district and code, 1,697
-records for exports to China, so those notes name ``customs_district_id`` as well. The six
-take a paged cap: the client's cache keeps the month for five minutes and the release list
-for an hour, so ``offset`` answers the next rows without a request (sdk-core ADR-0047,
-ADR-0061, decision 9), and core's note ends with the ``offset`` to continue with.
+records for exports to China, so those notes name ``customs_district_id`` as well. The
+three month tools without a district take a paged cap, since the HS10 list bounds their
+answer under the cache's 16 MiB: its 24,936 codes as recorded, at the 334 bytes a record
+of imports from China, are about 8.3 MB. The client's cache keeps the month for five
+minutes and the release list for an hour, so ``offset`` answers the next rows without a
+request (sdk-core ADR-0047, ADR-0061, decision 9), and core's note ends with the
+``offset`` to continue with. The three customs-district tools stay unpaged: a record per
+code and district, of 53 districts, has no list that keeps it under 16 MiB, which holds
+about 47,700 records at the 352 bytes a record of district imports from Iceland, and a
+tool whose answer can pass the bound stays unpaged (ADR-0061, decision 9).
 The three Census series tools keep the default bounds with a note of their own,
 ``SERIES_NOTE``, naming ``hs10_code`` and a shorter range as the ways to narrow: a series
 is one record per HS10 code and month, in month order, and the cap keeps the newest rows
@@ -1503,10 +1509,10 @@ def _un_check(
     """Every argument of a UN Trade data task, before the data call; see ``params``.
 
     Both country codes are checked for membership in the packaged countries list only:
-    the Census tasks' ``discontinuedOn`` rule (``validate_partner_month``) does not apply,
+    the Census tasks' ``discontinuedOn`` rule (``params.leaf_last_month``) does not apply,
     since the UN data keeps GATS's older codes for 2019, among them ``DA`` (Denmark,
-    discontinued 198712), a leaf that rule refuses after its month. ``reporters`` ranks
-    the close codes of a refusal (``_un_ranked``).
+    discontinued 198712), a leaf whose later months that rule answers with the empty list
+    and a note. ``reporters`` ranks the close codes of a refusal (``_un_ranked``).
     """
     validate_reporter_code(reporter_code, reporters=reporters)
     validate_year(year)
@@ -2118,8 +2124,9 @@ async def list_countries_async(
     its ISO code and its GENC code where upstream has one. Codes are GATS's own, not ISO:
     ``"CH"`` China, ``"MX"`` Mexico, ``"JA"`` Japan, ``"IC"`` Iceland; aggregates such as
     ``"01"`` Caribbean,nes have no GENC code. 26 carry a ``discontinued_on`` month. For
-    the 7 that are no other record's ``country_parent_code`` it is the last a Census task
-    accepts (``"D1"`` Denmark, ``"198712"``); the 19 parents among them pass for every
+    the 7 that are no other record's ``country_parent_code``, a Census task answers a later
+    month with the empty list and a note, sending no request (``"D1"`` Denmark,
+    ``"198712"``); the 19 parents among them pass for every
     month (``"SZ"`` Switzerland, the parent of ``"SR"`` Switzerland and ``"LS"``
     Liechtenstein). ``meta.retrieved_at`` is when the package fetched the list
     (2026-10-28); ``meta.vintage`` stays empty.

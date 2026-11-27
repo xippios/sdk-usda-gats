@@ -618,6 +618,54 @@ def test_the_countries_tool_says_what_a_census_task_does_after_a_leafs_month() -
     assert "a Census task answers a later month with the empty list and a note" in description
 
 
+REPOSITORY_PATHS = (
+    ".github/",
+    "changelog/",
+    "docs/",
+    "scripts/",
+    "src/",
+    "tests/",
+    "CHANGELOG.md",
+    "CLAUDE.md",
+    "README.md",
+)
+"""The folders and documents of the repository that the wheel, ``src/xippios`` alone, leaves
+out, so that an agent reading a tool has none of them to open."""
+
+
+def _schema_texts(schema: object) -> Iterator[str]:
+    """Every ``description`` of a JSON schema, its properties' and its definitions' among them."""
+    if isinstance(schema, dict):
+        for key, value in schema.items():
+            if key == "description" and isinstance(value, str):
+                yield value
+            else:
+                yield from _schema_texts(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            yield from _schema_texts(item)
+
+
+@pytest.mark.anyio
+async def test_no_tool_text_names_a_path_of_the_repository() -> None:
+    """An agent reads a tool's description and the texts of its arguments over MCP, from the
+    installed package, so no text of the twenty tools names a file of the repository that the
+    wheel leaves out (sdk-core conventions §8): ``docs/upstream/OBSERVED.md`` stays the
+    maintainers', cited from the module docstring."""
+    from mcp.client import Client
+
+    async with Client(server) as client:
+        listed = (await client.list_tools()).tools
+    assert len(listed) == 20
+    named: dict[str, list[str]] = {}
+    for tool in listed:
+        texts = [tool.description or "", *_schema_texts(tool.input_schema)]
+        paths = [path for path in REPOSITORY_PATHS if any(path in text for text in texts)]
+        if paths:
+            named[tool.name] = paths
+    assert named == {}
+
+
 def test_a_discontinued_leaf_passes_for_a_month_before_its_end(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:

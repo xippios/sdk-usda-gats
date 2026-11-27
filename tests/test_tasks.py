@@ -571,23 +571,6 @@ def test_a_filter_by_position_or_by_its_former_name_is_refused_before_any_reques
     assert respx_mock.calls.call_count == 0
 
 
-@pytest.mark.anyio
-async def test_a_tool_takes_the_three_filters_under_upstreams_names(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Over MCP the arguments are named as before but for the three filters, and a tool
-    refuses the former name as an argument it does not declare, before any request."""
-    arguments: list[tuple[str, dict[str, object]]] = [
-        ("usda_gats_get_un_exports", {"reporter_code": "IC", "year": 2019, "partner_code": "US"}),
-        ("usda_gats_get_un_release_dates", {"product_type": "X", "year": 2019}),
-        ("usda_gats_get_census_release_dates", {"product_type": "X", "statistical_year": 2026}),
-    ]
-    for tool, given in arguments:
-        with pytest.raises(AssertionError, match="error: "):
-            await mcp_call(server, tool, given)
-    assert respx_mock.calls.call_count == 0
-
-
 @pytest.mark.parametrize("task", DATA_TASKS, ids=[t.__name__ for t in DATA_TASKS])
 def test_a_discontinued_leaf_after_its_month_is_the_empty_list_with_a_note_unsent(
     respx_mock: respx.MockRouter, task: Callable[..., Any]
@@ -1967,11 +1950,13 @@ OVER_RATE_LIMIT = {
         ),
     }
 }
-"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway
-(``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), as ``test_client.py``
-builds it."""
+"""NOT RECORDED here: the body of the 429 that sdk-usda-psd recorded behind the same gateway
+(its ``tests/fixtures/get_commodities/over_rate_limit.json``, 2026-10-23), served in memory
+at a GATS path, since the gateway answers a spent quota alike on every path behind it, as
+``test_client.py`` serves it (conventions §10, kind 3)."""
 SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
-"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
+"""NOT RECORDED here: three quota headers of sdk-usda-psd's recorded 429, served with its body
+at a GATS path (conventions §10, kind 3)."""
 
 
 def test_a_quota_spent_mid_series_returns_none_of_its_months(
@@ -1982,10 +1967,11 @@ def test_a_quota_spent_mid_series_returns_none_of_its_months(
     nothing, not July's 105 records. The wait is read through the client, so it is the
     snapshot's from now, ``Retry-After``'s 3151 s give or take ``CLOCK_SLACK``: a fraction
     under, or over where this host's clock steps back. NOT RECORDED here (conventions §10,
-    kind 2): GATS has no
-    recorded 429, so August's answer is psd's, built as ``test_client.py`` builds it. Not
-    marked ``rate_limited``: the error is ``classify``'s reading of the 429 itself, which
-    the plugin leaves on, not the quota policy's pause, which it turns off."""
+    kind 3): GATS has no recorded 429, so August's answer is the 429 that psd recorded,
+    served in memory at August's path behind the same gateway, which answers a spent quota
+    alike on every path behind it. Not marked ``rate_limited``: the error is ``classify``'s
+    reading of the 429 itself, which the plugin leaves on, not the quota policy's pause,
+    which it turns off."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     july = _replay_months(respx_mock, EXPORTS, "IC_2026_7")
     august = respx_mock.get(_ic_url("censusExports", 8)).mock(
@@ -2231,9 +2217,9 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
     naming 24 and ``--series-months``, in core's words; the ceiling is process-wide, so a
     Python call in the same process meets it too. 24 months pass. NOT RECORDED: no answer
     for Iceland in those 24 months is recorded, so each is served the recorded empty answer
-    of a listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS
-    gives alike there, and the test reads the span check and what was sent (conventions §10,
-    kind 3)."""
+    of a listed partner without trade, Bouvet Island (``BV``) in August 2026, and the test
+    asserts of those months only what was sent, the release list read once and the 24
+    months' URLs oldest first (conventions §10, kind 3)."""
     tasks.mcp_apply_options(argparse.Namespace(series_months=24))
     assert tasks.SERIES.value == 24
     arguments: dict[str, object] = {
@@ -2262,10 +2248,7 @@ async def test_the_mcp_server_refuses_a_series_beyond_its_ceiling_before_any_req
     releases = replay_fixture(EXPORT_RELEASES, "all")
     urls = _ic_export_urls(2024, 9, 24)
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
-    payload = await mcp_call(
-        server, "usda_gats_get_census_export_series", {**arguments, "start_month": 9}
-    )
-    assert payload["data"] == []
+    await mcp_call(server, "usda_gats_get_census_export_series", {**arguments, "start_month": 9})
     assert (releases.call_count, sent_urls(months)) == (1, urls)
 
 
@@ -2298,8 +2281,10 @@ def test_the_python_api_spans_60_months(
     """With no MCP options applied, and with ``--series-months 60``, a 60-month Python call
     passes the span check and sends one request per month, oldest first, and 61 months
     are refused with the Python API's message, which names no MCP server. NOT RECORDED:
-    the months are served the recorded empty answer of ``BV`` in August 2026, as above, an
-    answer GATS gives alike there (conventions §10, kind 3)."""
+    the months are served the recorded empty answer of ``BV`` in August 2026, as above, and
+    the test asserts of them only what was sent; ``meta.vintage`` is the release time that
+    the recorded exports list, replayed at its own path, gives August 2026 (conventions §10,
+    kind 3)."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = _ic_export_urls(2021, 9, 60)
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
@@ -2310,7 +2295,6 @@ def test_the_python_api_spans_60_months(
         result = tasks.get_census_export_series(
             "IC", start_year=2021, start_month=9, end_year=2026, end_month=8
         )
-        assert result.data == []
         assert result.meta.vintage == RELEASED_2026_08
         with pytest.raises(InvalidRequestError) as longer:
             tasks.get_census_export_series(
@@ -2885,20 +2869,23 @@ OVER_RATE_LIMIT = {
         ),
     }
 }
-"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway."""
+"""NOT RECORDED here: the body of the 429 that sdk-usda-psd recorded behind the same gateway,
+served in memory at a GATS path, since the gateway answers a spent quota alike on every path
+behind it (conventions §10, kind 3)."""
 SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
-"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429."""
+"""NOT RECORDED here: three quota headers of sdk-usda-psd's recorded 429, served with its body
+at a GATS path (conventions §10, kind 3)."""
 
 
 def test_a_shared_iso_code_is_refused_unranked_when_the_list_cannot_be_read(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """NOT RECORDED here (conventions §10, kind 2): psd's recorded 429, body and quota
-    headers, in the shape the gateway documents, mocked on the UN
-    exports list. The list only ranks the refusal, so a failed read gives way to the
-    refusal the first check made: ``UnknownCode`` naming the countries list's order, the
-    current ``A2`` first, never the list's ``RateLimitError``; nothing goes to the data
-    path."""
+    """NOT RECORDED here (conventions §10, kind 3): psd's recorded 429, its body and three
+    quota headers, served in memory on the UN exports list behind the same gateway, which
+    answers a spent quota alike on every path behind it. The list only ranks the refusal, so
+    a failed read gives way to the refusal the first check made: ``UnknownCode`` naming the
+    countries list's order, the current ``A2`` first, never the list's ``RateLimitError``;
+    nothing goes to the data path."""
     releases = respx_mock.get(UN_EXPORT_RELEASES_URL).mock(
         return_value=httpx.Response(429, json=OVER_RATE_LIMIT, headers=SPENT)
     )

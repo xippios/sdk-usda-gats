@@ -2,9 +2,10 @@
 
 Recorded answers come from ``tests/fixtures``: the invalid-key answer
 (``get_regions/invalid_key.json``, sent with a made-up key on 2026-10-25) and the
-quota headers of the keyed answers. GATS has no recorded 429: the gateway's 429 is built in
-the shape api.data.gov documents and sdk-usda-psd recorded (its
-``PSDData_GetCommodities/over_rate_limit.json``, 2026-10-23), and every such test says so.
+quota headers of the keyed answers. GATS has no recorded 429, and neither document of its
+snapshot names one: the gateway's 429 is the one sdk-usda-psd recorded behind the same
+gateway (its ``tests/fixtures/get_commodities/over_rate_limit.json``, 2026-10-23), served in
+memory at GATS's paths, and every such test says so.
 The gateway and its quota policy are the shared package's (``xippios.usda.fas``'s
 ``Gateway``, sdk-core ADR-0032, sdk-core ADR-0037), whose tests hold its answers, the key's
 codes, the policy's headers and window, a 429 classified on its own and core's retries of a
@@ -72,20 +73,6 @@ def recorded(endpoint: str, case: str) -> httpx.Response:
     return response_from_fixture(load_fixture(FIXTURES / endpoint / f"{case}.json"))
 
 
-def synthesised(
-    status: int, body: object, headers: dict[str, str] | None = None, path: str = REGIONS
-) -> httpx.Response:
-    """NOT RECORDED as such: an answer in the shape api.data.gov documents and sends.
-    It is composed from what the gateway documents (conventions §10, kind 2).
-    """
-    return httpx.Response(
-        status,
-        json=body,
-        headers=headers or {},
-        request=httpx.Request("GET", f"{BASE_URL}{path}"),
-    )
-
-
 OVER_RATE_LIMIT = {
     "error": {
         "code": "OVER_RATE_LIMIT",
@@ -95,11 +82,13 @@ OVER_RATE_LIMIT = {
         ),
     }
 }
-"""NOT RECORDED here: the 429 body sdk-usda-psd recorded from the same gateway
-(conventions §10, kind 2)."""
+"""NOT RECORDED here: the body of the 429 that sdk-usda-psd recorded behind the same gateway,
+served in memory at a GATS path, since the gateway answers a spent quota alike on every path
+behind it (conventions §10, kind 3)."""
 SPENT = {"Retry-After": "3151", "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "0"}
-"""NOT RECORDED here: the quota headers of sdk-usda-psd's recorded 429 (conventions §10,
-kind 2)."""
+"""NOT RECORDED here: three quota headers of sdk-usda-psd's recorded 429, ``retry-after``,
+``x-ratelimit-limit`` and ``x-ratelimit-remaining``, served with its body at a GATS path
+(conventions §10, kind 3)."""
 
 
 def test_the_client_is_wired_for_the_gateway() -> None:
@@ -184,8 +173,9 @@ def test_an_empty_404_falls_through_to_core() -> None:
 @pytest.mark.anyio
 @pytest.mark.rate_limited
 async def test_the_policy_reads_a_429_through_core(respx_mock: respx.MockRouter) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
-    documents (conventions §10, kind 2), through the package's client. Core's
+    """NOT RECORDED here: psd's recorded 429, its body and three quota headers, served in
+    memory on a GATS path behind the same gateway, which answers a spent quota alike on every
+    path behind it (conventions §10, kind 3), through the package's client. Core's
     ``observe`` marks the gateway's quota spent until its ``Retry-After``, ``classify``
     raises after one request (3151 s is beyond ``backoff_max``) with the snapshot's wait
     from now, and the next request is refused before it is sent, in the gateway's name.
@@ -268,7 +258,11 @@ UN_DATA = [
 
 
 def _entry(stored_at: float) -> CachedResponse:
-    """A body that no route serves: an entry for the cache alone, an input of the test."""
+    """A cache entry handed to ``MemoryCache`` alone, which no route serves.
+
+    The entry is an input of the test, not an answer from USDA FAS Global Agricultural Trade
+    System.
+    """
     return CachedResponse(status=200, headers=(), content=b"[]", stored_at=stored_at)
 
 
@@ -443,8 +437,9 @@ async def test_un_trade_data_is_cached_for_a_day(replay_fixture: ReplayFixture) 
 async def test_a_cached_release_list_answers_while_the_quota_is_spent(
     replay_fixture: ReplayFixture, respx_mock: respx.MockRouter
 ) -> None:
-    """NOT RECORDED here: psd's recorded 429 mocked on a GATS path, in the shape the gateway
-    documents (conventions §10, kind 2), spends the quota; the
+    """NOT RECORDED here: psd's recorded 429, its body and three quota headers, served in
+    memory on a GATS path behind the same gateway, which answers a spent quota alike on every
+    path behind it (conventions §10, kind 3), spends the quota; the
     release list cached before it still answers, since a cache hit returns before the
     quota policy's check (sdk-core ADR-0037), while the uncached countries list is refused unsent.
     Marked ``rate_limited``: the refusal is the policy's pause, which the plugin turns off."""

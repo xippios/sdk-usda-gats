@@ -4,6 +4,151 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/) (pre-1.0: breaking changes bump the minor).
 
+## [0.4.0] - 2026-11-28
+
+### Added
+
+- The three Census month tools, `usda_gats_get_census_exports`, `usda_gats_get_census_imports`
+  and `usda_gats_get_census_reexports`, take `offset`, the rows of a cut answer already shown,
+  and answer the rows after them from the client's cache, sending no request, so all 777 rows
+  of exports to China in August 2026 can be read over MCP. The note of every page but the last
+  names the `offset` to continue with. (sdk-core ADR-0047, https://github.com/xippios/sdk-usda-gats/issues/32)
+- Every answer names the codes of its rows in `meta.names` by the packaged lists: partners
+  and reporters, `{"country_code": {"CH": "China"}}`, customs districts, HS6 codes, the
+  four unit ids, and a country's region and parent, and the tasks name the partner,
+  reporter, district and full HS6 code a call asks for, so an answer without rows names
+  them. A row's code that the packaged list lacks is left out of the names and said in
+  `meta.notes`, so no answer is withheld for it. The names count in a tool's 64 KB, so a
+  cut answer shows fewer rows: 70 of 2,377 where `usda_gats_get_un_imports` showed 200, 141
+  for `usda_gats_get_un_exports` and 179 where the Census imports tool showed 185.
+  (https://github.com/xippios/sdk-core/issues/478, https://github.com/xippios/sdk-usda-gats/issues/34)
+- `usda_gats_list_hs6_commodities`, `usda_gats_list_commodities`,
+  `usda_gats_get_census_release_dates` and `usda_gats_get_un_release_dates` take `offset`,
+  the rows of a cut answer already shown, and answer the rows after them from the packaged
+  list or the client's cache, sending no request. Every page carries its note, and the note
+  of every page but the last names the `offset` to continue with. (https://github.com/xippios/sdk-core/issues/314, https://github.com/xippios/sdk-usda-gats/issues/32)
+
+### Changed
+
+- The tests that serve GATS's empty answer at a URL that no recording holds assert only what
+  the call sent and what the task adds to the answer, never a whole field that rows would
+  change, as sdk-core's conventions §10 allow. A caller sees no change.
+  (https://github.com/xippios/sdk-usda-gats/issues/74)
+- The README's `## Scope` states what of GATS the package wraps and what it leaves out: all
+  nineteen operations of the snapshot, read as JSON, with every path parameter an argument of
+  a task, and XML the one documented choice that a caller cannot make. The notes on what GATS
+  does but never documents stand in `docs/upstream/OBSERVED.md`, each with its probe, the
+  measures that left the tools' descriptions among them.
+  (https://github.com/xippios/sdk-usda-gats/issues/27, https://github.com/xippios/sdk-usda-gats/issues/57, https://github.com/xippios/sdk-usda-gats/issues/64)
+- The client's cache keeps every answer, where it kept five lists: a Census month for five
+  minutes, core's default, the Census release lists for an hour as before, and every UN
+  Trade answer and the HS10 list for a day, so a narrower filter on a month or a
+  reporter-year already read sends no request. A month that Census revises within those
+  five minutes keeps its earlier figures until the entry expires, and an answer larger than
+  16 MiB, as India's 2016 UN Trade exports, is not stored. (sdk-core ADR-0061, https://github.com/xippios/sdk-usda-gats/issues/42, https://github.com/xippios/sdk-usda-gats/issues/57)
+- A cut answer of the three series tools shows the newest rows, oldest first, where it
+  showed the oldest, and its note names the rows shown, `showing rows 578 to 777 of 777`,
+  and says that the rows shown are the newest. (sdk-core ADR-0047, https://github.com/xippios/sdk-core/issues/314, https://github.com/xippios/sdk-usda-gats/issues/32)
+- A country code, a customs district id and a full HS6 code are checked by core's check of
+  their packaged list, whose refusal names the list with its fetch date and the closest
+  codes, a district's ids as integers in `UnknownCode.closest`, where they were text.
+  (sdk-core ADR-0045, https://github.com/xippios/sdk-core/issues/313, https://github.com/xippios/sdk-core/issues/481)
+- Every refusal of a call as given says `Nothing was sent.` after its first sentence: an
+  unknown code, a year, a month, an HS10 or HS6 code of the wrong form, a code discontinued
+  before the month, a range that runs backwards and the MCP adapter's refusal of an
+  argument. The refusal of a shared ISO or GENC code that the UN Trade release list ranks
+  says instead that the list was read, or asked for and not read, and that nothing else was
+  sent. The classes are unchanged. (https://github.com/xippios/sdk-core/issues/481)
+- `meta.retrieved_at` of the Census, district, series and UN Trade data tasks is the
+  client's time of the answers, the oldest of the release list's and the data's, the time
+  its entry was stored where core's cache answered it, where it read the time the answer's
+  metadata was made. (https://github.com/xippios/sdk-core/issues/479)
+- The three series tasks refuse a range over the ceiling in core's wording before the
+  first request, naming the range, the ceiling, where the MCP server's is lower
+  `--series-months`, and that nothing was sent, their class `InvalidRequestError` kept. A
+  request after the first month that fails raises its error, its class kept, naming the
+  months answered before it, and the series returns nothing. (https://github.com/xippios/sdk-core/issues/315, https://github.com/xippios/sdk-usda-gats/issues/33)
+- The refusal before a request into api.data.gov's spent quota, which the package shares
+  with every source that reads `DATA_GOV_API_KEY`, says `quota spent (` with the gateway's
+  name as its source and no longer names the key's variable. The gateway now comes from
+  `xippios-usda-fas`. (https://github.com/xippios/sdk-core/issues/485)
+- The descriptions of the fifteen tools that passed 1,000 characters, the Census, district,
+  series and UN Trade data tools, the two release-date tools and
+  `usda_gats_list_commodities`, are their tasks' docstrings before `Args:`, each under the
+  bound, and a tool whose call sends more than one request states the most it sends, retries
+  counted. The text of each argument stands in the tool's input schema, the measures of
+  GATS's answers in `docs/upstream/OBSERVED.md`, and no tool's text names a file of the
+  repository that the installed package does not hold. (https://github.com/xippios/sdk-core/issues/485, https://github.com/xippios/sdk-usda-gats/issues/28, https://github.com/xippios/sdk-usda-gats/issues/71)
+- A value or quantity without fractional digits is a JSON integer in the answers over MCP
+  and HTTP, `16217` where it read `16217.0`. It stays a `Decimal` in Python. (https://github.com/xippios/sdk-core/issues/478)
+
+### Breaking
+
+- This release bundles the adoption of `xippios-core` 0.5.0 and the package's first
+  dependency, on `xippios-usda-fas` 0.1.0, with the changes of its own interface and text
+  that this section lists. It accepts the window that this left, from 2026-11-25 to this
+  release, in which no release of the package installed beside the latest of the two:
+  0.3.0 requires `xippios-core~=0.4.0`, so it installs beside neither `xippios-core` 0.5.0,
+  released that day, nor `xippios-usda-fas` 0.1.0, released on 2026-11-26 and requiring
+  `xippios-core~=0.5.0`. The window closes with this release, which installs beside both.
+  (sdk-core ADR-0039, https://github.com/xippios/sdk-usda-gats/issues/77)
+- Three filters take the name of upstream's field that they read, in Python, over MCP and
+  over HTTP, and in `meta.request`: the UN Trade data tasks' `partner_code` is
+  `partner_country_code`, `get_un_release_dates`' `year` is `statistical_year` and
+  `get_census_release_dates`' `statistical_year` is `statistical_year_month`. The last takes
+  text, a year such as `"2026"` or a month such as `"202608"`, and keeps the records whose
+  `statisticalYearMonth` starts with it, so one month can now be asked for. (sdk-core ADR-0061, https://github.com/xippios/sdk-usda-gats/issues/57)
+- The arguments that identify a record stay positional in the order of upstream's path, and
+  every filter and every argument of the package's own, the series' four months among them,
+  is keyword-only: `get_census_exports("CH", 2026, 8, hs10_code="02")`,
+  `get_census_export_series("IC", start_year=2026, start_month=7, end_year=2026,
+  end_month=8)`, `get_un_exports("IC", 2019, hs6_code="03")` and
+  `list_countries(region_code="R05")`, where 0.3.0 took the same values by position. Over
+  MCP and HTTP nothing changes, since a tool and a route take their arguments by name.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-usda-esr/issues/60, https://github.com/xippios/sdk-usda-gats/issues/57)
+- A period that GATS holds no data for answers the empty list with a note in `meta.notes`
+  and sends no data request, where it raised an error: a Census month before 196701 in
+  `get_census_exports`, `get_census_imports` and their series, which pass such months over,
+  a UN Trade reporter-year that the flow's list lacks at or before its latest year in
+  `get_un_exports` and `get_un_imports`, and in every Census task a month after the last of a
+  discontinued code that is no other code's parent, the note keeping every word of the
+  former refusal. A month or a year after the latest release is still refused with
+  `NotFoundError`, which now says that the release list was read and no data was requested.
+  (sdk-core ADR-0061, https://github.com/xippios/sdk-usda-esr/issues/88#issuecomment-7193147010, https://github.com/xippios/sdk-usda-gats/issues/57)
+- `list_countries(region_code=...)` refuses a region that the packaged regions list lacks with
+  `UnknownCode`, naming the closest regions, and `list_commodities(product_type=...)` refuses
+  a product type that no record of the HS10 list carries with `InvalidRequestError`, naming
+  the types it carries, at most 20 and then how many more, and saying that the list was read,
+  where both answered an empty list. The comparison stays exact, so `"r05"` names `R05` and
+  `"x"` names `X`. (sdk-core ADR-0045, https://github.com/xippios/sdk-usda-gats/issues/31, https://github.com/xippios/sdk-usda-gats/issues/69)
+- The six tasks that read another flow's release list, `get_census_reexports`,
+  `get_census_reexport_series`, the three customs-district tasks and `get_un_reexports`,
+  leave `meta.vintage` and `meta.published_at` empty, where they held the release time of
+  the Census or UN Trade exports or imports, which states no release of the data they
+  answer. They still refuse a month or a reporter-year that the list lacks, and the refusal
+  names the list that was read and the assumption that it holds for their data.
+  (sdk-core ADR-0060, https://github.com/xippios/sdk-core/issues/474, https://github.com/xippios/sdk-usda-gats/issues/55)
+- `tasks.mcp_apply_options`, the hook that applies `--series-months`, takes the parsed
+  options alone and returns nothing, so the host's call that 0.3.0 gave,
+  `tools.apply_options(tools.option_defaults(), server)`, raises `TypeError` and becomes
+  `tools.apply_options(tools.option_defaults())`. The MCP server's instructions come from
+  `tasks.MCP_INSTRUCTIONS`. (https://github.com/xippios/sdk-core/issues/476)
+- The package depends on `xippios-core~=0.5.0`, its extras likewise, and on
+  `xippios-usda-fas~=0.1.0`, is updated to sdk-template v0.5.0 and applies conventions
+  1.30, its argument order (§2) and the empty vintage of another flow's list (§14) by the
+  entries on the keyword-only filters and on the six tasks that read another flow's release
+  list. (https://github.com/xippios/sdk-usda-gats/issues/57)
+- `tasks.series_ceiling`, `tasks.set_series_ceiling`, `tasks.SERIES_MAX_MONTHS` and
+  `tasks.MCP_SERIES_MAX_MONTHS` are removed, so a caller's use of any fails, and one
+  `Ceiling` of core's, `tasks.SERIES`, holds the series' ceiling of 60 months in their place,
+  24 on the MCP server and `--series-months` to set another: `SERIES.value` reads it and
+  `SERIES.set(months)` sets it. (sdk-core ADR-0054, https://github.com/xippios/sdk-core/issues/315, https://github.com/xippios/sdk-usda-gats/issues/33)
+- The fourteen endpoint wrappers under `api/` that returned their parsed records, such as
+  `api.get_census_exports()` and `api.get_countries()`, return core's `Answer`, the records
+  as its `payload` beside the time they were retrieved as its `retrieved_at`, as the five
+  wrappers of the cached answers did already. A caller reads their `.payload`.
+  (https://github.com/xippios/sdk-core/issues/479)
+
 ## [0.3.0] - 2026-11-21
 
 ### Added

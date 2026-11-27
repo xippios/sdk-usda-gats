@@ -2013,10 +2013,9 @@ async def get_un_release_dates_async(
     within a year: ``statistical_year`` (``"2019"``), ``product_type``, ``reporter_code`` and
     ``release_time_stamp``, the time of the reporter-year's latest release as upstream states
     it, without a time zone (``2020-06-03T05:50:46`` for Iceland's 2019 exports). The UN Trade
-    feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18
-    (``docs/upstream/OBSERVED.md``). The three UN data tasks check a reporter-year against
-    this list, and the exports and imports tasks give its time as ``meta.vintage``; the
-    re-exports task gives none. One request,
+    feed is frozen: the lists cover 1989 to 2019, and their newest release time is 2021-01-18.
+    The three UN data tasks check a reporter-year against this list, and the exports and
+    imports tasks give its time as ``meta.vintage``; the re-exports task gives none. One request,
     kept by the client for a day, the filters applied after it; ``meta.retrieved_at`` is when it
     was fetched. ``meta.published_at`` and ``meta.vintage`` stay empty: the list is no single
     release.
@@ -2216,6 +2215,10 @@ async def list_customs_districts_async() -> Result[list[CustomsDistrict]]:
     return Result(data=districts, meta=packaged.meta(SOURCE))
 
 
+_TYPES_NAMED = 20
+"""The most product types a refusal names before it says how many more (conventions §5)."""
+
+
 def _carried(product_type: str, commodities: list[Commodity]) -> None:
     """Refuse ``product_type`` when no record of the HS10 list read carries it (conventions §5).
 
@@ -2223,8 +2226,9 @@ def _carried(product_type: str, commodities: list[Commodity]) -> None:
     a record carries; ``list_commodities`` compares them exactly, as upstream writes them, so
     a type none carries would keep no record, ``"x"`` among them
     (https://github.com/xippios/sdk-usda-gats/issues/31). The refusal comes after the list was
-    read, which it says, and names every type it carries, in the order the list first holds
-    them.
+    read, which it says, and names the types it carries in the order the list first holds
+    them, at most ``_TYPES_NAMED`` and then how many more, since upstream fixes no number of
+    them (https://github.com/xippios/sdk-usda-gats/issues/69).
 
     Args:
         product_type: The filter as given, e.g. ``"x"``.
@@ -2236,8 +2240,13 @@ def _carried(product_type: str, commodities: list[Commodity]) -> None:
     carried = list(dict.fromkeys(c.product_type for c in commodities))
     if not carried or product_type in carried:  # an empty list keeps none of any type
         return
-    named = [repr(code) for code in carried]
-    types = ", ".join(named[:-1]) + f" and {named[-1]}" if len(named) > 1 else "".join(named)
+    named = [repr(code) for code in carried[:_TYPES_NAMED]]
+    if len(carried) > _TYPES_NAMED:
+        types = ", ".join(named) + f" and {len(carried) - _TYPES_NAMED} more"
+    elif len(named) > 1:
+        types = ", ".join(named[:-1]) + f" and {named[-1]}"
+    else:
+        types = named[0]
     raise InvalidRequestError(
         f"product_type {product_type!r} is carried by no record of GATS's HS10 list, so it "
         "would keep none. The list (GATSData_GetCommodities) was read, and nothing else was "
@@ -2279,8 +2288,7 @@ async def list_commodities_async(
             record carries is refused once the list is read, naming those it carries. Omit
             (``None``) for all. ``"X"`` holds 5,919 records (export codes, as in the
             Census exports and re-exports records), ``"M"`` 14,469 (import codes), ``"T"``
-            2,704 and ``"B"`` 1,844, as the note "The HS10 commodities list" of
-            ``docs/upstream/OBSERVED.md`` has it.
+            2,704 and ``"B"`` 1,844.
     """
     _search(search)
     if hs10_code is not None:

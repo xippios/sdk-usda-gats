@@ -550,7 +550,7 @@ def test_a_product_type_refusal_names_at_most_20_types_and_how_many_more(
     """Upstream fixes no number of product types, so the refusal names the first 20 that the
     records carry, in the order the list first holds them, and then how many more
     (conventions §5): 20 types are named whole, and 25 give the first 20 and ``and 5 more``.
-    The records are an input of the test, not an answer from USDA FAS Global Agricultural
+    Each record is an input of the test, not an answer from USDA FAS Global Agricultural
     Trade System."""
     commodities = [
         Commodity.model_validate(

@@ -655,13 +655,13 @@ def test_a_discontinued_leaf_passes_for_a_month_before_its_end(
     """``D1`` (Denmark) for 1987-06, before its 198712: the check passes, the recorded
     exports list (from 196701) has the month, and the data request goes out. NOT
     RECORDED: no answer for Denmark in 1987 is recorded, so the data route answers GATS's
-    recorded empty answer, ``[]``, an answer GATS gives alike at other months, and the test
-    checks what was sent and the month's release time (conventions §10, kind 3)."""
+    recorded empty answer, ``[]``, and the test asserts of the month only what was sent, with
+    the month's release time that the recorded exports list gives (conventions §10,
+    kind 3)."""
     releases = replay_fixture(EXPORT_RELEASES, "all")
     url = f"{BASE_URL}/api/gats/censusExports/partnerCode/D1/year/1987/month/6"
     data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
     result = tasks.get_census_exports("D1", 1987, 6)
-    assert result.data == []
     assert result.meta.vintage == _release_time(EXPORT_RELEASES, "198706")
     assert sent_urls(releases) == [EXPORT_RELEASES_URL]
     assert sent_urls(data) == [url]
@@ -1531,9 +1531,10 @@ def _answer_months(
     ``_replay_months`` for months nothing was recorded for.
 
     NOT RECORDED for ``urls``: each gets the answer recorded for another request, e.g. the
-    empty list GATS sent for Bouvet Island (``BV``) in August 2026, an answer GATS gives
-    alike there, so a test that uses it says so (conventions §10, kind 3). ``urls`` share
-    the recorded request's host."""
+    empty list GATS sent for Bouvet Island (``BV``) in August 2026, so a test that uses it
+    names the condition under which GATS answers alike at its URLs, or says that it asserts
+    only what was sent (conventions §10, kind 3). ``urls`` share the recorded request's
+    host."""
     fixture = load_fixture(FIXTURES / endpoint / f"{case}.json")
     (host,) = {httpx.URL(url).host for url in (fixture.request.url, *urls)}
     answers = {httpx.URL(url).path: fixture.response for url in urls}
@@ -1719,10 +1720,11 @@ def test_a_series_vintage_is_the_newest_release_among_its_months(
 ) -> None:
     """The annual revision re-released 2025-12 on 2026-06-24, after January's and
     February's releases, so 2025-12 to 2026-02 carries the revision's time, not the end
-    month's; a month without trade adds nothing and is no error. NOT RECORDED: no answer
-    for Iceland in those months is recorded, so the data route serves each the recorded
-    empty answer of a listed partner without trade, Bouvet Island (``BV``) in August
-    2026, and the test checks what was sent, across the year's end, and the vintage."""
+    month's. NOT RECORDED: no answer for Iceland in those months is recorded, so the data
+    route serves each the recorded empty answer of a listed partner without trade, Bouvet
+    Island (``BV``) in August 2026, and the test asserts of those months only what was sent,
+    across the year's end, with the vintage that the recorded exports list gives
+    (conventions §10, kind 3)."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/IC/year/2025/month/12",
@@ -1733,7 +1735,6 @@ def test_a_series_vintage_is_the_newest_release_among_its_months(
     result = tasks.get_census_export_series(
         "IC", start_year=2025, start_month=12, end_year=2026, end_month=2
     )
-    assert result.data == []
     december = _release_time(EXPORT_RELEASES, "202512")
     assert december == "2026-06-24T08:00:00"
     assert _release_time(EXPORT_RELEASES, "202601") == "2026-03-12T08:00:00"
@@ -1867,17 +1868,14 @@ def test_a_series_passes_over_the_months_before_the_data_with_a_note(
     196612 without a request and names them in a note, and fetches 196701 and 196702, as
     the month task answers each (way P2). NOT RECORDED: no answer for Iceland in 1967 is
     recorded, so each month is served the recorded empty exports answer of a listed partner
-    without trade, Bouvet Island (``BV``) in August 2026 (conventions §10, kind 3). The
-    exports case takes it as an answer GATS gives alike there and checks the empty list as
-    well; no empty Census imports answer is recorded, so the imports case checks only what
-    was sent, with the note and the vintage that the recorded imports list gives."""
+    without trade, Bouvet Island (``BV``) in August 2026, and both cases assert of those
+    months only what was sent, with the note and the vintage that the recorded release list
+    of the flow gives (conventions §10, kind 3)."""
     replay_fixture(release_list, "all")
     path = "censusExports" if flow == "exports" else "censusImports"
     urls = [f"{BASE_URL}/api/gats/{path}/partnerCode/IC/year/1967/month/{m}" for m in (1, 2)]
     months = _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", *urls)
     result = task("IC", start_year=1966, start_month=11, end_year=1967, end_month=2)
-    if flow == "exports":
-        assert result.data == [], "the recorded empty exports answer, at its own operation"
     assert result.meta.notes == [
         f"GATS holds no Census {flow} for 196611 to 196612: {operation} lists 716 months, "
         "196701 to 202608, and none of them, so the series passed them over without a data "
@@ -1919,8 +1917,9 @@ def test_a_series_passes_over_a_leafs_months_after_its_last(
     last, 198712, and passes over 1988-01 without a request, in a note that keeps the words
     of the refusal it replaced. NOT RECORDED: no answer for Denmark in 1987 is recorded, so
     each month is served the recorded empty answer of a listed partner without trade, Bouvet
-    Island (``BV``) in August 2026, an answer GATS gives alike there, and the test checks
-    what was sent and the note (conventions §10, kind 3)."""
+    Island (``BV``) in August 2026, and the test asserts of those months only what was sent,
+    with the note and the vintage that the recorded exports list gives (conventions §10,
+    kind 3)."""
     replay_fixture(EXPORT_RELEASES, "all")
     urls = [
         f"{BASE_URL}/api/gats/censusExports/partnerCode/D1/year/1987/month/{m}"
@@ -1930,7 +1929,6 @@ def test_a_series_passes_over_a_leafs_months_after_its_last(
     result = tasks.get_census_export_series(
         "D1", start_year=1987, start_month=6, end_year=1988, end_month=1
     )
-    assert result.data == []
     (note,) = result.meta.notes
     assert note.startswith("partner_code 'D1' (Denmark) was discontinued in 198712")
     assert "so 1988-01 (198801) adds no rows and was not requested." in note
@@ -2705,8 +2703,8 @@ def test_a_discontinued_code_is_accepted_on_the_un_side(
     Macau's 27 re-export records of 2019 (recorded); as a reporter it passes the check and
     meets the release list, which lists its imports to 2018 and its exports to 2016. NOT
     RECORDED: no answer for Australia's 2018 imports is recorded, so the data route answers
-    GATS's recorded empty answer, ``[]``, which it gives alike at other reporter-years, and
-    the test checks what was sent and the reporter-year's release time (conventions §10,
+    GATS's recorded empty answer, ``[]``, and the test asserts of that reporter-year only what
+    was sent, with the release time that the recorded imports list gives (conventions §10,
     kind 3)."""
     denmark = tasks.get_census_exports("DA", 2019, 1)
     assert denmark.data == []
@@ -2721,7 +2719,6 @@ def test_a_discontinued_code_is_accepted_on_the_un_side(
     url = f"{BASE_URL}/api/gats/UNTradeImports/reporterCode/AS/year/2018"
     data = respx_mock.get(url).mock(return_value=httpx.Response(200, json=[]))
     reported = tasks.get_un_imports("AS", 2018)
-    assert reported.data == []
     assert reported.meta.vintage == _un_release_time(UN_IMPORT_RELEASES, "AS", "2018")
     assert reported.meta.vintage == "2020-06-04T13:12:54"
     assert sent_urls(releases) == [UN_IMPORT_RELEASES_URL]
@@ -3296,8 +3293,8 @@ def test_an_answer_names_the_country_its_code_stands_for(
     """GATS's ``CN`` is Comoros and ``GB`` Gabon, not China and the United Kingdom, which are
     ``CH`` and ``UK``: the answer names the country the code stands for, so a caller sees it.
     NOT RECORDED for these partners: each month is served the recorded empty answer of a
-    listed partner without trade, Bouvet Island (``BV``) in August 2026, an answer GATS
-    gives alike for any listed partner (conventions §10, kind 3)."""
+    listed partner without trade, Bouvet Island (``BV``) in August 2026, and the test asserts
+    only the names of the code that the call sent (conventions §10, kind 3)."""
     replay_fixture(EXPORT_RELEASES, "all")
     url = f"{BASE_URL}/api/gats/censusExports/partnerCode/{code}/year/2026/month/8"
     _answer_months(respx_mock, EXPORTS, "no_data_valid_partner", url)
